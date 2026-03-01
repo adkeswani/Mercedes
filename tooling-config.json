@@ -1,0 +1,36 @@
+﻿{
+    "wingetPackages":  [
+                           {
+                               "id":  "Git.Git",
+                               "version":  "2.51.0"
+                           },
+                           {
+                               "id":  "Google.AndroidStudio",
+                               "version":  "2024.3.2.15"
+                           },
+                           {
+                               "id":  "Microsoft.VisualStudioCode",
+                               "version":  "1.99.3"
+                           },
+                           {
+                               "id":  "OpenJS.NodeJS.LTS",
+                               "version":  "24.14.0"
+                           }
+                       ],
+    "flutterSdk":  {
+                       "version":  "3.29.0",
+                       "installPath":  "%USERPROFILE%\\development\\flutter"
+                   },
+    "npmGlobals":  [
+                       {
+                           "name":  "firebase-tools",
+                           "version":  "15.8.0"
+                       }
+                   ],
+    "dartGlobals":  [
+                        {
+                            "name":  "flutterfire_cli",
+                            "version":  "1.2.0"
+                        }
+                    ]
+}

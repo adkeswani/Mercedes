@@ -4,7 +4,7 @@ This repository uses and/or depends on third-party tools and packages with their
 
 ## Current dependencies and tooling
 
-- Flutter SDK (`Flutter.Flutter`) — BSD-3-Clause
+- Flutter SDK (`flutter/flutter` GitHub repository) — BSD-3-Clause
 - Dart SDK (bundled with Flutter) — BSD-3-Clause
 - Android Studio + Android SDK tooling (`Google.AndroidStudio`) — multiple licenses by Google/JetBrains and Android component owners
 - Node.js LTS (`OpenJS.NodeJS.LTS`) — mixed OSS licenses (primarily MIT-like/Node.js project licenses)

@@ -10,7 +10,7 @@ It also attempts to auto-accept Android SDK licenses and runs `flutter doctor -v
 - Android Studio (includes Android SDK tooling)
 - VS Code
 - Node.js LTS
-- Flutter SDK
+- Flutter SDK (installed from the official Flutter git repository, pinned by `tooling-config.json`)
 - npm global: `firebase-tools`
 - Dart global: `flutterfire_cli`
 - VS Code extensions: Dart + Flutter
@@ -21,6 +21,7 @@ It also attempts to auto-accept Android SDK licenses and runs `flutter doctor -v
 - `tooling-lock.json` (actual installed versions; updated after install/update)
 - `tooling-versions.md` (human-readable version report)
 - `logs/bootstrap-*.log` (full execution transcript)
+- `logs/bootstrap-raw-*.log` (captured stdout/stderr from native commands, including npm/dart)
 
 ## Repository governance
 
@@ -79,6 +80,29 @@ Generate a fresh version report:
 
 ```powershell
 .\bootstrap-mobile-dev.ps1 -Command report
+```
+
+## Android SDK prerequisites
+
+If the script reports missing/incomplete Android SDK setup, complete this once in Android Studio:
+
+> Important: the default Android Studio installation often does **not** install **Android SDK Command-line Tools** automatically.
+> Also install the exact Android SDK Platform and Build-Tools versions requested by `flutter doctor -v`.
+> In your current environment, Flutter Doctor is requesting Android SDK Platform **36**.
+
+1. Open Android Studio.
+2. Go to **Settings > Languages & Frameworks > Android SDK**.
+3. In **SDK Platforms**, install the **Android SDK Platform version required by Flutter Doctor** (for example, API 36).
+4. In **SDK Tools**, install:
+	- Android SDK Platform-Tools
+	- Android SDK Command-line Tools (latest)
+	- Android SDK Build-Tools (the version required by Flutter Doctor)
+	- If needed, enable **Show Package Details** to select/install specific versions.
+5. Apply changes and close Android Studio.
+6. Re-run:
+
+```powershell
+.\bootstrap-mobile-dev.ps1 -Command update
 ```
 
 ## Pinning behavior
