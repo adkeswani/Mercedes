@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+
+branch_name="$(git symbolic-ref --short HEAD 2>/dev/null)"
+
+if [ "$branch_name" = "main" ]; then
+  echo "Direct commits to 'main' are blocked in this repository."
+  echo "Create a topic branch, commit there, then merge back to main with --ff-only."
+  exit 1
+fi
+
+exit 0
