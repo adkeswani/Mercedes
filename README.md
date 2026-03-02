@@ -111,3 +111,54 @@ If the script reports missing/incomplete Android SDK setup, complete this once i
 - `update` = upgrade mode (installs latest available, then rewrites lock file)
 
 If you want to manually pin or change target versions, edit `tooling-config.json` and run `install`.
+
+## Quick smoke-test loop
+
+Use the helper script to run the Flutter smoke app with minimal setup each time:
+
+```powershell
+.\scripts\run-flutter-smoke.ps1
+```
+
+What it does:
+
+- Checks if an Android emulator is already running.
+- Starts an AVD only when none is running.
+- Waits for emulator boot completion.
+- Runs `flutter pub get` (unless skipped).
+- Runs one of three modes:
+	- `run`: `flutter run` on the emulator (default)
+	- `build-run`: builds APK then installs + launches it
+	- `install-run`: installs existing APK then launches it
+
+Optional flags:
+
+```powershell
+.\scripts\run-flutter-smoke.ps1 -AvdName "Medium_Phone_API_36.1"
+.\scripts\run-flutter-smoke.ps1 -SkipPubGet
+.\scripts\run-flutter-smoke.ps1 -Mode build-run -BuildType debug
+.\scripts\run-flutter-smoke.ps1 -Mode install-run -BuildType release
+.\scripts\run-flutter-smoke.ps1 -BootTimeoutSeconds 420
+```
+
+### Mode guidance
+
+- `run` (default): uses `flutter run` (build + install + launch + debug attach/hot reload).
+- `build-run`: explicitly builds an APK, then installs and launches it.
+- `install-run`: installs an already-built APK and launches it without running Flutter's full debug pipeline.
+
+Why keep `install-run` if `flutter run` already installs?
+
+- Faster launch when you already have a built APK.
+- Useful for package/deployment sanity checks (especially `release` APK).
+- Avoids debug attach/hot-reload when you only want install/launch behavior.
+
+### Generated file churn (Windows line endings)
+
+Flutter may touch generated registrant files during local runs. This repo keeps them tracked, with LF normalization in `.gitattributes`.
+
+If these generated files show as modified but you did not intentionally change plugin dependencies, run:
+
+```powershell
+.\scripts\clean-flutter-generated.ps1
+```

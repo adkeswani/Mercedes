@@ -49,6 +49,13 @@ class _MyHomePageState extends State<MyHomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text(
+              'Hi, Mercedes!',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text('🙂', style: TextStyle(fontSize: 36)),
+            const SizedBox(height: 20),
+            const Text(
               'Flutter smoke test app is running.',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
