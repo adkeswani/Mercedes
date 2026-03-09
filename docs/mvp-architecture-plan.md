@@ -133,6 +133,11 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 - Program Marketplace: discovery-first launch (browse free/paid programs), with commerce flows deferred.
 - Group Plans: group progress model where members can see each others' completion status and shared comments.
 
+## TODOs
+
+- [ ] Review this document from a Program Owner's perspective (ensure owner needs, visibility, and control are fully covered).
+- [ ] Add a "Common Workflows" section describing key end-to-end flows for both owner and athlete (e.g. creating a program, assigning a workout, completing a workout, viewing load dashboard).
+
 ## Next Draft (Optional)
 
 - Draft a concrete v1 data schema and API contract next (collections/tables, permissions, and exact screen list).
