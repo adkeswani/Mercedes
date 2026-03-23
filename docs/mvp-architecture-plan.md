@@ -1,4 +1,4 @@
-# MVP Architecture & Delivery Plan (v0.9)
+# MVP Architecture & Delivery Plan (v1.1)
 
 ## Core Architecture to Define First
 
@@ -13,12 +13,12 @@
 - Exercise Template (reusable exercise definition with video + instructions)
 - Workout Template (reusable workout definition; may contain child Workout Templates for nesting, e.g. a "Warmup" sub-workout inside a "Full Session")
 - Program-to-Workout Mapping (ordered list)
-- Workout-to-Exercise Mapping (ordered list + prescription fields such as sets/reps/weight)
+- Workout-to-Exercise Mapping (ordered list + prescription fields such as sets/reps/weight/time; supports rep-based, time-based, and AMRAP exercise modes)
 - Workout-to-Workout Mapping (ordered list; allows a Workout Template to include child Workout Templates)
 - Program Enrollment (manual access grant; includes `addedAt` and nullable `removedAt` timestamps)
-- Program Schedule (assignment of workouts to calendar dates)
+- Program Schedule (assignment of workouts to calendar dates; supports one-off and bounded recurring schedules with required end date)
 - Workout Type (classification tag: e.g. limit, power, endurance for climbing; lower, upper, full_body for strength)
-- Workout Instance (user completion record; includes RPE and duration)
+- Workout Instance (user completion record; includes RPE, duration, and per-exercise actuals with timer data)
 - Program Direct Message Thread (athlete↔program owner conversation, not tied to a workout instance)
 - Workout Instance Comments (owner + user replies)
 - Program Forum (threads + replies)
@@ -35,9 +35,9 @@
 2. [MVP] Workout plan creation: exercise templates, workout templates, program structure, versioned publishing, owner program copy, and athlete personal program creation with copy + nesting + day assignment parity.
 3. [MVP] Auth + athlete assignment: sign-in, role model, enrollment, and schedule assignment to athletes.
 4. [MVP] Load/difficulty model: RPE + duration logging, workout-type-based weighting, dashboard load summaries, and athlete download/export of workout + load data.
-5. [MVP] Community features (core): direct athlete↔owner messaging and private workout comments.
+5. [MVP] Community features (core): direct athlete↔owner messaging and private workout comments, with support for external photo links and YouTube links (plus in-app link preview when available).
 6. [Post-MVP] Community features (forum): program-level forum with reply notifications and athlete download/export of community conversation data.
-7. [Post-MVP] Marketplace and access lifecycle: program discovery, durations, consent/waiver tracking, expiry notifications, and automatic enrollment removal.
+7. [Post-MVP] Marketplace and access lifecycle: program discovery, durations, consent/waiver tracking, expiry notifications, automatic enrollment removal, and paid Program Owner entitlement for assignable-program creation.
 8. [Post-MVP] Group workouts/plans: shared group progress, completion visibility, and group comments visible to members of the same group.
 
 ### Exit Criteria by Area
@@ -45,10 +45,10 @@
 1. Foundation planning is complete when auth, roles, ACL scoping, enrollment lifecycle fields (`addedAt`/`removedAt`), template versioning, and audit-field requirements are documented as locked constraints for implementation.
 2. Workout plan creation is complete when owners can create/edit/publish versioned programs, copy their own programs, build reusable workouts/exercises, assign workout-type tags without data-model rewrites, and athletes can create personal programs with equivalent builder capabilities (copy, workout nesting, day assignment) that remain non-assignable.
 3. Auth + athlete assignment is complete when sign-in works on target platforms, role-scoped ACL checks are enforced, athlete enrollment writes `addedAt`, and date-based scheduling creates workout instances reliably.
-4. Load/difficulty model is complete when required RPE + duration are captured on completion, load points are computed/stored server-side with versioning, dashboard widgets return correct weekly/type/bucket summaries, and athletes can export/download their workout + load history.
-5. Community features (core) are complete when direct athlete↔owner messaging and private workout comments are live with correct per-program visibility and access control.
+4. Load/difficulty model is complete when required RPE + duration are captured on completion, load points are computed client-side with versioning and server-side audit capability, dashboard widgets return correct weekly/type/bucket summaries, and athletes can export/download their workout + load history.
+5. Community features (core) are complete when direct athlete↔owner messaging and private workout comments are live with correct per-program visibility and access control, and users can post external photo/YouTube links with in-app preview support where metadata is available.
 6. Community features (forum) are complete when program-level forum threads/replies and reply notifications are live with correct per-program visibility, and athletes can export/download their community conversation data.
-7. Marketplace and access lifecycle is complete when program discovery is usable, duration-based access rules are enforced, consent/waiver status is tracked, pre-expiry notifications are sent, and removals write `removedAt`.
+7. Marketplace and access lifecycle is complete when program discovery is usable, duration-based access rules are enforced, consent/waiver status is tracked, pre-expiry notifications are sent, removals write `removedAt`, and paid Program Owner entitlement gates assignable-program creation.
 8. Group workouts/plans is complete when owners can run shared group plans, members can see group completion status appropriately, and group comments are visible to other members of the same group with role/privacy boundaries enforced.
 
 ## Important Design Decisions Now (to Avoid Rewrites)
@@ -59,6 +59,7 @@
 - Enforce per-program access control lists (ACL) so ownership and membership are scoped at the program level.
 - Support owner-assigned access by username lookup, with the owner only seeing usernames during assignment.
 - Version workout templates so old assigned programs remain stable.
+- Version programs at the program level (workout list, order) so structural changes don't silently alter enrolled athletes' schedules.
 - Allow program owners to copy their own programs as a starting point for new variants.
 - Allow athletes to create personal programs with the same builder capabilities as owners (including copy, workout nesting, and day assignment), but only users acting as program owners can create assignable programs.
 - Allow owners to define exercises (video + instructions) and assemble them into workout programs with program/workout-level prescriptions.
@@ -74,6 +75,8 @@
 - **Athlete-personal program**: created by an athlete for self-use only; supports copy, workout nesting, and day assignment, but cannot enroll, assign, or expose the program to other users.
 
 ### Role Permissions (MVP)
+
+- Entitlement enforcement: assignable-program creation/publish actions require active Program Owner entitlement at both create and publish time (Post-MVP monetization scope).
 
 - **Program Owner**
 	- Can create, edit, publish, archive, and copy their own assignable programs.
@@ -145,6 +148,7 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 
 - Create workout instances at schedule time.
 - Use date-only assignment in MVP (no recurrence yet).
+- Recurring schedules require an end date; all instances are materialized upfront via batch write (no rolling/infinite recurrence).
 - Use athlete local timezone for day boundaries and due-date behavior.
 - Allow athletes to adjust sets/reps/weight per workout instance.
 - Athletes log RPE (1–10) and duration per workout instance; these are required for load computation.
@@ -152,13 +156,25 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 - Program owners can copy their own programs; copied programs inherit structure and templates as a new editable draft.
 - Athletes may create personal programs for self-use only; athlete-created programs cannot be assigned to other users.
 - Athlete personal programs support the same builder actions as owner programs (copy, workout nesting, day assignment) but remain self-use and non-assignable.
-- Load points are computed server-side on save using a versioned formula (TypeWeight × Effort × DurationModifier).
+- Load points are computed client-side on completion using a versioned formula (TypeWeight × Effort × DurationModifier). Source fields are always stored, so values can be batch-recomputed if needed.
 - Support a direct athlete↔program-owner message thread at program scope (outside workout instances), reusing comment/thread primitives.
 - Keep workout-instance comments private to assigned athlete and program owner; allow edits.
+- Support comments at three scopes: program-level, workout-level, and exercise-level, using a single unified comments model with optional scope fields.
+- Copying a program creates a deep copy of the program document but uses shallow references to existing workout template versions and exercise templates. The copy is fully independent.
+- In direct messages and workout comments, support external media links (photo URLs + YouTube URLs) and show in-app link previews when possible.
+- Do not store uploaded photo/video binaries in app-controlled storage for MVP; use external links to reduce storage and bandwidth cost.
 - Auto-update all uncompleted scheduled items to the latest workout template version.
-- Mark overdue workouts as missed and keep the original scheduled date.
+- Mark overdue workouts as missed and keep the original scheduled date. Athletes can recover missed workouts by completing them later (missed → completed transition).
 - Allow assignment by exact username only, with user-controlled opt-in discoverability.
 - Persist program enrollment lifecycle timestamps (`addedAt` on enrollment creation, `removedAt` on access removal).
+- User account deletion triggers a cascading cleanup function across all related collections; cleanup failures are logged and surfaced to admin for manual resolution.
+- Programs are versioned at the program level (structure/workout list/order). Each publish creates an immutable snapshot. Enrollments reference the program version assigned.
+- Athletes may complete a workout after its scheduled date (late completion); the instance retains the original `scheduledDate` and records the actual `completedAt` timestamp.
+- Exercises support three modes: rep-based (`reps`), time-based (`time`), and as-many-reps-as-possible (`amrap`). The mode is set on the exercise prescription in the workout template.
+- An integrated in-app timer tracks rest intervals between sets and work duration for time-based/AMRAP exercises. Actual rest and work times are recorded per exercise in the workout instance.
+- Total workout duration is tracked automatically from "Start Workout" to "Finish Workout" and written to the workout instance.
+- The app tracks custom analytics events for major operations (logins, completions, messages, enrollments, feedback) via Firebase Analytics.
+- In-app feedback (bug reports, feature requests, general feedback) is collected via a feedback form and stored for admin review.
 
 ## Athlete Experience Requirements
 
@@ -168,10 +184,13 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 - [MVP] Calendar usability: visible schedule by day and clear status (scheduled, completed, missed).
 - [MVP] Data trust: athletes can see who can access their workout data and comment threads.
 - [MVP] Flexible logging: capture actual sets/reps/weight, RPE (1–10), duration, and athlete notes per workout instance.
+- [MVP] Integrated timer: in-app rest timer between sets and work timer for time-based exercises, with audio/haptic alerts and auto-advance.
+- [MVP] Late completion: athletes can complete a workout after the scheduled date as long as it has not been marked missed.
 - [MVP] Progress visibility: load trends (weekly total, type distribution, hard/medium/easy), consistency streaks, and personal bests.
 - [MVP] Data portability (training): athletes can download/export their workout history and load metrics.
 - [MVP] Communication clarity: direct message thread with program owner is available outside workouts.
 - [MVP] Communication clarity: private owner↔athlete workout-instance comments are available.
+- [MVP] Media in comments/messages: direct messages and workout comments support photo URL links and YouTube links with in-app preview when available, without app-hosted media uploads.
 - [Post-MVP] Communication clarity: program-level forum is available with reply notifications.
 - [Post-MVP] Data portability (community): athletes can download/export their direct messages, workout comments, and forum contributions.
 - [Post-MVP] Scheduling flexibility: athlete reschedule request flow and conflict handling.
@@ -186,7 +205,26 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 - [MVP] Athlete intake visibility: view athlete goals, experience level, equipment constraints, and schedule constraints before assignment.
 - [MVP] Adherence visibility: completion %, missed sessions, streak breaks, and at-risk athlete indicators.
 - [MVP] Owner inbox visibility: direct athlete messages are visible and replyable at program scope.
+- [MVP] Dashboard views: all-programs overview, per-program roster and aggregate metrics, and per-athlete drill-down (see dashboard detail below).
 - [Post-MVP] Safety controls: contraindication-aware substitutions, required warmup/cooldown rules, and exercise issue escalation.
+
+### Program Owner Dashboard Views (MVP)
+
+**All-Programs Overview:**
+- Summary cards per program: active athlete count, completion rate this week, unread messages.
+- Sorted by programs needing attention (lowest adherence or unread messages first).
+
+**Per-Program View:**
+- Roster list with per-athlete: last workout date, weekly completion %, streak status, unread message indicator.
+- Aggregate charts: program-wide completion rate trend, load distribution, workout type breakdown.
+- Quick action: message athlete, view athlete detail, bulk-assign schedule.
+
+**Per-Athlete View (drill-down):**
+- Athlete's schedule calendar with status coloring (scheduled/completed/missed).
+- Recent workout instances with RPE, duration, load points, and athlete notes.
+- Load trend chart (weekly totals, type breakdown, hard/medium/easy distribution).
+- Direct message thread with that athlete.
+- Comment history across workout instances.
 
 ### Athlete Decision Log
 
@@ -197,6 +235,7 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 - [MVP] If multiple workouts are on the same day, collapse into a day summary with expand-to-view details.
 - [MVP] Progress starts with load-based dashboard: weekly total load + type breakdown + hard/medium/easy distribution.
 - [MVP] Direct owner messaging exists at program scope and is not tied to workout-instance comments.
+- [MVP] Comment/message media uses external links only (photo URL and YouTube URL) to avoid MVP photo/video storage costs.
 - [Post-MVP] Unread indicators exist at both levels: per workout instance and program-level summary.
 - [Post-MVP] Rescheduling is athlete self-reschedule.
 - [Post-MVP] Reliability priority is offline draft logging.
@@ -240,8 +279,15 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 - [MVP] Update a workout template after athletes are scheduled:
 	1. Owner edits a Workout Template.
 	2. Owner sees change-impact preview for uncompleted scheduled items.
-	3. Owner publishes updated template version.
-	4. System auto-updates uncompleted scheduled items to latest template version.
+	3. Owner chooses upgrade scope: "Update all scheduled" (default) or "New only" (existing stay on current version).
+	4. Owner publishes updated template version.
+	5. System updates applicable scheduled items based on owner's choice.
+
+- [MVP] Update program structure after athletes are enrolled:
+	1. Owner adds, removes, or reorders workouts in a program.
+	2. System shows impact preview (how many enrollments reference the current version).
+	3. Owner publishes new program version.
+	4. System snapshots the new structure; new schedule assignments use the new version.
 
 - [Post-MVP] Handle athlete reschedule and training conflicts:
 	1. Athlete requests or performs self-reschedule.
@@ -272,7 +318,13 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 	1. Athlete opens scheduled Workout Instance.
 	2. Athlete records completion plus optional actual sets/reps/weight adjustments.
 	3. Athlete logs required RPE (1–10) and duration.
-	4. System computes and stores load points (versioned formula) on save.
+	4. App computes and stores load points (versioned formula) on completion.
+
+- [MVP] Use recurring schedule:
+	1. Owner assigns a workout with recurring pattern (e.g., Mon/Wed/Fri) and an end date.
+	2. System creates all workout instances upfront for the entire recurrence window.
+	3. Athlete sees all scheduled dates in calendar view.
+	4. Owner can cancel remaining, extend, or edit individual instances.
 
 - [MVP] Review progress and access visibility:
 	1. Athlete opens progress dashboard.
@@ -281,12 +333,12 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 
 - [MVP] Send a direct message to program owner:
 	1. Athlete opens the program-level direct message thread.
-	2. Athlete sends a message unrelated to a specific workout.
+	2. Athlete sends a message unrelated to a specific workout (text and optional external photo/YouTube links).
 	3. Owner can reply in the same thread.
 
 - [MVP] Participate in private workout comments:
 	1. Athlete opens a workout instance comment thread.
-	2. Athlete and owner exchange private comments tied to that workout.
+	2. Athlete and owner exchange private comments tied to that workout, including optional external photo/YouTube links.
 	3. Visibility remains limited to the assigned athlete and program owner.
 
 - [Post-MVP] Continue workout logging while offline:
@@ -303,6 +355,7 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 
 - Program Marketplace: discovery-first launch (browse free/paid programs), with commerce flows deferred.
 - Marketplace access lifecycle: support program durations, consent/waiver status tracking, automatic removal at end-of-duration, and pre-removal notifications.
+- Program Owner monetization: paid owner tier unlocks creation of assignable programs, while athlete personal programs remain self-use and non-assignable.
 - Group Plans: group progress model where members can see each others' completion status and group comments visible to others in the same group.
 
 ## Next Draft (Optional)
