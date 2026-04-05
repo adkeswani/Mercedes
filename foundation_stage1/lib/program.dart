@@ -1,0 +1,149 @@
+import 'package:foundation_stage1/enums.dart';
+import 'package:foundation_stage1/foundation_models.dart';
+
+/// A workout program with versioned structure.
+///
+/// Programs can be owner-assignable (enrollable athletes) or
+/// athlete-personal (self-use only, non-assignable). Each publish
+/// creates an immutable [ProgramVersion] snapshot.
+class Program with Auditable {
+
+  Program({
+    required this.id,
+    required this.name,
+    required this.ownerId, required this.type, required this.status, required this.currentVersion, required this.createdAt, required this.createdBy, required this.updatedAt, required this.updatedBy, this.description,
+    this.deletedAt,
+    this.deletedBy,
+  });
+  final String id;
+  final String name;
+  final String? description;
+  final String ownerId;
+  final ProgramType type;
+  final ProgramStatus status;
+  final int currentVersion;
+  @override
+  final DateTime createdAt;
+  @override
+  final String createdBy;
+  @override
+  final DateTime updatedAt;
+  @override
+  final String updatedBy;
+  @override
+  final DateTime? deletedAt;
+  @override
+  final String? deletedBy;
+
+  /// Whether this program has been soft-deleted.
+  bool get isDeleted => deletedAt != null;
+
+  /// Whether this is a draft that hasn't been published yet.
+  bool get isDraft => status == ProgramStatus.draft;
+
+  /// Whether this program is currently published and active.
+  bool get isPublished => status == ProgramStatus.published;
+
+  /// Whether athletes can be enrolled in this program.
+  bool get isAssignable => type == ProgramType.assignable;
+
+  /// Validates all required fields and business rules.
+  void validate() {
+    if (id.isEmpty) {
+      throw ArgumentError('id cannot be empty');
+    }
+    if (name.isEmpty) {
+      throw ArgumentError('name cannot be empty');
+    }
+    if (ownerId.isEmpty) {
+      throw ArgumentError('ownerId cannot be empty');
+    }
+    if (currentVersion < 0) {
+      throw ArgumentError('currentVersion must be >= 0');
+    }
+    if (createdBy.isEmpty) {
+      throw ArgumentError('createdBy cannot be empty');
+    }
+    if (updatedBy.isEmpty) {
+      throw ArgumentError('updatedBy cannot be empty');
+    }
+
+    // Personal programs cannot be published for assignment
+    if (type == ProgramType.personal &&
+        status == ProgramStatus.published &&
+        currentVersion > 0) {
+      // Personal programs can be "published" for the athlete's own use,
+      // but the enrollment logic prevents assigning others.
+    }
+
+    Auditable.validateTimestamps(
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      deletedAt: deletedAt,
+    );
+  }
+}
+
+/// Immutable snapshot of a program's structure at a specific version.
+///
+/// Each publish creates a new version document containing the ordered
+/// workout list. Enrollments and workout instances reference the
+/// (programId, programVersion) pair to preserve history.
+class ProgramVersion {
+
+  ProgramVersion({
+    required this.versionNumber,
+    required this.publishedAt,
+    required this.workouts,
+    this.changeNote,
+  });
+  final int versionNumber;
+  final DateTime publishedAt;
+  final List<ProgramWorkoutRef> workouts;
+  final String? changeNote;
+
+  /// Validates version fields.
+  void validate() {
+    if (versionNumber < 1) {
+      throw ArgumentError('versionNumber must be >= 1');
+    }
+
+    for (final workout in workouts) {
+      workout.validate();
+    }
+
+    // Validate sort order uniqueness
+    final sorts = workouts.map((w) => w.sortOrder).toSet();
+    if (sorts.length != workouts.length) {
+      throw ArgumentError(
+        'Workout sortOrder values must be unique within a program version',
+      );
+    }
+  }
+}
+
+/// Reference to a workout template within a program version.
+class ProgramWorkoutRef {
+
+  ProgramWorkoutRef({
+    required this.workoutTemplateId,
+    required this.workoutTemplateVersion,
+    required this.sortOrder,
+  });
+  final String workoutTemplateId;
+  final int workoutTemplateVersion;
+  final int sortOrder;
+
+  /// Validates reference fields.
+  void validate() {
+    if (workoutTemplateId.isEmpty) {
+      throw ArgumentError('workoutTemplateId cannot be empty');
+    }
+    if (workoutTemplateVersion < 1) {
+      throw ArgumentError('workoutTemplateVersion must be >= 1');
+    }
+    if (sortOrder < 0) {
+      throw ArgumentError('sortOrder must be >= 0');
+    }
+  }
+}
