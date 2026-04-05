@@ -143,6 +143,9 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 - Store load model version alongside computed values so historical data stays stable if the formula changes.
 - Compute load points on save (server-side) and store as a materialized field for fast dashboard queries.
 - Provide athlete self-service export for workout + load data (JSON baseline; CSV optional for workout logs).
+- Load computation uses a pluggable strategy pattern (`LoadStrategy` interface). The default v1 formula is `DefaultLoadStrategy`; alternative formulas can be added without modifying existing code.
+- Program owners can override individual type weights per program (`typeWeightOverrides`) without creating a new strategy. Overrides are merged over the strategy defaults at computation time.
+- Program owners can manually override the computed load points for any workout instance (`loadPointsOverride`). The computed value is preserved so the override can be removed later.
 
 ## Decision Log
 
@@ -156,7 +159,9 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 - Program owners can copy their own programs; copied programs inherit structure and templates as a new editable draft.
 - Athletes may create personal programs for self-use only; athlete-created programs cannot be assigned to other users.
 - Athlete personal programs support the same builder actions as owner programs (copy, workout nesting, day assignment) but remain self-use and non-assignable.
-- Load points are computed client-side on completion using a versioned formula (TypeWeight × Effort × DurationModifier). Source fields are always stored, so values can be batch-recomputed if needed.
+- Load points are computed client-side on completion using a versioned, pluggable strategy (default: TypeWeight × Effort × DurationModifier). Source fields are always stored, so values can be batch-recomputed if needed.
+- Program owners may set per-program type weight overrides to customize load computation for their coaching style.
+- Program owners and athletes may manually override computed load points on any workout instance; the computed value is preserved alongside the override.
 - Support a direct athlete↔program-owner message thread at program scope (outside workout instances), reusing comment/thread primitives.
 - Keep workout-instance comments private to assigned athlete and program owner; allow edits.
 - Support comments at three scopes: program-level, workout-level, and exercise-level, using a single unified comments model with optional scope fields.

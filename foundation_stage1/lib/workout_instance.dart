@@ -17,18 +17,24 @@ class WorkoutInstance {
     required this.assignedBy,
     required this.assignedAt,
     required this.status,
-    required this.workoutType, required this.createdAt, required this.updatedAt, this.completedAt,
+    required this.workoutType,
+    required this.createdAt,
+    required this.updatedAt,
+    this.completedAt,
     this.missedAt,
     this.rpe,
     this.durationMinutes,
     this.loadPoints,
+    this.loadPointsOverride,
     this.loadModelVersion = 1,
+    this.loadStrategyId,
     this.recurrence,
     this.isRecurrenceRoot = false,
     this.recurrenceRootId,
     this.actuals = const [],
     this.athleteNotes,
   });
+
   final String id;
   final String programId;
   final String athleteId;
@@ -43,7 +49,22 @@ class WorkoutInstance {
   final int? rpe;
   final int? durationMinutes;
   final double? loadPoints;
+
+  /// Manual load override set by the program owner or athlete.
+  ///
+  /// When present, takes precedence over the computed [loadPoints]
+  /// in dashboard queries and aggregations. The computed value is
+  /// preserved so the override can be removed.
+  final double? loadPointsOverride;
+
   final int loadModelVersion;
+
+  /// Which load strategy produced the computed [loadPoints].
+  ///
+  /// Null means the default strategy was used. Stored for audit
+  /// so historical values remain interpretable.
+  final String? loadStrategyId;
+
   final WorkoutType workoutType;
   final Recurrence? recurrence;
   final bool isRecurrenceRoot;
@@ -61,6 +82,15 @@ class WorkoutInstance {
 
   /// Whether this instance is still scheduled (not yet completed or missed).
   bool get isScheduled => status == WorkoutInstanceStatus.scheduled;
+
+  /// The effective load points value for dashboards and aggregations.
+  ///
+  /// Returns [loadPointsOverride] if the owner has set a manual override,
+  /// otherwise returns the computed [loadPoints].
+  double? get effectiveLoadPoints => loadPointsOverride ?? loadPoints;
+
+  /// Whether the load points have been manually overridden.
+  bool get isLoadOverridden => loadPointsOverride != null;
 
   /// Validates all required fields and business rules.
   void validate() {

@@ -111,6 +111,8 @@ programs/{programId}
   type: string ("assignable" | "personal")
   status: string ("draft" | "published" | "archived")
   currentVersion: int
+  typeWeightOverrides: map?              # per-program load weight overrides (e.g. { "power": 3 })
+  loadStrategyId: string?               # alternative load strategy (null = default_v1)
   createdBy: string (userId)
   createdAt: timestamp
   updatedAt: timestamp
@@ -164,7 +166,9 @@ workoutInstances/{instanceId}
   rpe: int? (1–10, required on completion)
   durationMinutes: int? (required on completion)
   loadPoints: number? (computed client-side)
+  loadPointsOverride: number?            # manual override by owner or athlete (takes precedence)
   loadModelVersion: int (e.g. 1)
+  loadStrategyId: string?                # strategy used for computation (null = default_v1)
   workoutType: string (copied from template at creation)
   recurrence: {                              # null for one-off assignments
     pattern: string                          # "weekly" | "biweekly" | "custom"
@@ -604,6 +608,19 @@ The client writes `loadPoints` and `loadModelVersion` to the workout instance do
 - **Instant** — no round-trip latency.
 - **Low risk** — athletes have no incentive to tamper with personal training metrics. Source fields are always stored and values can be recomputed from them at any time.
 - **Version-tracked** — `loadModelVersion` identifies which formula produced each value, so formula changes don't corrupt historical data.
+
+### Extensibility 🔒
+
+The load computation system supports three levels of customization:
+
+**1. Pluggable strategies (`LoadStrategy` interface)**
+New calculation formulas are added by implementing the `LoadStrategy` interface. Each strategy declares a `version` and `name`. The default formula is `DefaultLoadStrategy` (`default_v1`). Programs reference a strategy by name via `loadStrategyId`; when null, the default is used. Historical instances record which strategy produced their value via `loadStrategyId` + `loadModelVersion`.
+
+**2. Per-program type weight overrides**
+Program owners can customize individual type weights without creating a new strategy. The `programs.typeWeightOverrides` map (e.g. `{ "power": 3 }`) is merged over the strategy's defaults at computation time. This allows a climbing coach to value "power" sessions differently than a strength coach without altering the global formula. Override values must be positive integers; validation is enforced at the model layer.
+
+**3. Manual load override**
+Program owners and athletes can manually override the computed load points for any workout instance by setting `workoutInstances.loadPointsOverride`. When present, this value takes precedence over the computed `loadPoints` in all dashboard queries and aggregations. The computed value is preserved alongside the override so it can be restored if the override is removed.
 
 ---
 

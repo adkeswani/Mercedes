@@ -182,6 +182,59 @@ void main() {
       expect(instance.actuals.length, 1);
       expect(() => instance.validate(), returnsNormally);
     });
+
+    test('effectiveLoadPoints returns computed when no override', () {
+      final instance = _makeScheduledInstance();
+      expect(instance.loadPoints, isNull);
+      expect(instance.loadPointsOverride, isNull);
+      expect(instance.effectiveLoadPoints, isNull);
+      expect(instance.isLoadOverridden, isFalse);
+    });
+
+    test('effectiveLoadPoints returns override when set', () {
+      final instance = WorkoutInstance(
+        id: 'wi1',
+        programId: 'prog1',
+        athleteId: 'athlete1',
+        workoutTemplateId: 'wt1',
+        workoutTemplateVersion: 1,
+        scheduledDate: '2026-04-15',
+        assignedBy: 'coach1',
+        assignedAt: DateTime(2026, 4, 1),
+        status: WorkoutInstanceStatus.completed,
+        completedAt: DateTime(2026, 4, 15),
+        rpe: 7,
+        durationMinutes: 55,
+        loadPoints: 12.0,
+        loadPointsOverride: 8.0,
+        workoutType: WorkoutType.pull,
+        createdAt: DateTime(2026, 4, 1),
+        updatedAt: DateTime(2026, 4, 15),
+      );
+      expect(instance.effectiveLoadPoints, 8.0);
+      expect(instance.isLoadOverridden, isTrue);
+      // Computed value is preserved
+      expect(instance.loadPoints, 12.0);
+    });
+
+    test('loadStrategyId is stored on instance', () {
+      final instance = WorkoutInstance(
+        id: 'wi1',
+        programId: 'prog1',
+        athleteId: 'athlete1',
+        workoutTemplateId: 'wt1',
+        workoutTemplateVersion: 1,
+        scheduledDate: '2026-04-15',
+        assignedBy: 'coach1',
+        assignedAt: DateTime(2026, 4, 1),
+        status: WorkoutInstanceStatus.scheduled,
+        workoutType: WorkoutType.pull,
+        loadStrategyId: 'climbing_focused_v1',
+        createdAt: DateTime(2026, 4, 1),
+        updatedAt: DateTime(2026, 4, 1),
+      );
+      expect(instance.loadStrategyId, 'climbing_focused_v1');
+    });
   });
 
   group('ExerciseActual', () {

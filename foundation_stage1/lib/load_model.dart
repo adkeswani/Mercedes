@@ -1,16 +1,51 @@
 import 'package:foundation_stage1/enums.dart';
 
-/// Load computation logic for workout intensity tracking.
+/// Contract for load computation strategies.
 ///
-/// Implements the v1 formula:
-/// LoadPoints = TypeWeight × EffortMap(RPE) × DurationModifier(minutes)
+/// Implement this to provide alternative load formulas. Each strategy
+/// has a version and name for audit. The default v1 formula is
+/// [DefaultLoadStrategy]. Programs can reference a strategy by name
+/// via [Program.loadStrategyId].
+abstract class LoadStrategy {
+  /// Version number for this strategy, stored on each workout instance.
+  int get version;
+
+  /// Unique identifier for this strategy (e.g. "default_v1").
+  String get name;
+
+  /// Computes load points for a completed workout.
+  ///
+  /// [typeWeightOverrides] merges with the strategy's default weights,
+  /// allowing per-program customization without a new strategy class.
+  double computeLoadPoints({
+    required WorkoutType workoutType,
+    required int rpe,
+    required int durationMinutes,
+    Map<WorkoutType, int>? typeWeightOverrides,
+  });
+
+  /// Categorizes a load points value into easy/medium/hard.
+  LoadBucket categorize(double loadPoints);
+}
+
+/// Default load computation strategy (v1).
+///
+/// Formula: LoadPoints = TypeWeight × EffortMap(RPE) × DurationModifier
 ///
 /// All values are computed client-side on workout completion and stored
 /// alongside `loadModelVersion` for future formula evolution.
-class LoadModel {
-  /// Current model version. Stored on every workout instance so
-  /// historical values remain interpretable if the formula changes.
-  static const int currentVersion = 1;
+class DefaultLoadStrategy implements LoadStrategy {
+  /// Singleton instance for convenience.
+  const DefaultLoadStrategy();
+
+  /// Strategy version constant for use in static contexts.
+  static const int strategyVersion = 1;
+
+  @override
+  int get version => strategyVersion;
+
+  @override
+  String get name => 'default_v1';
 
   /// Fixed type weights per workout type.
   ///
@@ -18,7 +53,7 @@ class LoadModel {
   ///           skill=2, cardio=2, mobility=1
   /// Strength: lower=4, legs=4, upper=3, full_body=3,
   ///           push=3, pull=3, core=2, conditioning=2
-  static const Map<WorkoutType, int> typeWeights = {
+  static const Map<WorkoutType, int> defaultTypeWeights = {
     // Climbing
     WorkoutType.limit: 5,
     WorkoutType.power: 4,
@@ -68,36 +103,108 @@ class LoadModel {
     }
   }
 
-  /// Computes load points for a completed workout.
-  ///
-  /// Returns the load points value:
-  /// LoadPoints = TypeWeight × Effort × DurationModifier
-  static double computeLoadPoints({
-    required WorkoutType workoutType,
-    required int rpe,
-    required int durationMinutes,
-  }) {
-    final typeWeight = typeWeights[workoutType];
-    if (typeWeight == null) {
+  /// Resolves the effective type weight, applying per-program overrides.
+  static int resolveTypeWeight(
+    WorkoutType workoutType,
+    Map<WorkoutType, int>? overrides,
+  ) {
+    if (overrides != null && overrides.containsKey(workoutType)) {
+      return overrides[workoutType]!;
+    }
+
+    final weight = defaultTypeWeights[workoutType];
+    if (weight == null) {
       throw ArgumentError('Unknown workout type: $workoutType');
     }
 
+    return weight;
+  }
+
+  @override
+  double computeLoadPoints({
+    required WorkoutType workoutType,
+    required int rpe,
+    required int durationMinutes,
+    Map<WorkoutType, int>? typeWeightOverrides,
+  }) {
+    final typeWeight = resolveTypeWeight(workoutType, typeWeightOverrides);
     final effort = effortFromRpe(rpe);
     final durMod = durationModifier(durationMinutes);
 
     return typeWeight * effort * durMod;
   }
 
-  /// Categorizes a load points value into a bucket.
-  ///
-  /// easy ≤ 6, medium 7–12, hard ≥ 13
-  static LoadBucket categorize(double loadPoints) {
+  @override
+  LoadBucket categorize(double loadPoints) {
     if (loadPoints <= 6) {
       return LoadBucket.easy;
     } else if (loadPoints <= 12) {
       return LoadBucket.medium;
     } else {
       return LoadBucket.hard;
+    }
+  }
+}
+
+/// Static convenience facade for load computation.
+///
+/// Delegates to a [LoadStrategy] instance. Uses [DefaultLoadStrategy]
+/// when no strategy is specified.
+///
+/// For per-program overrides, pass [typeWeightOverrides] from the
+/// program's configuration. For alternative formulas, pass a custom
+/// [LoadStrategy] via the [strategy] parameter.
+class LoadModel {
+  /// Current default model version.
+  static const int currentVersion = DefaultLoadStrategy.strategyVersion;
+
+  /// Default type weights (exposed for backward compatibility).
+  static const Map<WorkoutType, int> typeWeights =
+      DefaultLoadStrategy.defaultTypeWeights;
+
+  static const LoadStrategy _default = DefaultLoadStrategy();
+
+  /// Computes load points using the specified (or default) strategy.
+  ///
+  /// [typeWeightOverrides] allows per-program weight customization.
+  /// [strategy] allows plugging in an entirely different formula.
+  static double computeLoadPoints({
+    required WorkoutType workoutType,
+    required int rpe,
+    required int durationMinutes,
+    Map<WorkoutType, int>? typeWeightOverrides,
+    LoadStrategy? strategy,
+  }) {
+    final s = strategy ?? _default;
+
+    return s.computeLoadPoints(
+      workoutType: workoutType,
+      rpe: rpe,
+      durationMinutes: durationMinutes,
+      typeWeightOverrides: typeWeightOverrides,
+    );
+  }
+
+  /// Categorizes load points into easy/medium/hard.
+  static LoadBucket categorize(
+    double loadPoints, {
+    LoadStrategy? strategy,
+  }) {
+    final s = strategy ?? _default;
+
+    return s.categorize(loadPoints);
+  }
+
+  /// Validates per-program type weight overrides.
+  ///
+  /// Ensures all values are positive integers.
+  static void validateTypeWeightOverrides(Map<WorkoutType, int> overrides) {
+    for (final entry in overrides.entries) {
+      if (entry.value < 1) {
+        throw ArgumentError(
+          'Type weight for ${entry.key} must be >= 1, got ${entry.value}',
+        );
+      }
     }
   }
 }

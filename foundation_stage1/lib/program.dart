@@ -1,20 +1,36 @@
 import 'package:foundation_stage1/enums.dart';
 import 'package:foundation_stage1/foundation_models.dart';
+import 'package:foundation_stage1/load_model.dart';
 
 /// A workout program with versioned structure.
 ///
 /// Programs can be owner-assignable (enrollable athletes) or
 /// athlete-personal (self-use only, non-assignable). Each publish
 /// creates an immutable [ProgramVersion] snapshot.
+///
+/// Programs may customize load computation via [typeWeightOverrides]
+/// (per-type weight adjustments) and [loadStrategyId] (alternative
+/// calculation formula).
 class Program with Auditable {
 
   Program({
     required this.id,
     required this.name,
-    required this.ownerId, required this.type, required this.status, required this.currentVersion, required this.createdAt, required this.createdBy, required this.updatedAt, required this.updatedBy, this.description,
+    required this.ownerId,
+    required this.type,
+    required this.status,
+    required this.currentVersion,
+    required this.createdAt,
+    required this.createdBy,
+    required this.updatedAt,
+    required this.updatedBy,
+    this.description,
+    this.typeWeightOverrides,
+    this.loadStrategyId,
     this.deletedAt,
     this.deletedBy,
   });
+
   final String id;
   final String name;
   final String? description;
@@ -22,6 +38,20 @@ class Program with Auditable {
   final ProgramType type;
   final ProgramStatus status;
   final int currentVersion;
+
+  /// Per-program type weight overrides for load computation.
+  ///
+  /// When set, these weights are merged over the strategy's defaults.
+  /// For example, `{WorkoutType.power: 3}` would lower the power
+  /// weight from the default 4 to 3 for this program only.
+  final Map<WorkoutType, int>? typeWeightOverrides;
+
+  /// Optional load strategy identifier.
+  ///
+  /// When null, the [DefaultLoadStrategy] is used. Set to a strategy
+  /// name (e.g. "climbing_focused_v1") to use an alternative formula.
+  final String? loadStrategyId;
+
   @override
   final DateTime createdAt;
   @override
@@ -47,6 +77,10 @@ class Program with Auditable {
   /// Whether athletes can be enrolled in this program.
   bool get isAssignable => type == ProgramType.assignable;
 
+  /// Whether this program has custom load weights.
+  bool get hasCustomLoadWeights =>
+      typeWeightOverrides != null && typeWeightOverrides!.isNotEmpty;
+
   /// Validates all required fields and business rules.
   void validate() {
     if (id.isEmpty) {
@@ -68,12 +102,8 @@ class Program with Auditable {
       throw ArgumentError('updatedBy cannot be empty');
     }
 
-    // Personal programs cannot be published for assignment
-    if (type == ProgramType.personal &&
-        status == ProgramStatus.published &&
-        currentVersion > 0) {
-      // Personal programs can be "published" for the athlete's own use,
-      // but the enrollment logic prevents assigning others.
+    if (typeWeightOverrides != null) {
+      LoadModel.validateTypeWeightOverrides(typeWeightOverrides!);
     }
 
     Auditable.validateTimestamps(

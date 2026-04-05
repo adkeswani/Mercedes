@@ -121,6 +121,76 @@ void main() {
       );
       expect(() => program.validate(), throwsArgumentError);
     });
+
+    test('program with typeWeightOverrides', () {
+      final program = Program(
+        id: 'prog1',
+        name: 'Climbing Program',
+        ownerId: 'coach1',
+        type: ProgramType.assignable,
+        status: ProgramStatus.draft,
+        currentVersion: 0,
+        typeWeightOverrides: {WorkoutType.power: 3, WorkoutType.limit: 6},
+        createdAt: DateTime(2024, 1, 1),
+        createdBy: 'coach1',
+        updatedAt: DateTime(2024, 1, 1),
+        updatedBy: 'coach1',
+      );
+      expect(program.hasCustomLoadWeights, isTrue);
+      expect(program.typeWeightOverrides![WorkoutType.power], 3);
+      expect(() => program.validate(), returnsNormally);
+    });
+
+    test('hasCustomLoadWeights false when no overrides', () {
+      final program = Program(
+        id: 'prog1',
+        name: 'Default Program',
+        ownerId: 'coach1',
+        type: ProgramType.assignable,
+        status: ProgramStatus.draft,
+        currentVersion: 0,
+        createdAt: DateTime(2024, 1, 1),
+        createdBy: 'coach1',
+        updatedAt: DateTime(2024, 1, 1),
+        updatedBy: 'coach1',
+      );
+      expect(program.hasCustomLoadWeights, isFalse);
+    });
+
+    test('validate throws on invalid typeWeightOverrides', () {
+      final program = Program(
+        id: 'prog1',
+        name: 'Bad Weights',
+        ownerId: 'coach1',
+        type: ProgramType.assignable,
+        status: ProgramStatus.draft,
+        currentVersion: 0,
+        typeWeightOverrides: {WorkoutType.power: 0},
+        createdAt: DateTime(2024, 1, 1),
+        createdBy: 'coach1',
+        updatedAt: DateTime(2024, 1, 1),
+        updatedBy: 'coach1',
+      );
+      expect(() => program.validate(), throwsArgumentError);
+    });
+
+    test('program with loadStrategyId', () {
+      final program = Program(
+        id: 'prog1',
+        name: 'Custom Strategy',
+        ownerId: 'coach1',
+        type: ProgramType.assignable,
+        status: ProgramStatus.draft,
+        currentVersion: 0,
+        loadStrategyId: 'climbing_focused_v1',
+        createdAt: DateTime(2024, 1, 1),
+        createdBy: 'coach1',
+        updatedAt: DateTime(2024, 1, 1),
+        updatedBy: 'coach1',
+      );
+      expect(program.loadStrategyId, 'climbing_focused_v1');
+      expect(() => program.validate(), returnsNormally);
+    });
   });
 
   group('ProgramVersion', () {

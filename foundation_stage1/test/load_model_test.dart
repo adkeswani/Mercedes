@@ -3,77 +3,83 @@ import 'package:foundation_stage1/enums.dart';
 import 'package:foundation_stage1/load_model.dart';
 
 void main() {
-  group('LoadModel.effortFromRpe', () {
+  group('DefaultLoadStrategy.effortFromRpe', () {
     test('RPE 1 → effort 1', () {
-      expect(LoadModel.effortFromRpe(1), 1);
+      expect(DefaultLoadStrategy.effortFromRpe(1), 1);
     });
 
     test('RPE 2 → effort 1', () {
-      expect(LoadModel.effortFromRpe(2), 1);
+      expect(DefaultLoadStrategy.effortFromRpe(2), 1);
     });
 
     test('RPE 3 → effort 2', () {
-      expect(LoadModel.effortFromRpe(3), 2);
+      expect(DefaultLoadStrategy.effortFromRpe(3), 2);
     });
 
     test('RPE 4 → effort 2', () {
-      expect(LoadModel.effortFromRpe(4), 2);
+      expect(DefaultLoadStrategy.effortFromRpe(4), 2);
     });
 
     test('RPE 5 → effort 3', () {
-      expect(LoadModel.effortFromRpe(5), 3);
+      expect(DefaultLoadStrategy.effortFromRpe(5), 3);
     });
 
     test('RPE 6 → effort 3', () {
-      expect(LoadModel.effortFromRpe(6), 3);
+      expect(DefaultLoadStrategy.effortFromRpe(6), 3);
     });
 
     test('RPE 7 → effort 4', () {
-      expect(LoadModel.effortFromRpe(7), 4);
+      expect(DefaultLoadStrategy.effortFromRpe(7), 4);
     });
 
     test('RPE 8 → effort 4', () {
-      expect(LoadModel.effortFromRpe(8), 4);
+      expect(DefaultLoadStrategy.effortFromRpe(8), 4);
     });
 
     test('RPE 9 → effort 5', () {
-      expect(LoadModel.effortFromRpe(9), 5);
+      expect(DefaultLoadStrategy.effortFromRpe(9), 5);
     });
 
     test('RPE 10 → effort 5', () {
-      expect(LoadModel.effortFromRpe(10), 5);
+      expect(DefaultLoadStrategy.effortFromRpe(10), 5);
     });
 
     test('throws on RPE 0', () {
-      expect(() => LoadModel.effortFromRpe(0), throwsArgumentError);
+      expect(
+        () => DefaultLoadStrategy.effortFromRpe(0),
+        throwsArgumentError,
+      );
     });
 
     test('throws on RPE 11', () {
-      expect(() => LoadModel.effortFromRpe(11), throwsArgumentError);
+      expect(
+        () => DefaultLoadStrategy.effortFromRpe(11),
+        throwsArgumentError,
+      );
     });
   });
 
-  group('LoadModel.durationModifier', () {
+  group('DefaultLoadStrategy.durationModifier', () {
     test('< 30 min → 0.75', () {
-      expect(LoadModel.durationModifier(0), 0.75);
-      expect(LoadModel.durationModifier(15), 0.75);
-      expect(LoadModel.durationModifier(29), 0.75);
+      expect(DefaultLoadStrategy.durationModifier(0), 0.75);
+      expect(DefaultLoadStrategy.durationModifier(15), 0.75);
+      expect(DefaultLoadStrategy.durationModifier(29), 0.75);
     });
 
     test('30-75 min → 1.0', () {
-      expect(LoadModel.durationModifier(30), 1.0);
-      expect(LoadModel.durationModifier(50), 1.0);
-      expect(LoadModel.durationModifier(75), 1.0);
+      expect(DefaultLoadStrategy.durationModifier(30), 1.0);
+      expect(DefaultLoadStrategy.durationModifier(50), 1.0);
+      expect(DefaultLoadStrategy.durationModifier(75), 1.0);
     });
 
     test('> 75 min → 1.25', () {
-      expect(LoadModel.durationModifier(76), 1.25);
-      expect(LoadModel.durationModifier(120), 1.25);
+      expect(DefaultLoadStrategy.durationModifier(76), 1.25);
+      expect(DefaultLoadStrategy.durationModifier(120), 1.25);
     });
 
     test('throws on negative duration', () {
       expect(
-        () => LoadModel.durationModifier(-1),
+        () => DefaultLoadStrategy.durationModifier(-1),
         throwsArgumentError,
       );
     });
@@ -192,4 +198,163 @@ void main() {
       expect(LoadModel.currentVersion, 1);
     });
   });
+
+  group('Per-program type weight overrides', () {
+    test('override changes computed load', () {
+      // Default power weight = 4
+      final defaultResult = LoadModel.computeLoadPoints(
+        workoutType: WorkoutType.power,
+        rpe: 5,
+        durationMinutes: 60,
+      );
+      // 4 × 3 × 1.0 = 12.0
+      expect(defaultResult, 12.0);
+
+      // Override power weight to 2
+      final overrideResult = LoadModel.computeLoadPoints(
+        workoutType: WorkoutType.power,
+        rpe: 5,
+        durationMinutes: 60,
+        typeWeightOverrides: {WorkoutType.power: 2},
+      );
+      // 2 × 3 × 1.0 = 6.0
+      expect(overrideResult, 6.0);
+    });
+
+    test('override only affects specified types', () {
+      // Override power but compute for pull (should use default pull = 3)
+      final result = LoadModel.computeLoadPoints(
+        workoutType: WorkoutType.pull,
+        rpe: 7,
+        durationMinutes: 45,
+        typeWeightOverrides: {WorkoutType.power: 2},
+      );
+      // 3 × 4 × 1.0 = 12.0 (pull default unchanged)
+      expect(result, 12.0);
+    });
+
+    test('validateTypeWeightOverrides accepts valid overrides', () {
+      expect(
+        () => LoadModel.validateTypeWeightOverrides({
+          WorkoutType.power: 3,
+          WorkoutType.limit: 6,
+        }),
+        returnsNormally,
+      );
+    });
+
+    test('validateTypeWeightOverrides rejects zero weight', () {
+      expect(
+        () => LoadModel.validateTypeWeightOverrides({
+          WorkoutType.power: 0,
+        }),
+        throwsArgumentError,
+      );
+    });
+
+    test('validateTypeWeightOverrides rejects negative weight', () {
+      expect(
+        () => LoadModel.validateTypeWeightOverrides({
+          WorkoutType.power: -1,
+        }),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('Custom LoadStrategy', () {
+    test('custom strategy is used when provided', () {
+      final custom = _DoubleWeightStrategy();
+
+      final result = LoadModel.computeLoadPoints(
+        workoutType: WorkoutType.pull,
+        rpe: 7,
+        durationMinutes: 45,
+        strategy: custom,
+      );
+      // Default pull = 3, doubled = 6; 6 × 4 × 1.0 = 24.0
+      expect(result, 24.0);
+    });
+
+    test('custom strategy categorize is used when provided', () {
+      final custom = _DoubleWeightStrategy();
+
+      // Custom: everything ≤ 10 is easy
+      expect(
+        LoadModel.categorize(8.0, strategy: custom),
+        LoadBucket.easy,
+      );
+      // Default would say medium for 8.0
+      expect(LoadModel.categorize(8.0), LoadBucket.medium);
+    });
+
+    test('DefaultLoadStrategy has correct name and version', () {
+      const strategy = DefaultLoadStrategy();
+      expect(strategy.name, 'default_v1');
+      expect(strategy.version, 1);
+    });
+  });
+
+  group('DefaultLoadStrategy.resolveTypeWeight', () {
+    test('returns default when no overrides', () {
+      final weight = DefaultLoadStrategy.resolveTypeWeight(
+        WorkoutType.power,
+        null,
+      );
+      expect(weight, 4);
+    });
+
+    test('returns override when present', () {
+      final weight = DefaultLoadStrategy.resolveTypeWeight(
+        WorkoutType.power,
+        {WorkoutType.power: 2},
+      );
+      expect(weight, 2);
+    });
+
+    test('returns default for types not in override map', () {
+      final weight = DefaultLoadStrategy.resolveTypeWeight(
+        WorkoutType.pull,
+        {WorkoutType.power: 2},
+      );
+      expect(weight, 3);
+    });
+  });
+}
+
+/// Test strategy that doubles default type weights.
+class _DoubleWeightStrategy implements LoadStrategy {
+  @override
+  int get version => 99;
+
+  @override
+  String get name => 'double_test';
+
+  @override
+  double computeLoadPoints({
+    required WorkoutType workoutType,
+    required int rpe,
+    required int durationMinutes,
+    Map<WorkoutType, int>? typeWeightOverrides,
+  }) {
+    final baseWeight =
+        DefaultLoadStrategy.defaultTypeWeights[workoutType] ?? 1;
+    final doubled = baseWeight * 2;
+    final effort = DefaultLoadStrategy.effortFromRpe(rpe);
+    final durMod = DefaultLoadStrategy.durationModifier(durationMinutes);
+
+    return doubled * effort * durMod;
+  }
+
+  @override
+  LoadBucket categorize(double loadPoints) {
+    // More lenient thresholds for testing
+    if (loadPoints <= 10) {
+      return LoadBucket.easy;
+    } else if (loadPoints <= 20) {
+      return LoadBucket.medium;
+    } else {
+      return LoadBucket.hard;
+    }
+  }
 }
