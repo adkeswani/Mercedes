@@ -1,0 +1,15 @@
+name: foundation_stage1
+version: 0.1.0
+publish_to: 'none'
+description: Foundation models and tests for Stage 1 implementation.
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:

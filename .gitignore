@@ -1,3 +1,10 @@
 logs/
 .DS_Store
 Thumbs.db
+
+# Flutter / Dart generated files
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+build/
