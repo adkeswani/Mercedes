@@ -351,6 +351,47 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 	2. System sends reply notifications and enforces per-program visibility.
 	3. Athlete can include forum content in community data export.
 
+
+## Athlete Goals & To-Do List (MVP Phase)
+
+### Overview
+
+Athletes can create, view, and manage a personal list of goals or "to-dos" within the app. Each goal can have an optional due date. Goals are displayed in a simple checklist UI, allowing athletes to check off completed items. Goals with dates appear on the same calendar as scheduled workouts, providing a unified view of training and personal objectives.
+
+### Key Features
+
+- **Create/Edit/Delete Goals:** Athletes can add new goals, edit existing ones, and remove goals from their list.
+- **Completion Tracking:** Goals can be checked off when completed. Completed goals remain visible (with a checked state) until deleted.
+- **Due Dates & Calendar Integration:** Goals can have an optional due date. Dated goals are shown on the athlete's calendar alongside workouts, with distinct visual markers.
+- **Simple UI:** The to-do/goals screen is accessible from the main navigation or dashboard, with a clear add/check-off interaction.
+- **Personal Scope:** Goals are private to the athlete and not visible to program owners or other users.
+
+### Data Model (Draft)
+
+```
+goals/{goalId}
+	athleteId: string (userId)
+	title: string
+	notes: string?
+	dueDate: string? (ISO 8601 date)
+	completed: bool (default false)
+	completedAt: timestamp?
+	createdAt: timestamp
+	updatedAt: timestamp
+```
+
+### Calendar Integration
+
+- The calendar view aggregates both scheduled workouts and goals with due dates.
+- Tapping a date shows both workouts and any goals due that day.
+- Overdue goals are visually indicated until checked off or deleted.
+
+### Placement
+
+This feature is included in the MVP phase, as it supports athlete engagement and self-management. It is implemented as a standalone screen and calendar integration, with no impact on program owner workflows or permissions.
+
+---
+
 ## Expansion Concepts (Post-MVP)
 
 - Program Marketplace: discovery-first launch (browse free/paid programs), with commerce flows deferred.

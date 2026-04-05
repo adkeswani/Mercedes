@@ -953,7 +953,58 @@ Based on the roadmap and these locked constraints, the build order is:
 6. **Workout completion & load** — log actuals/RPE/duration, client-side load computation, dashboard widgets.
 7. **Comments** — unified comments (program/workout/exercise scopes), direct message threads, media link preview.
 
-Each step should ship with its Firestore Security Rules and at least one integration test against the Firebase Emulator.
+
+8. **Athlete goals & to-do list** — athletes can create, view, and manage a personal list of goals or "to-dos". Each goal can have an optional due date. Goals are displayed in a checklist UI, can be checked off, and are shown on the same calendar as workouts. Goals are private to the athlete by default, but visibility to the program owner can be enabled per goal. Goals can optionally be associated with a specific program the athlete is enrolled in.
+
+---
+
+
+## Athlete Goals & To-Do List (MVP Phase)
+
+### Overview
+
+Athletes can create, view, and manage a personal list of goals or "to-dos" within the app. Each goal can have an optional due date. Goals are displayed in a simple checklist UI, allowing athletes to check off completed items. Goals with dates appear on the same calendar as scheduled workouts, providing a unified view of training and personal objectives.
+
+**Visibility and Program Association:**
+- By default, goals are private to the athlete. However, the athlete can optionally make a goal visible to the program owner of a program they are enrolled in (for accountability, feedback, or coaching).
+- Each goal can optionally be associated with a specific program the athlete is part of. This allows both personal and program-specific goals to be tracked and surfaced in the appropriate context.
+
+
+### Key Features
+
+- **Create/Edit/Delete Goals:** Athletes can add new goals, edit existing ones, and remove goals from their list.
+- **Completion Tracking:** Goals can be checked off when completed. Completed goals remain visible (with a checked state) until deleted.
+- **Due Dates & Calendar Integration:** Goals can have an optional due date. Dated goals are shown on the athlete's calendar alongside workouts, with distinct visual markers.
+- **Simple UI:** The to-do/goals screen is accessible from the main navigation or dashboard, with a clear add/check-off interaction.
+- **Visibility Control:** Each goal has a setting to make it visible to the program owner of an associated program, or keep it private to the athlete.
+- **Program Association:** Each goal can optionally be linked to a specific program the athlete is enrolled in, or left unassociated for general/personal goals.
+
+
+### Data Model (Draft)
+
+```
+goals/{goalId}
+  athleteId: string (userId)
+  title: string
+  notes: string?
+  dueDate: string? (ISO 8601 date)
+  completed: bool (default false)
+  completedAt: timestamp?
+  programId: string?           # optional, links to a program the athlete is enrolled in
+  visibleToOwner: bool (default false)  # if true, visible to the program owner of associated program
+  createdAt: timestamp
+  updatedAt: timestamp
+```
+
+
+### Calendar Integration
+
+- The calendar view aggregates both scheduled workouts and goals with due dates.
+- Tapping a date shows both workouts and any goals due that day (including program-linked and personal goals).
+- Overdue goals are visually indicated until checked off or deleted.
+- Program owners can see due dates for goals that are both associated with their program and marked as visible by the athlete.
+
+---
 
 ---
 
