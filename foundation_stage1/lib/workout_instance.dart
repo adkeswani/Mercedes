@@ -26,6 +26,8 @@ class WorkoutInstance {
     this.durationMinutes,
     this.loadPoints,
     this.loadPointsOverride,
+    this.loadPointsOverriddenBy,
+    this.loadPointsOverriddenAt,
     this.loadModelVersion = 1,
     this.loadStrategyId,
     this.recurrence,
@@ -56,6 +58,12 @@ class WorkoutInstance {
   /// in dashboard queries and aggregations. The computed value is
   /// preserved so the override can be removed.
   final double? loadPointsOverride;
+
+  /// Who set the load override (userId).
+  final String? loadPointsOverriddenBy;
+
+  /// When the load override was set.
+  final DateTime? loadPointsOverriddenAt;
 
   final int loadModelVersion;
 
@@ -151,6 +159,21 @@ class WorkoutInstance {
 
     if (loadModelVersion < 1) {
       throw ArgumentError('loadModelVersion must be >= 1');
+    }
+
+    // Override audit: if override is set, who and when are required
+    if (loadPointsOverride != null) {
+      if (loadPointsOverriddenBy == null ||
+          loadPointsOverriddenBy!.isEmpty) {
+        throw ArgumentError(
+          'loadPointsOverriddenBy is required when override is set',
+        );
+      }
+      if (loadPointsOverriddenAt == null) {
+        throw ArgumentError(
+          'loadPointsOverriddenAt is required when override is set',
+        );
+      }
     }
 
     recurrence?.validate();

@@ -207,14 +207,57 @@ void main() {
         durationMinutes: 55,
         loadPoints: 12.0,
         loadPointsOverride: 8.0,
+        loadPointsOverriddenBy: 'coach1',
+        loadPointsOverriddenAt: DateTime(2026, 4, 16),
         workoutType: WorkoutType.pull,
         createdAt: DateTime(2026, 4, 1),
         updatedAt: DateTime(2026, 4, 15),
       );
       expect(instance.effectiveLoadPoints, 8.0);
       expect(instance.isLoadOverridden, isTrue);
+      expect(instance.loadPointsOverriddenBy, 'coach1');
       // Computed value is preserved
       expect(instance.loadPoints, 12.0);
+    });
+
+    test('validate throws when override set without overriddenBy', () {
+      final instance = WorkoutInstance(
+        id: 'wi1',
+        programId: 'prog1',
+        athleteId: 'athlete1',
+        workoutTemplateId: 'wt1',
+        workoutTemplateVersion: 1,
+        scheduledDate: '2026-04-15',
+        assignedBy: 'coach1',
+        assignedAt: DateTime(2026, 4, 1),
+        status: WorkoutInstanceStatus.scheduled,
+        loadPointsOverride: 8.0,
+        loadPointsOverriddenAt: DateTime(2026, 4, 16),
+        workoutType: WorkoutType.pull,
+        createdAt: DateTime(2026, 4, 1),
+        updatedAt: DateTime(2026, 4, 1),
+      );
+      expect(() => instance.validate(), throwsArgumentError);
+    });
+
+    test('validate throws when override set without overriddenAt', () {
+      final instance = WorkoutInstance(
+        id: 'wi1',
+        programId: 'prog1',
+        athleteId: 'athlete1',
+        workoutTemplateId: 'wt1',
+        workoutTemplateVersion: 1,
+        scheduledDate: '2026-04-15',
+        assignedBy: 'coach1',
+        assignedAt: DateTime(2026, 4, 1),
+        status: WorkoutInstanceStatus.scheduled,
+        loadPointsOverride: 8.0,
+        loadPointsOverriddenBy: 'coach1',
+        workoutType: WorkoutType.pull,
+        createdAt: DateTime(2026, 4, 1),
+        updatedAt: DateTime(2026, 4, 1),
+      );
+      expect(() => instance.validate(), throwsArgumentError);
     });
 
     test('loadStrategyId is stored on instance', () {

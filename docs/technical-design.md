@@ -167,6 +167,8 @@ workoutInstances/{instanceId}
   durationMinutes: int? (required on completion)
   loadPoints: number? (computed client-side)
   loadPointsOverride: number?            # manual override by owner or athlete (takes precedence)
+  loadPointsOverriddenBy: string?        # userId of who set the override
+  loadPointsOverriddenAt: timestamp?     # when the override was set
   loadModelVersion: int (e.g. 1)
   loadStrategyId: string?                # strategy used for computation (null = default_v1)
   workoutType: string (copied from template at creation)
