@@ -14,6 +14,15 @@ This repository uses and/or depends on third-party tools and packages with their
 - VS Code (`Microsoft.VisualStudioCode`) — Microsoft Software License Terms
 - GitHub CLI (`GitHub.cli`) — MIT
 
+### Flutter packages (stage2)
+
+- `firebase_core` — BSD-3-Clause
+- `firebase_auth` — BSD-3-Clause
+- `google_sign_in` — BSD-3-Clause
+- `cloud_firestore` — BSD-3-Clause
+- `flutter_riverpod` — MIT
+- `go_router` — BSD-3-Clause
+
 ## Source of truth
 
 License terms are governed by each upstream project's official repository or installer terms.
