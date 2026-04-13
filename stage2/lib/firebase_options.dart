@@ -59,4 +59,5 @@ class DefaultFirebaseOptions {
     projectId: 'mercedes-app-11ce2',
     storageBucket: 'mercedes-app-11ce2.firebasestorage.app',
   );
+
 }
