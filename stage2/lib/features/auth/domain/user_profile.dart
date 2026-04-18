@@ -10,16 +10,22 @@ class UserProfile with Auditable {
   UserProfile({
     required this.uid,
     required this.displayName,
-    required this.username,
     required this.email,
-    required this.createdAt, required this.createdBy, required this.updatedAt, required this.updatedBy, this.photoUrl,
+    required this.createdAt,
+    required this.createdBy,
+    required this.updatedAt,
+    required this.updatedBy,
+    this.username,
+    this.photoUrl,
     this.discoverable = false,
     this.deletedAt,
     this.deletedBy,
   });
   final String uid;
   final String displayName;
-  final String username;
+
+  /// Null until the user completes onboarding and claims a username.
+  final String? username;
   final String email;
   final String? photoUrl;
   final bool discoverable;
@@ -36,6 +42,9 @@ class UserProfile with Auditable {
   @override
   final String? deletedBy;
 
+  /// Whether this user has completed onboarding (claimed a username).
+  bool get hasUsername => username != null && username!.isNotEmpty;
+
   /// Whether this profile has been soft-deleted.
   bool get isDeleted => deletedAt != null;
 
@@ -47,8 +56,8 @@ class UserProfile with Auditable {
     if (displayName.isEmpty) {
       throw ArgumentError('displayName cannot be empty');
     }
-    if (username.isEmpty) {
-      throw ArgumentError('username cannot be empty');
+    if (username != null && username!.isEmpty) {
+      throw ArgumentError('username cannot be empty when set');
     }
     if (email.isEmpty) {
       throw ArgumentError('email cannot be empty');

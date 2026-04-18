@@ -64,9 +64,20 @@ void main() {
       expect(() => profile.validate(), throwsArgumentError);
     });
 
-    test('validate throws on empty username', () {
+    test('validate throws on empty username when set', () {
       final profile = _makeProfile(username: '');
       expect(() => profile.validate(), throwsArgumentError);
+    });
+
+    test('validate succeeds with null username (pre-onboarding)', () {
+      final profile = _makeProfile(username: null);
+      expect(() => profile.validate(), returnsNormally);
+      expect(profile.hasUsername, isFalse);
+    });
+
+    test('hasUsername is true when username is set', () {
+      final profile = _makeProfile(username: 'johndoe');
+      expect(profile.hasUsername, isTrue);
     });
 
     test('validate throws on empty email', () {
@@ -131,7 +142,7 @@ void main() {
 UserProfile _makeProfile({
   String uid = 'user1',
   String displayName = 'John Doe',
-  String username = 'johndoe',
+  String? username = 'johndoe',
   String email = 'john@example.com',
   String createdBy = 'system',
 }) {

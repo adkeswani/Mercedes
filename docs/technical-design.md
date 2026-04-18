@@ -35,12 +35,16 @@ All collections live at the Firestore root unless noted. Sub-collections are ind
 users/{userId}
   uid: string (Firebase Auth UID)
   displayName: string
-  username: string (unique — enforce via helper collection)
+  username: string? (null until onboarding; unique — enforce via helper collection)
   email: string
   photoUrl: string?
   discoverable: bool (opt-in for username lookup)
   createdAt: timestamp
+  createdBy: string (audit — "system" for Cloud Function creation)
   updatedAt: timestamp
+  updatedBy: string (audit — uid of last modifier)
+  deletedAt: timestamp? (soft-delete)
+  deletedBy: string? (soft-delete)
 
 usernames/{username}           # uniqueness helper
   uid: string

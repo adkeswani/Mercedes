@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Temporary: allow all reads/writes during development.
+    // TODO: Replace with per-collection rules before production.
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

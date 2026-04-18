@@ -22,6 +22,14 @@ This repository uses and/or depends on third-party tools and packages with their
 - `cloud_firestore` — BSD-3-Clause
 - `flutter_riverpod` — MIT
 - `go_router` — BSD-3-Clause
+- `flutter_lints` — BSD-3-Clause
+
+### Node.js packages (functions/)
+
+- `firebase-admin` — Apache-2.0
+- `firebase-functions` — MIT
+- `firebase-functions-test` (dev) — MIT
+- `typescript` (dev) — Apache-2.0
 
 ## Source of truth
 
