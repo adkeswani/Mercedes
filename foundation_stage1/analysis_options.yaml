@@ -19,7 +19,7 @@ linter:
     empty_constructor_bodies: true
     empty_statements: true
     file_names: true
-    lines_longer_than_100_chars: true
+    lines_longer_than_80_chars: false
     prefer_const_constructors: true
     prefer_const_literals_to_create_immutables: true
     prefer_final_fields: true
