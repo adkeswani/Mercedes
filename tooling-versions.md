@@ -18,7 +18,7 @@ Mode: install
 - adb: 35.0.0
 - node: 24.14.0
 - npm: 11.9.0
-- firebase: 15.8.0
+- firebase: 15.15.0
 - flutterfire: 1.3.1
 - git: 2.53.0.
 

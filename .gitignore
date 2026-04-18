@@ -8,3 +8,15 @@ Thumbs.db
 .flutter-plugins-dependencies
 .metadata
 build/
+
+# Environment and secrets
+.env
+.env.*
+*.jks
+*.keystore
+key.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/

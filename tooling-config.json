@@ -24,7 +24,7 @@
     "npmGlobals":  [
                        {
                            "name":  "firebase-tools",
-                           "version":  "15.8.0"
+                           "version":  "15.15.0"
                        }
                    ],
     "dartGlobals":  [
