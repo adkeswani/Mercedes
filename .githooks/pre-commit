@@ -1,10 +1,55 @@
 #!/usr/bin/env sh
 
+# ── Block direct commits to main ──
 branch_name="$(git symbolic-ref --short HEAD 2>/dev/null)"
 
 if [ "$branch_name" = "main" ]; then
   echo "Direct commits to 'main' are blocked in this repository."
   echo "Create a topic branch, commit there, then merge back to main with --ff-only."
+  exit 1
+fi
+
+# ── Scan for secrets in staged files ──
+ERRORS=0
+
+# File name patterns that should never be committed
+for pattern in \
+  '\.env$' '\.env\.local$' '\.env\.production$' \
+  'service-account.*\.json$' 'serviceAccount.*\.json$' \
+  '\.pem$' '\.p12$' '\.pfx$' '\.key$' \
+  'id_rsa' 'id_ed25519' 'credentials\.json$'; do
+
+  FILES=$(git diff --cached --name-only --diff-filter=ACR | grep -iE "$pattern" || true)
+  if [ -n "$FILES" ]; then
+    echo "ERROR: Potentially sensitive file staged for commit:"
+    echo "$FILES" | sed 's/^/  /'
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+
+# Content patterns that suggest leaked secrets
+for pattern in \
+  'PRIVATE KEY' \
+  'BEGIN RSA PRIVATE KEY' \
+  'BEGIN EC PRIVATE KEY' \
+  'BEGIN OPENSSH PRIVATE KEY' \
+  'AWS_SECRET_ACCESS_KEY' \
+  'AKIA[0-9A-Z]{16}' \
+  'service_account.*private_key'; do
+
+  MATCHES=$(git diff --cached -U0 --diff-filter=ACM | grep -inE "^\+.*$pattern" || true)
+  if [ -n "$MATCHES" ]; then
+    echo "ERROR: Potential secret found in staged changes:"
+    echo "  Pattern: $pattern"
+    echo "$MATCHES" | head -3 | sed 's/^/  /'
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+
+if [ $ERRORS -gt 0 ]; then
+  echo ""
+  echo "Commit blocked: $ERRORS potential secret(s) detected."
+  echo "If intentional (e.g. public Firebase config), bypass with: git commit --no-verify"
   exit 1
 fi
 
