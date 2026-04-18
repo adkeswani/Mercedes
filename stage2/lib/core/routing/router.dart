@@ -6,6 +6,8 @@ import 'package:stage2/features/auth/presentation/app_entry_providers.dart';
 import 'package:stage2/features/auth/presentation/home_screen.dart';
 import 'package:stage2/features/auth/presentation/login_screen.dart';
 import 'package:stage2/features/auth/presentation/onboarding_screen.dart';
+import 'package:stage2/features/exercises/presentation/exercise_form_screen.dart';
+import 'package:stage2/features/exercises/presentation/exercise_list_screen.dart';
 
 /// App-level GoRouter configuration with auth and onboarding redirects.
 ///
@@ -51,6 +53,20 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/onboarding',
         builder: (context, state) => const OnboardingScreen(),
+      ),
+      GoRoute(
+        path: '/exercises',
+        builder: (context, state) => const ExerciseListScreen(),
+      ),
+      GoRoute(
+        path: '/exercises/new',
+        builder: (context, state) => const ExerciseFormScreen(),
+      ),
+      GoRoute(
+        path: '/exercises/:id',
+        builder: (context, state) => ExerciseFormScreen(
+          exerciseId: state.pathParameters['id'],
+        ),
       ),
       GoRoute(
         path: '/loading',

@@ -63,6 +63,9 @@ exerciseTemplates/{exerciseId}
   createdBy: string (userId)
   createdAt: timestamp
   updatedAt: timestamp
+  updatedBy: string (userId)
+  deletedAt: timestamp?
+  deletedBy: string? (userId)
 ```
 
 ### 2.3 Workout Templates (versioned)

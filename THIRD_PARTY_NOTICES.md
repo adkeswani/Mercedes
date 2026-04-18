@@ -23,6 +23,7 @@ This repository uses and/or depends on third-party tools and packages with their
 - `flutter_riverpod` — MIT
 - `go_router` — BSD-3-Clause
 - `flutter_lints` — BSD-3-Clause
+- `fake_cloud_firestore` (dev) — BSD-3-Clause
 
 ### Node.js packages (functions/)
 
