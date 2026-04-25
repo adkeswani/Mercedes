@@ -52,7 +52,21 @@ void main() {
       expect(() => template.validate(), throwsArgumentError);
     });
 
-    test('validate throws on currentVersion < 1', () {
+    test('validate throws on currentVersion < 0', () {
+      final template = WorkoutTemplate(
+        id: 'wt1',
+        name: 'Upper Pull Day',
+        workoutType: WorkoutType.pull,
+        currentVersion: -1,
+        createdAt: DateTime(2024, 1, 1),
+        createdBy: 'coach1',
+        updatedAt: DateTime(2024, 1, 2),
+        updatedBy: 'coach1',
+      );
+      expect(() => template.validate(), throwsArgumentError);
+    });
+
+    test('validate succeeds for draft template with currentVersion 0', () {
       final template = WorkoutTemplate(
         id: 'wt1',
         name: 'Upper Pull Day',
@@ -63,7 +77,8 @@ void main() {
         updatedAt: DateTime(2024, 1, 2),
         updatedBy: 'coach1',
       );
-      expect(() => template.validate(), throwsArgumentError);
+      expect(() => template.validate(), returnsNormally);
+      expect(template.hasPublishedVersion, isFalse);
     });
 
     test('validate throws on bad timestamp order', () {

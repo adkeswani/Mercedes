@@ -5,6 +5,8 @@ import 'package:stage2/features/auth/domain/foundation_models.dart';
 ///
 /// The template holds shared metadata. Each publish creates an immutable
 /// [WorkoutTemplateVersion] sub-document. Old versions are never mutated.
+///
+/// A newly created template has [currentVersion] = 0 (no published versions).
 class WorkoutTemplate with Auditable {
 
   WorkoutTemplate({
@@ -19,6 +21,7 @@ class WorkoutTemplate with Auditable {
     this.deletedAt,
     this.deletedBy,
   });
+
   final String id;
   final String name;
   final WorkoutType workoutType;
@@ -39,6 +42,36 @@ class WorkoutTemplate with Auditable {
   /// Whether this template has been soft-deleted.
   bool get isDeleted => deletedAt != null;
 
+  /// Whether at least one version has been published.
+  bool get hasPublishedVersion => currentVersion >= 1;
+
+  /// Creates a copy with the given fields replaced.
+  WorkoutTemplate copyWith({
+    String? id,
+    String? name,
+    WorkoutType? workoutType,
+    int? currentVersion,
+    DateTime? createdAt,
+    String? createdBy,
+    DateTime? updatedAt,
+    String? updatedBy,
+    DateTime? deletedAt,
+    String? deletedBy,
+  }) {
+    return WorkoutTemplate(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      workoutType: workoutType ?? this.workoutType,
+      currentVersion: currentVersion ?? this.currentVersion,
+      createdAt: createdAt ?? this.createdAt,
+      createdBy: createdBy ?? this.createdBy,
+      updatedAt: updatedAt ?? this.updatedAt,
+      updatedBy: updatedBy ?? this.updatedBy,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedBy: deletedBy ?? this.deletedBy,
+    );
+  }
+
   /// Validates all required fields and audit timestamp ordering.
   void validate() {
     if (id.isEmpty) {
@@ -47,8 +80,8 @@ class WorkoutTemplate with Auditable {
     if (name.isEmpty) {
       throw ArgumentError('name cannot be empty');
     }
-    if (currentVersion < 1) {
-      throw ArgumentError('currentVersion must be >= 1');
+    if (currentVersion < 0) {
+      throw ArgumentError('currentVersion must be >= 0');
     }
     if (createdBy.isEmpty) {
       throw ArgumentError('createdBy cannot be empty');
@@ -77,10 +110,26 @@ class WorkoutTemplateVersion {
     required this.exercises,
     this.childWorkouts = const [],
   });
+
   final int versionNumber;
   final DateTime publishedAt;
   final List<ExercisePrescription> exercises;
   final List<ChildWorkoutRef> childWorkouts;
+
+  /// Creates a copy with the given fields replaced.
+  WorkoutTemplateVersion copyWith({
+    int? versionNumber,
+    DateTime? publishedAt,
+    List<ExercisePrescription>? exercises,
+    List<ChildWorkoutRef>? childWorkouts,
+  }) {
+    return WorkoutTemplateVersion(
+      versionNumber: versionNumber ?? this.versionNumber,
+      publishedAt: publishedAt ?? this.publishedAt,
+      exercises: exercises ?? this.exercises,
+      childWorkouts: childWorkouts ?? this.childWorkouts,
+    );
+  }
 
   /// Validates version fields.
   void validate() {
@@ -118,12 +167,17 @@ class WorkoutTemplateVersion {
 ///
 /// Holds the exercise reference, display order, and prescription details
 /// (sets, reps, duration, weight, rest, notes).
+///
+/// [exerciseName] is denormalized at publish time for historical stability —
+/// even if the exercise template is later renamed or deleted, published
+/// versions retain the name as it was when published.
 class ExercisePrescription {
 
   ExercisePrescription({
     required this.exerciseId,
     required this.sortOrder,
     required this.mode,
+    this.exerciseName,
     this.sets,
     this.reps,
     this.durationSeconds,
@@ -131,15 +185,44 @@ class ExercisePrescription {
     this.restSeconds,
     this.notes,
   });
+
   final String exerciseId;
   final int sortOrder;
   final ExerciseMode mode;
+  final String? exerciseName;
   final int? sets;
   final String? reps;
   final int? durationSeconds;
   final String? weight;
   final int? restSeconds;
   final String? notes;
+
+  /// Creates a copy with the given fields replaced.
+  ExercisePrescription copyWith({
+    String? exerciseId,
+    int? sortOrder,
+    ExerciseMode? mode,
+    String? exerciseName,
+    int? sets,
+    String? reps,
+    int? durationSeconds,
+    String? weight,
+    int? restSeconds,
+    String? notes,
+  }) {
+    return ExercisePrescription(
+      exerciseId: exerciseId ?? this.exerciseId,
+      sortOrder: sortOrder ?? this.sortOrder,
+      mode: mode ?? this.mode,
+      exerciseName: exerciseName ?? this.exerciseName,
+      sets: sets ?? this.sets,
+      reps: reps ?? this.reps,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      weight: weight ?? this.weight,
+      restSeconds: restSeconds ?? this.restSeconds,
+      notes: notes ?? this.notes,
+    );
+  }
 
   /// Validates prescription fields.
   void validate() {
@@ -172,6 +255,7 @@ class ChildWorkoutRef {
     required this.versionNumber,
     required this.sortOrder,
   });
+
   final String workoutTemplateId;
   final int versionNumber;
   final int sortOrder;

@@ -1,0 +1,333 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:stage2/core/enums.dart';
+import 'package:stage2/features/workouts/data/workout_template_repository.dart';
+import 'package:stage2/features/workouts/domain/workout_template.dart';
+
+void main() {
+  late FakeFirebaseFirestore fakeFirestore;
+  late WorkoutTemplateRepository repo;
+
+  setUp(() {
+    fakeFirestore = FakeFirebaseFirestore();
+    repo = WorkoutTemplateRepository(firestore: fakeFirestore);
+  });
+
+  group('WorkoutTemplate.copyWith', () {
+    test('returns copy with updated fields', () {
+      final now = DateTime(2026, 1, 1);
+      final template = WorkoutTemplate(
+        id: 'wt1',
+        name: 'Pull Day',
+        workoutType: WorkoutType.pull,
+        currentVersion: 1,
+        createdAt: now,
+        createdBy: 'user1',
+        updatedAt: now,
+        updatedBy: 'user1',
+      );
+      final updated = template.copyWith(
+        name: 'Upper Pull',
+        workoutType: WorkoutType.upper,
+      );
+      expect(updated.name, 'Upper Pull');
+      expect(updated.workoutType, WorkoutType.upper);
+      expect(updated.id, 'wt1');
+      expect(updated.currentVersion, 1);
+    });
+
+    test('hasPublishedVersion reflects currentVersion', () {
+      final now = DateTime(2026, 1, 1);
+      final draft = WorkoutTemplate(
+        id: 'wt1',
+        name: 'Draft',
+        workoutType: WorkoutType.fullBody,
+        currentVersion: 0,
+        createdAt: now,
+        createdBy: 'user1',
+        updatedAt: now,
+        updatedBy: 'user1',
+      );
+      expect(draft.hasPublishedVersion, isFalse);
+
+      final published = draft.copyWith(currentVersion: 1);
+      expect(published.hasPublishedVersion, isTrue);
+    });
+  });
+
+  group('ExercisePrescription.copyWith', () {
+    test('returns copy with updated fields', () {
+      final p = ExercisePrescription(
+        exerciseId: 'ex1',
+        sortOrder: 0,
+        mode: ExerciseMode.reps,
+        exerciseName: 'Squat',
+        sets: 3,
+        reps: '8-12',
+      );
+      final updated = p.copyWith(sets: 5, reps: '5');
+      expect(updated.sets, 5);
+      expect(updated.reps, '5');
+      expect(updated.exerciseName, 'Squat');
+      expect(updated.exerciseId, 'ex1');
+    });
+  });
+
+  group('WorkoutTemplateRepository', () {
+    test('create adds document with currentVersion 0', () async {
+      final id = await repo.create(
+        name: 'Push Day',
+        workoutType: WorkoutType.push,
+        userId: 'user1',
+      );
+
+      expect(id, isNotEmpty);
+      final doc = await fakeFirestore
+          .collection('workoutTemplates')
+          .doc(id)
+          .get();
+      expect(doc.exists, true);
+      expect(doc.data()!['name'], 'Push Day');
+      expect(doc.data()!['workoutType'], 'push');
+      expect(doc.data()!['currentVersion'], 0);
+      expect(doc.data()!['createdBy'], 'user1');
+    });
+
+    test('getById returns template', () async {
+      final id = await repo.create(
+        name: 'Leg Day',
+        workoutType: WorkoutType.legs,
+        userId: 'user1',
+      );
+
+      final template = await repo.getById(id);
+      expect(template, isNotNull);
+      expect(template!.name, 'Leg Day');
+      expect(template.workoutType, WorkoutType.legs);
+      expect(template.currentVersion, 0);
+    });
+
+    test('getById returns null for non-existent', () async {
+      final template = await repo.getById('nonexistent');
+      expect(template, isNull);
+    });
+
+    test('getById returns null for soft-deleted', () async {
+      final id = await repo.create(
+        name: 'To Delete',
+        workoutType: WorkoutType.core,
+        userId: 'user1',
+      );
+      await repo.softDelete(id, 'user1');
+      final template = await repo.getById(id);
+      expect(template, isNull);
+    });
+
+    test('update modifies header fields', () async {
+      final id = await repo.create(
+        name: 'Day A',
+        workoutType: WorkoutType.upper,
+        userId: 'user1',
+      );
+
+      await repo.update(
+        id: id,
+        name: 'Upper Pull Day',
+        workoutType: WorkoutType.pull,
+        userId: 'user1',
+      );
+
+      final template = await repo.getById(id);
+      expect(template!.name, 'Upper Pull Day');
+      expect(template.workoutType, WorkoutType.pull);
+    });
+
+    test('softDelete sets deletedAt and deletedBy', () async {
+      final id = await repo.create(
+        name: 'Tempo',
+        workoutType: WorkoutType.endurance,
+        userId: 'user1',
+      );
+
+      await repo.softDelete(id, 'user1');
+
+      final doc = await fakeFirestore
+          .collection('workoutTemplates')
+          .doc(id)
+          .get();
+      expect(doc.data()!['deletedBy'], 'user1');
+      expect(doc.data()!['deletedAt'], isNotNull);
+    });
+
+    test('watchAll streams only non-deleted templates for user', () async {
+      await repo.create(
+        name: 'Workout A',
+        workoutType: WorkoutType.upper,
+        userId: 'user1',
+      );
+      final idB = await repo.create(
+        name: 'Workout B',
+        workoutType: WorkoutType.lower,
+        userId: 'user1',
+      );
+      // Different user
+      await repo.create(
+        name: 'Workout C',
+        workoutType: WorkoutType.core,
+        userId: 'user2',
+      );
+      await repo.softDelete(idB, 'user1');
+
+      final templates = await repo.watchAll('user1').first;
+      expect(templates.length, 1);
+      expect(templates.first.name, 'Workout A');
+    });
+
+    test('publishVersion creates version and increments header', () async {
+      final id = await repo.create(
+        name: 'Power Session',
+        workoutType: WorkoutType.power,
+        userId: 'user1',
+      );
+
+      final exercises = [
+        ExercisePrescription(
+          exerciseId: 'ex1',
+          sortOrder: 0,
+          mode: ExerciseMode.reps,
+          exerciseName: 'Campus Board',
+          sets: 5,
+          reps: '5',
+        ),
+        ExercisePrescription(
+          exerciseId: 'ex2',
+          sortOrder: 1,
+          mode: ExerciseMode.time,
+          exerciseName: 'Limit Bouldering',
+          durationSeconds: 300,
+        ),
+      ];
+
+      final versionNum = await repo.publishVersion(
+        templateId: id,
+        exercises: exercises,
+        userId: 'user1',
+      );
+
+      expect(versionNum, 1);
+
+      // Header should be updated
+      final header = await repo.getById(id);
+      expect(header!.currentVersion, 1);
+      expect(header.hasPublishedVersion, isTrue);
+
+      // Version doc should exist
+      final version = await repo.getVersion(id, 1);
+      expect(version, isNotNull);
+      expect(version!.versionNumber, 1);
+      expect(version.exercises.length, 2);
+      expect(version.exercises[0].exerciseName, 'Campus Board');
+      expect(version.exercises[1].exerciseName, 'Limit Bouldering');
+    });
+
+    test('publishVersion increments from existing version', () async {
+      final id = await repo.create(
+        name: 'Evolving Workout',
+        workoutType: WorkoutType.fullBody,
+        userId: 'user1',
+      );
+
+      final v1 = await repo.publishVersion(
+        templateId: id,
+        exercises: [
+          ExercisePrescription(
+            exerciseId: 'ex1',
+            sortOrder: 0,
+            mode: ExerciseMode.reps,
+          ),
+        ],
+        userId: 'user1',
+      );
+      expect(v1, 1);
+
+      final v2 = await repo.publishVersion(
+        templateId: id,
+        exercises: [
+          ExercisePrescription(
+            exerciseId: 'ex1',
+            sortOrder: 0,
+            mode: ExerciseMode.reps,
+          ),
+          ExercisePrescription(
+            exerciseId: 'ex2',
+            sortOrder: 1,
+            mode: ExerciseMode.time,
+            durationSeconds: 60,
+          ),
+        ],
+        userId: 'user1',
+      );
+      expect(v2, 2);
+
+      final header = await repo.getById(id);
+      expect(header!.currentVersion, 2);
+
+      // Both versions should exist
+      final version1 = await repo.getVersion(id, 1);
+      expect(version1!.exercises.length, 1);
+      final version2 = await repo.getVersion(id, 2);
+      expect(version2!.exercises.length, 2);
+    });
+
+    test('getVersion returns null for non-existent version', () async {
+      final id = await repo.create(
+        name: 'No Versions',
+        workoutType: WorkoutType.skill,
+        userId: 'user1',
+      );
+
+      final version = await repo.getVersion(id, 1);
+      expect(version, isNull);
+    });
+
+    test('prescription serialization round-trip preserves all fields',
+        () async {
+      final id = await repo.create(
+        name: 'Full Prescription Test',
+        workoutType: WorkoutType.upper,
+        userId: 'user1',
+      );
+
+      await repo.publishVersion(
+        templateId: id,
+        exercises: [
+          ExercisePrescription(
+            exerciseId: 'ex1',
+            sortOrder: 0,
+            mode: ExerciseMode.reps,
+            exerciseName: 'Bench Press',
+            sets: 4,
+            reps: '6-8',
+            weight: '185 lb',
+            restSeconds: 120,
+            notes: 'Pause at bottom',
+          ),
+        ],
+        userId: 'user1',
+      );
+
+      final version = await repo.getVersion(id, 1);
+      final p = version!.exercises.first;
+      expect(p.exerciseId, 'ex1');
+      expect(p.exerciseName, 'Bench Press');
+      expect(p.mode, ExerciseMode.reps);
+      expect(p.sets, 4);
+      expect(p.reps, '6-8');
+      expect(p.weight, '185 lb');
+      expect(p.restSeconds, 120);
+      expect(p.notes, 'Pause at bottom');
+    });
+  });
+}

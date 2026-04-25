@@ -66,6 +66,12 @@ class HomeScreen extends ConsumerWidget {
             subtitle: 'Create and manage exercise templates',
             onTap: () => context.push('/exercises'),
           ),
+          _FeatureCard(
+            icon: Icons.sports_gymnastics,
+            title: 'Workout Templates',
+            subtitle: 'Build and publish workout templates',
+            onTap: () => context.push('/workouts'),
+          ),
         ],
       ),
     );
