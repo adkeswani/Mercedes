@@ -123,6 +123,21 @@ void main() {
       expect(template, isNull);
     });
 
+    test('getByIdIncludingDeleted returns soft-deleted template', () async {
+      final id = await repo.create(
+        name: 'Archived Exercise',
+        description: 'Was deleted',
+        instructions: 'Still readable',
+        userId: 'user1',
+      );
+
+      await repo.softDelete(id, 'user1');
+      final template = await repo.getByIdIncludingDeleted(id);
+      expect(template, isNotNull);
+      expect(template!.name, 'Archived Exercise');
+      expect(template.isDeleted, isTrue);
+    });
+
     test('update modifies fields', () async {
       final id = await repo.create(
         name: 'Squat',

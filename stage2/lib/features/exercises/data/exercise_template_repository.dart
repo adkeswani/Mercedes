@@ -38,6 +38,17 @@ class ExerciseTemplateRepository {
     return template.isDeleted ? null : template;
   }
 
+  /// Returns the exercise template with [id] even if soft-deleted.
+  ///
+  /// Used when resolving exercise references in published workout
+  /// versions — the athlete needs to see instructions/video even if
+  /// the coach has since archived the exercise.
+  Future<ExerciseTemplate?> getByIdIncludingDeleted(String id) async {
+    final doc = await _collection.doc(id).get();
+    if (!doc.exists || doc.data() == null) return null;
+    return _fromMap(doc.data()!, doc.id);
+  }
+
   /// Creates a new exercise template. Returns the generated document ID.
   ///
   /// Preallocates the Firestore doc ID so the domain entity has a real
