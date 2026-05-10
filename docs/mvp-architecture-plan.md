@@ -15,6 +15,7 @@
 - Program-to-Workout Mapping (ordered list)
 - Workout-to-Exercise Mapping (ordered list + prescription fields such as sets/reps/weight/time; supports rep-based, time-based, and AMRAP exercise modes)
 - Workout-to-Workout Mapping (ordered list; allows a Workout Template to include child Workout Templates)
+- Athlete Exercise Notes (per-athlete, per-exercise-template personal notes; displayed wherever that exercise appears in the athlete's workouts; scoped to a specific exercise template object so notes don't cross trainers)
 - Program Enrollment (manual access grant; includes `addedAt` and nullable `removedAt` timestamps)
 - Program Schedule (assignment of workouts to calendar dates; supports one-off and bounded recurring schedules with required end date)
 - Workout Type (classification tag: e.g. limit, power, endurance for climbing; lower, upper, full_body for strength)
@@ -33,7 +34,7 @@
 
 1. [MVP] Foundation planning (hard-to-change architecture): finalize auth model, role/ACL boundaries, enrollment lifecycle fields, and versioning/audit requirements before feature build-out.
 2. [MVP] Workout plan creation: exercise templates, workout templates, program structure, versioned publishing, owner program copy, and athlete personal program creation with copy + nesting + day assignment parity.
-3. [MVP] Auth + athlete assignment: sign-in, role model, enrollment, and schedule assignment to athletes.
+3. [MVP] Auth + athlete assignment: sign-in, role model, enrollment, athlete exercise notes, and schedule assignment to athletes.
 4. [MVP] Load/difficulty model: RPE + duration logging, workout-type-based weighting, dashboard load summaries, and athlete download/export of workout + load data.
 5. [MVP] Community features (core): direct athlete↔owner messaging and private workout comments, with support for external photo links and YouTube links (plus in-app link preview when available).
 6. [Post-MVP] Community features (forum): program-level forum with reply notifications and athlete download/export of community conversation data.
@@ -44,7 +45,7 @@
 
 1. Foundation planning is complete when auth, roles, ACL scoping, enrollment lifecycle fields (`addedAt`/`removedAt`), template versioning, and audit-field requirements are documented as locked constraints for implementation.
 2. Workout plan creation is complete when owners can create/edit/publish versioned programs, copy their own programs, build reusable workouts/exercises, assign workout-type tags without data-model rewrites, and athletes can create personal programs with equivalent builder capabilities (copy, workout nesting, day assignment) that remain non-assignable.
-3. Auth + athlete assignment is complete when sign-in works on target platforms, role-scoped ACL checks are enforced, athlete enrollment writes `addedAt`, and date-based scheduling creates workout instances reliably.
+3. Auth + athlete assignment is complete when sign-in works on target platforms, role-scoped ACL checks are enforced, athlete enrollment writes `addedAt`, date-based scheduling creates workout instances reliably, and athletes can add/edit/delete personal notes on any exercise template that appear wherever that exercise is used in any of their workouts (including workouts from other program owners).
 4. Load/difficulty model is complete when required RPE + duration are captured on completion, load points are computed client-side with versioning and server-side audit capability, dashboard widgets return correct weekly/type/bucket summaries, and athletes can export/download their workout + load history.
 5. Community features (core) are complete when direct athlete↔owner messaging and private workout comments are live with correct per-program visibility and access control, and users can post external photo/YouTube links with in-app preview support where metadata is available.
 6. Community features (forum) are complete when program-level forum threads/replies and reply notifications are live with correct per-program visibility, and athletes can export/download their community conversation data.
@@ -188,6 +189,7 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 - [MVP] Daily clarity: a clear "Today" view showing due, upcoming, and missed workouts.
 - [MVP] Calendar usability: visible schedule by day and clear status (scheduled, completed, missed).
 - [MVP] Data trust: athletes can see who can access their workout data and comment threads.
+- [MVP] Exercise notes: athletes can add personal notes to any exercise template (e.g. equipment settings, form cues) that appear wherever that exercise is used in any of their workouts, including workouts from other program owners; notes are private to the athlete and scoped to the specific exercise template object so they don't cross between different trainers' exercises.
 - [MVP] Flexible logging: capture actual sets/reps/weight, RPE (1–10), duration, and athlete notes per workout instance.
 - [MVP] Integrated timer: in-app rest timer between sets and work timer for time-based exercises, with audio/haptic alerts and auto-advance.
 - [MVP] Late completion: athletes can complete a workout after the scheduled date as long as it has not been marked missed.
@@ -236,6 +238,7 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 - [MVP] Personal programs are self-use only and non-assignable, with builder parity (copy, workout nesting, day assignment).
 - [MVP] Daily clarity UI is calendar-first.
 - [MVP] Data trust view for athletes is simple: show accessible programs and each program owner.
+- [MVP] Exercise notes are per-athlete, per-exercise-template. They are stored as a subcollection under the user document and keyed by exercise template ID. Notes are private to the athlete and appear in any workout containing that exercise — including workouts created by other program owners. Notes don't transfer when a different trainer creates an exercise with the same name (different exercise template ID).
 - [MVP] Logging requires completion only; detailed per-set actuals remain optional.
 - [MVP] If multiple workouts are on the same day, collapse into a day summary with expand-to-view details.
 - [MVP] Progress starts with load-based dashboard: weekly total load + type breakdown + hard/medium/easy distribution.
@@ -340,6 +343,12 @@ Strength: lower=4, legs=4, upper=3, full_body=3, push=3, pull=3, core=2, conditi
 	1. Athlete opens the program-level direct message thread.
 	2. Athlete sends a message unrelated to a specific workout (text and optional external photo/YouTube links).
 	3. Owner can reply in the same thread.
+
+- [MVP] Add/view exercise notes:
+	1. Athlete views a workout containing an exercise.
+	2. Athlete taps on the exercise to view or add a personal note (e.g. "bar height = 3", "use blue band").
+	3. Note is saved and appears wherever that exercise template is used in the athlete's workouts.
+	4. Athlete can edit or delete the note at any time.
 
 - [MVP] Participate in private workout comments:
 	1. Athlete opens a workout instance comment thread.

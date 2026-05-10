@@ -68,6 +68,22 @@ exerciseTemplates/{exerciseId}
   deletedBy: string? (userId)
 ```
 
+### 2.2.1 Athlete Exercise Notes
+
+```
+users/{userId}/exerciseNotes/{exerciseTemplateId}
+  exerciseTemplateId: string
+  exerciseName: string               # denormalized for display
+  note: string
+  createdAt: timestamp
+  updatedAt: timestamp
+```
+
+Athlete exercise notes are personal annotations on an exercise template (e.g. "bar height = 3", "use blue band"). They are:
+- **Private to the athlete** — only the owning user can read/write their own notes.
+- **Keyed by exercise template ID** — different trainers' exercises with the same name are independent objects, so notes don't cross over.
+- **Displayed wherever the exercise appears** — the client fetches the athlete's notes and shows them in any workout (including workouts from other program owners) that references the same exercise template ID.
+
 ### 2.3 Workout Templates (versioned)
 
 ```
@@ -347,6 +363,10 @@ service cloud.firestore {
                         || resource.data.ownerId == request.auth.uid);
     }
 
+    match /users/{userId}/exerciseNotes/{noteId} {
+      allow read, write: if isSelf(userId);
+    }
+
     // ... additional collections follow the same pattern
   }
 }
@@ -360,7 +380,7 @@ service cloud.firestore {
 | `isProgramOwner(programId)` | Owner-only writes, roster management | programs, enrollment, workoutInstances, comments |
 | `isEnrolledActive(programId)` | Athlete read access, completion writes | workoutInstances, messaging |
 | `isAthleteOrOwner(programId)` | Shared read contexts | messaging threads, comments |
-| `isSelf(userId)` | Profile edits, personal programs | users, programs (type=personal) |
+| `isSelf(userId)` | Profile edits, personal programs, exercise notes | users, programs (type=personal), exerciseNotes |
 | `isSelfAthlete()` | Workout completion, actuals logging | workoutInstances |
 
 Full security rules will be developed collection-by-collection alongside feature implementation and tested with the Firebase Emulator Suite.
@@ -976,11 +996,12 @@ Based on the roadmap and these locked constraints, the build order is:
 3. **Exercise & workout template CRUD** — Firestore writes with versioning sub-collection, basic UI for program owners.
 4. **Program creation & publishing** — create/draft/publish flow, program-workout mapping.
 5. **Enrollment & scheduling** — enroll athletes, assign workouts to dates, create workout instances.
-6. **Workout completion & load** — log actuals/RPE/duration, client-side load computation, dashboard widgets.
-7. **Comments** — unified comments (program/workout/exercise scopes), direct message threads, media link preview.
+6. **Athlete exercise notes** — per-athlete personal notes on exercise templates (`users/{userId}/exerciseNotes/{exerciseTemplateId}`), displayed wherever the exercise appears in any workout. Private to the athlete; scoped by exercise template ID.
+7. **Workout completion & load** — log actuals/RPE/duration, client-side load computation, dashboard widgets.
+8. **Comments** — unified comments (program/workout/exercise scopes), direct message threads, media link preview.
 
 
-8. **Athlete goals & to-do list** — athletes can create, view, and manage a personal list of goals or "to-dos". Each goal can have an optional due date. Goals are displayed in a checklist UI, can be checked off, and are shown on the same calendar as workouts. Goals are private to the athlete by default, but visibility to the program owner can be enabled per goal. Goals can optionally be associated with a specific program the athlete is enrolled in.
+9. **Athlete goals & to-do list** — athletes can create, view, and manage a personal list of goals or "to-dos". Each goal can have an optional due date. Goals are displayed in a checklist UI, can be checked off, and are shown on the same calendar as workouts. Goals are private to the athlete by default, but visibility to the program owner can be enabled per goal. Goals can optionally be associated with a specific program the athlete is enrolled in.
 
 ---
 
