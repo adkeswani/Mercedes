@@ -79,10 +79,24 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
   }
 
   Future<void> _createAndEnter() async {
-    if (_nameController.text.trim().isEmpty) {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Name is required')),
       );
+      return;
+    }
+
+    // Check for duplicate name
+    final existing = ref.read(programsProvider).valueOrNull ?? [];
+    if (existing.any((p) => p.name == name)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('A program with that name already exists'),
+          ),
+        );
+      }
       return;
     }
 
@@ -93,7 +107,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
     try {
       final repo = ref.read(programRepositoryProvider);
       final id = await repo.create(
-        name: _nameController.text.trim(),
+        name: name,
         type: _programType,
         userId: uid,
         description: _descriptionController.text.trim().isEmpty
@@ -185,6 +199,36 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
     );
   }
 
+  Future<void> _deleteProgram() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete program?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final uid = ref.read(authStateProvider).value?.uid;
+    if (uid == null) return;
+
+    await ref.read(programRepositoryProvider).softDelete(
+      widget.programId!,
+      uid,
+    );
+    if (mounted) context.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.isEditing && !_didLoad) {
@@ -201,6 +245,11 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
       appBar: AppBar(
         title: const Text('Program Builder'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Delete program',
+            onPressed: _isLoading ? null : _deleteProgram,
+          ),
           TextButton(
             onPressed: _isLoading ? null : _publish,
             child: _isLoading

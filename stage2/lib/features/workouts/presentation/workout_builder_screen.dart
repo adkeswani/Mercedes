@@ -76,10 +76,24 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
   }
 
   Future<void> _createAndEnter() async {
-    if (_nameController.text.trim().isEmpty) {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Name is required')),
       );
+      return;
+    }
+
+    // Check for duplicate name
+    final existing = ref.read(workoutTemplatesProvider).valueOrNull ?? [];
+    if (existing.any((w) => w.name == name)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('A workout with that name already exists'),
+          ),
+        );
+      }
       return;
     }
 
@@ -90,7 +104,7 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
     try {
       final repo = ref.read(workoutTemplateRepositoryProvider);
       final id = await repo.create(
-        name: _nameController.text.trim(),
+        name: name,
         workoutType: _workoutType,
         userId: uid,
       );
@@ -165,6 +179,36 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
     }
   }
 
+  Future<void> _deleteWorkout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete workout template?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final uid = ref.read(authStateProvider).value?.uid;
+    if (uid == null) return;
+
+    await ref.read(workoutTemplateRepositoryProvider).softDelete(
+      widget.workoutId!,
+      uid,
+    );
+    if (mounted) context.pop();
+  }
+
   void _addExercise() async {
     final result = await showExercisePicker(context, ref);
     if (result == null) return;
@@ -200,6 +244,11 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
       appBar: AppBar(
         title: const Text('Workout Builder'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Delete workout',
+            onPressed: _isLoading ? null : _deleteWorkout,
+          ),
           TextButton(
             onPressed: _isLoading ? null : _publish,
             child: _isLoading
