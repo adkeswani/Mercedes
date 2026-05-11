@@ -89,7 +89,7 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
       );
       if (mounted) {
         // Replace the /workouts/new route with /workouts/:id
-        context.go('/workouts/$id');
+        context.pushReplacement('/workouts/$id');
       }
     } catch (e) {
       if (mounted) {

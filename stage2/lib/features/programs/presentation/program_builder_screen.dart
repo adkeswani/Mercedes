@@ -94,7 +94,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
             : _descriptionController.text.trim(),
       );
       if (mounted) {
-        context.go('/programs/$id');
+        context.pushReplacement('/programs/$id');
       }
     } catch (e) {
       if (mounted) {
