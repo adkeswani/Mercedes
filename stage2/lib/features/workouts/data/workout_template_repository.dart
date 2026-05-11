@@ -199,6 +199,36 @@ class WorkoutTemplateRepository {
     return version?.exercises ?? [];
   }
 
+  /// Checks whether a workout template is referenced by any published
+  /// program version.
+  Future<bool> isWorkoutReferenced(String workoutTemplateId) async {
+    final snapshot = await _firestore
+        .collection('programs')
+        .where('deletedAt', isNull: true)
+        .get();
+
+    for (final doc in snapshot.docs) {
+      final currentVersion = (doc.data()['currentVersion'] as int?) ?? 0;
+      if (currentVersion == 0) continue;
+
+      final versionDoc = await doc.reference
+          .collection('programVersions')
+          .doc(currentVersion.toString())
+          .get();
+      if (!versionDoc.exists) continue;
+
+      final workouts =
+          (versionDoc.data()!['workouts'] as List<dynamic>?) ?? [];
+      for (final w in workouts) {
+        if ((w as Map<String, dynamic>)['workoutTemplateId'] ==
+            workoutTemplateId) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // -- Serialization helpers --
 
   WorkoutTemplate _headerFromMap(Map<String, dynamic> data, String id) {

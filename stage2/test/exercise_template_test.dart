@@ -230,5 +230,80 @@ void main() {
       expect(template.updatedBy, 'user1');
       expect(template.isDeleted, false);
     });
+  });
+
+  group('ExerciseTemplateRepository.isExerciseReferenced', () {
+    test('returns true when exercise is in a published workout', () async {
+      final exerciseId = await repo.create(
+        name: 'Bench Press',
+        description: 'Flat bench',
+        instructions: 'Press',
+        userId: 'user1',
+      );
+
+      // Create a workout template that references this exercise
+      final workoutRef =
+          fakeFirestore.collection('workoutTemplates').doc();
+      await workoutRef.set({
+        'name': 'Push Day',
+        'currentVersion': 1,
+        'deletedAt': null,
+        'createdBy': 'user1',
+      });
+      await workoutRef
+          .collection('workoutTemplateVersions')
+          .doc('1')
+          .set({
+        'versionNumber': 1,
+        'exercises': [
+          {'exerciseId': exerciseId, 'sortOrder': 0},
+        ],
+      });
+
+      final referenced = await repo.isExerciseReferenced(exerciseId);
+      expect(referenced, isTrue);
+    });
+
+    test('returns false when exercise is not referenced', () async {
+      final exerciseId = await repo.create(
+        name: 'Lonely Exercise',
+        description: 'Not used',
+        instructions: 'N/A',
+        userId: 'user1',
+      );
+
+      final referenced = await repo.isExerciseReferenced(exerciseId);
+      expect(referenced, isFalse);
+    });
+
+    test('returns false when referencing workout is deleted', () async {
+      final exerciseId = await repo.create(
+        name: 'Used Then Freed',
+        description: 'Desc',
+        instructions: 'Instr',
+        userId: 'user1',
+      );
+
+      final workoutRef =
+          fakeFirestore.collection('workoutTemplates').doc();
+      await workoutRef.set({
+        'name': 'Deleted Workout',
+        'currentVersion': 1,
+        'deletedAt': Timestamp.now(),
+        'createdBy': 'user1',
+      });
+      await workoutRef
+          .collection('workoutTemplateVersions')
+          .doc('1')
+          .set({
+        'versionNumber': 1,
+        'exercises': [
+          {'exerciseId': exerciseId, 'sortOrder': 0},
+        ],
+      });
+
+      final referenced = await repo.isExerciseReferenced(exerciseId);
+      expect(referenced, isFalse);
+    });
   });
 }

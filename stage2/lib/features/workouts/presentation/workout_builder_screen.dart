@@ -180,6 +180,21 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
   }
 
   Future<void> _deleteWorkout() async {
+    final repo = ref.read(workoutTemplateRepositoryProvider);
+    final referenced = await repo.isWorkoutReferenced(widget.workoutId!);
+    if (referenced) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Cannot delete — this workout is used in a program',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(

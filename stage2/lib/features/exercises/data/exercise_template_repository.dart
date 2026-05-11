@@ -123,8 +123,36 @@ class ExerciseTemplateRepository {
     );
   }
 
-  /// Converts a Firestore value (Timestamp or null) to DateTime.
-  /// Falls back to epoch for pending server timestamps.
+  /// Checks whether an exercise is referenced by any published workout version.
+  ///
+  /// Scans all non-deleted workout templates' latest published versions
+  /// for prescriptions containing [exerciseId].
+  Future<bool> isExerciseReferenced(String exerciseId) async {
+    final snapshot = await _firestore
+        .collection('workoutTemplates')
+        .where('deletedAt', isNull: true)
+        .get();
+
+    for (final doc in snapshot.docs) {
+      final currentVersion = (doc.data()['currentVersion'] as int?) ?? 0;
+      if (currentVersion == 0) continue;
+
+      final versionDoc = await doc.reference
+          .collection('workoutTemplateVersions')
+          .doc(currentVersion.toString())
+          .get();
+      if (!versionDoc.exists) continue;
+
+      final exercises =
+          (versionDoc.data()!['exercises'] as List<dynamic>?) ?? [];
+      for (final ex in exercises) {
+        if ((ex as Map<String, dynamic>)['exerciseId'] == exerciseId) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
   static DateTime _toDateTime(dynamic value) {
     if (value is Timestamp) {
       return value.toDate();

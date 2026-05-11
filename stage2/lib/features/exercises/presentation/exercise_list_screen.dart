@@ -84,6 +84,20 @@ class _ExerciseTile extends ConsumerWidget {
         ),
       ),
       confirmDismiss: (direction) async {
+        final repo = ref.read(exerciseTemplateRepositoryProvider);
+        final referenced = await repo.isExerciseReferenced(exercise.id);
+        if (referenced) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Cannot delete — this exercise is used in a workout',
+                ),
+              ),
+            );
+          }
+          return false;
+        }
         return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(

@@ -403,4 +403,68 @@ void main() {
       expect(exercises, isEmpty);
     });
   });
+
+  group('WorkoutTemplateRepository.isWorkoutReferenced', () {
+    test('returns true when workout is in a published program', () async {
+      final workoutId = await repo.create(
+        name: 'Referenced Workout',
+        workoutType: WorkoutType.upper,
+        userId: 'user1',
+      );
+
+      // Create a program that references this workout
+      final programRef = fakeFirestore.collection('programs').doc();
+      await programRef.set({
+        'name': 'My Program',
+        'currentVersion': 1,
+        'deletedAt': null,
+        'ownerId': 'user1',
+      });
+      await programRef.collection('programVersions').doc('1').set({
+        'versionNumber': 1,
+        'workouts': [
+          {'workoutTemplateId': workoutId, 'workoutTemplateVersion': 1, 'sortOrder': 0},
+        ],
+      });
+
+      final referenced = await repo.isWorkoutReferenced(workoutId);
+      expect(referenced, isTrue);
+    });
+
+    test('returns false when workout is not referenced', () async {
+      final workoutId = await repo.create(
+        name: 'Unreferenced Workout',
+        workoutType: WorkoutType.lower,
+        userId: 'user1',
+      );
+
+      final referenced = await repo.isWorkoutReferenced(workoutId);
+      expect(referenced, isFalse);
+    });
+
+    test('returns false when referencing program is deleted', () async {
+      final workoutId = await repo.create(
+        name: 'Freed Workout',
+        workoutType: WorkoutType.fullBody,
+        userId: 'user1',
+      );
+
+      final programRef = fakeFirestore.collection('programs').doc();
+      await programRef.set({
+        'name': 'Deleted Program',
+        'currentVersion': 1,
+        'deletedAt': Timestamp.now(),
+        'ownerId': 'user1',
+      });
+      await programRef.collection('programVersions').doc('1').set({
+        'versionNumber': 1,
+        'workouts': [
+          {'workoutTemplateId': workoutId, 'workoutTemplateVersion': 1, 'sortOrder': 0},
+        ],
+      });
+
+      final referenced = await repo.isWorkoutReferenced(workoutId);
+      expect(referenced, isFalse);
+    });
+  });
 }

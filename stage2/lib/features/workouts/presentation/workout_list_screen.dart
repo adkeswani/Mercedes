@@ -85,6 +85,20 @@ class _WorkoutTile extends ConsumerWidget {
         ),
       ),
       confirmDismiss: (direction) async {
+        final repo = ref.read(workoutTemplateRepositoryProvider);
+        final referenced = await repo.isWorkoutReferenced(workout.id);
+        if (referenced) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Cannot delete — this workout is used in a program',
+                ),
+              ),
+            );
+          }
+          return false;
+        }
         return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
