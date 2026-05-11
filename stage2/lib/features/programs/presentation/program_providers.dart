@@ -45,6 +45,7 @@ class ProgramDraftNotifier extends StateNotifier<List<ProgramWorkoutRef>> {
           workoutTemplateId: updated[i].workoutTemplateId,
           workoutTemplateVersion: updated[i].workoutTemplateVersion,
           sortOrder: i,
+          workoutName: updated[i].workoutName,
         ),
     ];
   }
@@ -62,6 +63,7 @@ class ProgramDraftNotifier extends StateNotifier<List<ProgramWorkoutRef>> {
           workoutTemplateId: updated[i].workoutTemplateId,
           workoutTemplateVersion: updated[i].workoutTemplateVersion,
           sortOrder: i,
+          workoutName: updated[i].workoutName,
         ),
     ];
   }

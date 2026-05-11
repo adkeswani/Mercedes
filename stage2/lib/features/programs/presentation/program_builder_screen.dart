@@ -195,6 +195,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
         workoutTemplateId: result.id,
         workoutTemplateVersion: result.currentVersion,
         sortOrder: workouts.length,
+        workoutName: result.name,
       ),
     );
   }
@@ -397,16 +398,18 @@ class _WorkoutCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Resolve workout name from the templates stream
+    // Prefer denormalized name, fall back to live stream lookup
     final workoutsAsync = ref.watch(workoutTemplatesProvider);
-    final name = workoutsAsync.whenOrNull(
-      data: (templates) {
-        final match = templates
-            .where((t) => t.id == workout.workoutTemplateId)
-            .toList();
-        return match.isNotEmpty ? match.first.name : workout.workoutTemplateId;
-      },
-    ) ?? workout.workoutTemplateId;
+    final name = workout.workoutName ??
+        workoutsAsync.whenOrNull(
+          data: (templates) {
+            final match = templates
+                .where((t) => t.id == workout.workoutTemplateId)
+                .toList();
+            return match.isNotEmpty ? match.first.name : null;
+          },
+        ) ??
+        'Loading...';
 
     return Card(
       child: ListTile(

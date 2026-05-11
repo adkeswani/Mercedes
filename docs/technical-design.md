@@ -148,6 +148,7 @@ programs/{programId}
         workoutTemplateId: string
         workoutTemplateVersion: int
         sortOrder: int
+        workoutName: string?              # denormalized at publish time
       }
     ]
     changeNote: string?                     # owner's description of what changed

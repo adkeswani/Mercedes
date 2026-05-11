@@ -250,6 +250,7 @@ class ProgramRepository {
       workoutTemplateId: data['workoutTemplateId'] as String? ?? '',
       workoutTemplateVersion: (data['workoutTemplateVersion'] as int?) ?? 1,
       sortOrder: (data['sortOrder'] as int?) ?? 0,
+      workoutName: data['workoutName'] as String?,
     );
   }
 
@@ -258,6 +259,7 @@ class ProgramRepository {
       'workoutTemplateId': ref.workoutTemplateId,
       'workoutTemplateVersion': ref.workoutTemplateVersion,
       'sortOrder': ref.sortOrder,
+      'workoutName': ref.workoutName,
     };
   }
 

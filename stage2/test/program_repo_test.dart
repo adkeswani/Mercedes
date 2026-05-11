@@ -280,6 +280,60 @@ void main() {
       expect(copy.currentVersion, 0);
     });
 
+    test('publishVersion preserves workoutName', () async {
+      final id = await repo.create(
+        name: 'Name Test',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+
+      await repo.publishVersion(
+        programId: id,
+        workouts: [
+          ProgramWorkoutRef(
+            workoutTemplateId: 'wt1',
+            workoutTemplateVersion: 1,
+            sortOrder: 0,
+            workoutName: 'Push Day',
+          ),
+          ProgramWorkoutRef(
+            workoutTemplateId: 'wt2',
+            workoutTemplateVersion: 2,
+            sortOrder: 1,
+            workoutName: 'Pull Day',
+          ),
+        ],
+        userId: 'coach1',
+      );
+
+      final versionDoc = await repo.getVersion(id, 1);
+      expect(versionDoc!.workouts[0].workoutName, 'Push Day');
+      expect(versionDoc.workouts[1].workoutName, 'Pull Day');
+    });
+
+    test('publishVersion handles null workoutName', () async {
+      final id = await repo.create(
+        name: 'Null Name Test',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+
+      await repo.publishVersion(
+        programId: id,
+        workouts: [
+          ProgramWorkoutRef(
+            workoutTemplateId: 'wt1',
+            workoutTemplateVersion: 1,
+            sortOrder: 0,
+          ),
+        ],
+        userId: 'coach1',
+      );
+
+      final versionDoc = await repo.getVersion(id, 1);
+      expect(versionDoc!.workouts[0].workoutName, isNull);
+    });
+
     test('copyProgram throws for non-existent source', () async {
       expect(
         () => repo.copyProgram(

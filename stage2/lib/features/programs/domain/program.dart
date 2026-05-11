@@ -190,16 +190,22 @@ class ProgramVersion {
 }
 
 /// Reference to a workout template within a program version.
+///
+/// [workoutName] is denormalized at publish time for historical stability —
+/// even if the workout template is later renamed or deleted, published
+/// versions retain the name as it was when published.
 class ProgramWorkoutRef {
 
   ProgramWorkoutRef({
     required this.workoutTemplateId,
     required this.workoutTemplateVersion,
     required this.sortOrder,
+    this.workoutName,
   });
   final String workoutTemplateId;
   final int workoutTemplateVersion;
   final int sortOrder;
+  final String? workoutName;
 
   /// Validates reference fields.
   void validate() {
