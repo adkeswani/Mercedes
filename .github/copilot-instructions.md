@@ -21,3 +21,8 @@
 - Keep changes focused and minimal.
 - Avoid unrelated refactors.
 - Prefer reproducible/pinned tooling versions.
+
+## Testing
+
+- Every code change must include unit tests for the new or modified behavior.
+- If a change cannot be unit tested (e.g. pure UI wiring), document why in the commit message.
