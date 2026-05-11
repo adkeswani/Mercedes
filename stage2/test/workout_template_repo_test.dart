@@ -330,4 +330,77 @@ void main() {
       expect(p.notes, 'Pause at bottom');
     });
   });
+
+  group('WorkoutTemplateRepository duplicate', () {
+    test('duplicateTemplate creates new template with copied name', () async {
+      final sourceId = await repo.create(
+        name: 'Push Day',
+        workoutType: WorkoutType.push,
+        userId: 'user1',
+      );
+
+      final copyId = await repo.duplicateTemplate(
+        sourceTemplateId: sourceId,
+        userId: 'user1',
+      );
+
+      expect(copyId, isNot(sourceId));
+
+      final copy = await repo.getById(copyId);
+      expect(copy, isNotNull);
+      expect(copy!.name, 'Push Day (Copy)');
+      expect(copy.workoutType, WorkoutType.push);
+      expect(copy.currentVersion, 0);
+      expect(copy.hasPublishedVersion, isFalse);
+    });
+
+    test('duplicateTemplate throws for non-existent source', () async {
+      expect(
+        () => repo.duplicateTemplate(
+          sourceTemplateId: 'nonexistent',
+          userId: 'user1',
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('getLatestExercises returns exercises from latest version', () async {
+      final id = await repo.create(
+        name: 'Exercises Test',
+        workoutType: WorkoutType.upper,
+        userId: 'user1',
+      );
+
+      await repo.publishVersion(
+        templateId: id,
+        exercises: [
+          ExercisePrescription(
+            exerciseId: 'ex1',
+            sortOrder: 0,
+            mode: ExerciseMode.reps,
+            exerciseName: 'Bench Press',
+            sets: 3,
+            reps: '8-12',
+          ),
+        ],
+        userId: 'user1',
+      );
+
+      final exercises = await repo.getLatestExercises(id);
+      expect(exercises.length, 1);
+      expect(exercises[0].exerciseName, 'Bench Press');
+    });
+
+    test('getLatestExercises returns empty for unpublished template',
+        () async {
+      final id = await repo.create(
+        name: 'No Version',
+        workoutType: WorkoutType.upper,
+        userId: 'user1',
+      );
+
+      final exercises = await repo.getLatestExercises(id);
+      expect(exercises, isEmpty);
+    });
+  });
 }

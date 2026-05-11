@@ -114,9 +114,52 @@ class _ProgramTile extends ConsumerWidget {
       child: ListTile(
         title: Text(program.name),
         subtitle: Text('$typeLabel · ${program.status.name} · $versionLabel'),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (program.currentVersion > 0)
+              IconButton(
+                icon: const Icon(Icons.copy),
+                tooltip: 'Copy program',
+                onPressed: () => _copyProgram(context, ref),
+              ),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
         onTap: () => context.push('/programs/${program.id}'),
       ),
     );
+  }
+
+  Future<void> _copyProgram(BuildContext context, WidgetRef ref) async {
+    final uid = ref.read(authStateProvider).value?.uid;
+    if (uid == null) return;
+
+    final repo = ref.read(programRepositoryProvider);
+    try {
+      final newId = await repo.copyProgram(
+        sourceProgramId: program.id,
+        userId: uid,
+      );
+
+      // Pre-load the draft with the source's workout refs
+      final workoutRefs = await repo.getLatestWorkoutRefs(program.id);
+      if (workoutRefs.isNotEmpty) {
+        ref.read(programDraftProvider.notifier).load(workoutRefs);
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Program copied')),
+        );
+        context.push('/programs/$newId');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to copy: $e')),
+        );
+      }
+    }
   }
 }

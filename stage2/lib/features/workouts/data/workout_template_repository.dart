@@ -160,6 +160,45 @@ class WorkoutTemplateRepository {
             .toList());
   }
 
+  /// Creates a duplicate of an existing workout template as a new draft.
+  ///
+  /// The duplicate inherits the name (with " (Copy)" suffix) and workout
+  /// type. It starts with currentVersion=0 — the user must publish to
+  /// create the first version.
+  ///
+  /// Returns the new template's document ID.
+  Future<String> duplicateTemplate({
+    required String sourceTemplateId,
+    required String userId,
+  }) async {
+    final source = await getById(sourceTemplateId);
+    if (source == null) {
+      throw StateError('Source template $sourceTemplateId not found');
+    }
+
+    final newId = await create(
+      name: '${source.name} (Copy)',
+      workoutType: source.workoutType,
+      userId: userId,
+    );
+
+    return newId;
+  }
+
+  /// Returns the exercises from the latest published version,
+  /// or an empty list if no versions exist.
+  ///
+  /// Used by the UI to pre-populate the draft when duplicating a template.
+  Future<List<ExercisePrescription>> getLatestExercises(
+    String templateId,
+  ) async {
+    final template = await getById(templateId);
+    if (template == null || !template.hasPublishedVersion) return [];
+
+    final version = await getVersion(templateId, template.currentVersion);
+    return version?.exercises ?? [];
+  }
+
   // -- Serialization helpers --
 
   WorkoutTemplate _headerFromMap(Map<String, dynamic> data, String id) {

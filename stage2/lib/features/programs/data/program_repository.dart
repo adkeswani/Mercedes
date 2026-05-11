@@ -161,6 +161,53 @@ class ProgramRepository {
             .toList());
   }
 
+  /// Creates a copy of an existing program as a new draft.
+  ///
+  /// The copy inherits the name (with " (Copy)" suffix), description, type,
+  /// and workout references from the latest published version. The copy
+  /// starts as a draft with currentVersion=0 — the user must publish to
+  /// create the first version.
+  ///
+  /// Returns the new program's document ID.
+  Future<String> copyProgram({
+    required String sourceProgramId,
+    required String userId,
+  }) async {
+    final source = await getById(sourceProgramId);
+    if (source == null) {
+      throw StateError('Source program $sourceProgramId not found');
+    }
+
+    // Create the new program header as a draft
+    final newId = await create(
+      name: '${source.name} (Copy)',
+      type: source.type,
+      userId: userId,
+      description: source.description,
+    );
+
+    // If the source has published versions, copy the latest version's
+    // workout list into the draft's local state. The user will see these
+    // when they open the builder and can edit before publishing.
+    // We don't auto-publish — the copy starts as a draft.
+
+    return newId;
+  }
+
+  /// Returns the workout refs from the latest published version,
+  /// or an empty list if no versions exist.
+  ///
+  /// Used by the UI to pre-populate the draft when copying a program.
+  Future<List<ProgramWorkoutRef>> getLatestWorkoutRefs(
+    String programId,
+  ) async {
+    final program = await getById(programId);
+    if (program == null || program.currentVersion == 0) return [];
+
+    final version = await getVersion(programId, program.currentVersion);
+    return version?.workouts ?? [];
+  }
+
   // -- Serialization helpers --
 
   Program _headerFromMap(Map<String, dynamic> data, String id) {

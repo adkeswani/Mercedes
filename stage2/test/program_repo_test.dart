@@ -243,6 +243,95 @@ void main() {
       expect(versions.length, 1);
       expect(versions.first.versionNumber, 1);
     });
+
+    test('copyProgram creates a new draft with copied name', () async {
+      final sourceId = await repo.create(
+        name: 'Original Program',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+        description: 'A great program',
+      );
+
+      await repo.publishVersion(
+        programId: sourceId,
+        workouts: [
+          ProgramWorkoutRef(
+            workoutTemplateId: 'wt1',
+            workoutTemplateVersion: 1,
+            sortOrder: 0,
+          ),
+        ],
+        userId: 'coach1',
+      );
+
+      final copyId = await repo.copyProgram(
+        sourceProgramId: sourceId,
+        userId: 'coach1',
+      );
+
+      expect(copyId, isNot(sourceId));
+
+      final copy = await repo.getById(copyId);
+      expect(copy, isNotNull);
+      expect(copy!.name, 'Original Program (Copy)');
+      expect(copy.description, 'A great program');
+      expect(copy.type, ProgramType.assignable);
+      expect(copy.isDraft, isTrue);
+      expect(copy.currentVersion, 0);
+    });
+
+    test('copyProgram throws for non-existent source', () async {
+      expect(
+        () => repo.copyProgram(
+          sourceProgramId: 'nonexistent',
+          userId: 'coach1',
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('getLatestWorkoutRefs returns workouts from latest version',
+        () async {
+      final id = await repo.create(
+        name: 'Refs Test',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+
+      await repo.publishVersion(
+        programId: id,
+        workouts: [
+          ProgramWorkoutRef(
+            workoutTemplateId: 'wt1',
+            workoutTemplateVersion: 1,
+            sortOrder: 0,
+          ),
+          ProgramWorkoutRef(
+            workoutTemplateId: 'wt2',
+            workoutTemplateVersion: 2,
+            sortOrder: 1,
+          ),
+        ],
+        userId: 'coach1',
+      );
+
+      final refs = await repo.getLatestWorkoutRefs(id);
+      expect(refs.length, 2);
+      expect(refs[0].workoutTemplateId, 'wt1');
+      expect(refs[1].workoutTemplateId, 'wt2');
+    });
+
+    test('getLatestWorkoutRefs returns empty for unpublished program',
+        () async {
+      final id = await repo.create(
+        name: 'No Version',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+
+      final refs = await repo.getLatestWorkoutRefs(id);
+      expect(refs, isEmpty);
+    });
   });
 
   group('Program.copyWith', () {

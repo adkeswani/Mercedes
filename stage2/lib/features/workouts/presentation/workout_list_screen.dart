@@ -118,9 +118,52 @@ class _WorkoutTile extends ConsumerWidget {
         subtitle: Text(
           '${workout.workoutType.name} · $versionLabel',
         ),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (workout.hasPublishedVersion)
+              IconButton(
+                icon: const Icon(Icons.copy),
+                tooltip: 'Duplicate workout',
+                onPressed: () => _duplicateWorkout(context, ref),
+              ),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
         onTap: () => context.push('/workouts/${workout.id}'),
       ),
     );
+  }
+
+  Future<void> _duplicateWorkout(BuildContext context, WidgetRef ref) async {
+    final uid = ref.read(authStateProvider).value?.uid;
+    if (uid == null) return;
+
+    final repo = ref.read(workoutTemplateRepositoryProvider);
+    try {
+      final newId = await repo.duplicateTemplate(
+        sourceTemplateId: workout.id,
+        userId: uid,
+      );
+
+      // Pre-load the draft with the source's exercises
+      final exercises = await repo.getLatestExercises(workout.id);
+      if (exercises.isNotEmpty) {
+        ref.read(workoutDraftProvider.notifier).load(exercises);
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Workout duplicated')),
+        );
+        context.push('/workouts/$newId');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to duplicate: $e')),
+        );
+      }
+    }
   }
 }
