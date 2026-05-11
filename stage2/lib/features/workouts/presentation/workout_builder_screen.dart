@@ -13,9 +13,11 @@ import 'package:stage2/features/workouts/presentation/workout_providers.dart';
 /// Collects header info (name, workout type) and manages a local draft
 /// of exercise prescriptions. Changes are only persisted on Publish.
 class WorkoutBuilderScreen extends ConsumerStatefulWidget {
-  const WorkoutBuilderScreen({super.key, this.workoutId});
+  const WorkoutBuilderScreen({super.key, this.workoutId, this.copyFromId});
 
   final String? workoutId;
+  /// When set, pre-populates the draft with exercises from this template.
+  final String? copyFromId;
 
   bool get isEditing => workoutId != null;
 
@@ -56,11 +58,16 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
     _nameController.text = template.name;
     setState(() => _workoutType = template.workoutType);
 
-    // Load latest version's exercises into draft
-    if (template.hasPublishedVersion) {
+    // If duplicating from another template, load its exercises
+    final sourceId = widget.copyFromId ?? widget.workoutId!;
+    final sourceTemplate = widget.copyFromId != null
+        ? await repo.getById(widget.copyFromId!)
+        : template;
+
+    if (sourceTemplate != null && sourceTemplate.hasPublishedVersion) {
       final version = await repo.getVersion(
-        widget.workoutId!,
-        template.currentVersion,
+        sourceId,
+        sourceTemplate.currentVersion,
       );
       if (version != null && mounted) {
         ref.read(workoutDraftProvider.notifier).load(version.exercises);

@@ -84,6 +84,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/workouts/:id',
         builder: (context, state) => WorkoutBuilderScreen(
           workoutId: state.pathParameters['id'],
+          copyFromId: state.uri.queryParameters['copyFrom'],
         ),
       ),
       GoRoute(
@@ -98,6 +99,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/programs/:id',
         builder: (context, state) => ProgramBuilderScreen(
           programId: state.pathParameters['id'],
+          copyFromId: state.uri.queryParameters['copyFrom'],
         ),
       ),
       GoRoute(

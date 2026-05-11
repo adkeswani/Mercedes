@@ -146,17 +146,11 @@ class _WorkoutTile extends ConsumerWidget {
         userId: uid,
       );
 
-      // Pre-load the draft with the source's exercises
-      final exercises = await repo.getLatestExercises(workout.id);
-      if (exercises.isNotEmpty) {
-        ref.read(workoutDraftProvider.notifier).load(exercises);
-      }
-
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Workout duplicated')),
         );
-        context.push('/workouts/$newId');
+        context.push('/workouts/$newId?copyFrom=${workout.id}');
       }
     } catch (e) {
       if (context.mounted) {

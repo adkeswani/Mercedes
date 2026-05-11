@@ -142,17 +142,11 @@ class _ProgramTile extends ConsumerWidget {
         userId: uid,
       );
 
-      // Pre-load the draft with the source's workout refs
-      final workoutRefs = await repo.getLatestWorkoutRefs(program.id);
-      if (workoutRefs.isNotEmpty) {
-        ref.read(programDraftProvider.notifier).load(workoutRefs);
-      }
-
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Program copied')),
         );
-        context.push('/programs/$newId');
+        context.push('/programs/$newId?copyFrom=${program.id}');
       }
     } catch (e) {
       if (context.mounted) {

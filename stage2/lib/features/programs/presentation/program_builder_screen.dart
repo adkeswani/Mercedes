@@ -14,9 +14,11 @@ import 'package:stage2/features/workouts/presentation/workout_providers.dart';
 /// Collects header info (name, description, type) and manages a local draft
 /// of workout references. Changes are only persisted on Publish.
 class ProgramBuilderScreen extends ConsumerStatefulWidget {
-  const ProgramBuilderScreen({super.key, this.programId});
+  const ProgramBuilderScreen({super.key, this.programId, this.copyFromId});
 
   final String? programId;
+  /// When set, pre-populates the draft with workouts from this program.
+  final String? copyFromId;
 
   bool get isEditing => programId != null;
 
@@ -59,11 +61,16 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
     _descriptionController.text = program.description ?? '';
     setState(() => _programType = program.type);
 
-    // Load latest version's workouts into draft
-    if (program.currentVersion > 0) {
+    // If copying from another program, load its workouts
+    final sourceId = widget.copyFromId ?? widget.programId!;
+    final sourceProgram = widget.copyFromId != null
+        ? await repo.getById(widget.copyFromId!)
+        : program;
+
+    if (sourceProgram != null && sourceProgram.currentVersion > 0) {
       final version = await repo.getVersion(
-        widget.programId!,
-        program.currentVersion,
+        sourceId,
+        sourceProgram.currentVersion,
       );
       if (version != null && mounted) {
         ref.read(programDraftProvider.notifier).load(version.workouts);
