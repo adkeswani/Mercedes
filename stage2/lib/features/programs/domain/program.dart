@@ -81,6 +81,43 @@ class Program with Auditable {
   bool get hasCustomLoadWeights =>
       typeWeightOverrides != null && typeWeightOverrides!.isNotEmpty;
 
+  /// Creates a copy with the given fields replaced.
+  Program copyWith({
+    String? id,
+    String? name,
+    String? description,
+    String? ownerId,
+    ProgramType? type,
+    ProgramStatus? status,
+    int? currentVersion,
+    Map<WorkoutType, int>? typeWeightOverrides,
+    String? loadStrategyId,
+    DateTime? createdAt,
+    String? createdBy,
+    DateTime? updatedAt,
+    String? updatedBy,
+    DateTime? deletedAt,
+    String? deletedBy,
+  }) {
+    return Program(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      ownerId: ownerId ?? this.ownerId,
+      type: type ?? this.type,
+      status: status ?? this.status,
+      currentVersion: currentVersion ?? this.currentVersion,
+      typeWeightOverrides: typeWeightOverrides ?? this.typeWeightOverrides,
+      loadStrategyId: loadStrategyId ?? this.loadStrategyId,
+      createdAt: createdAt ?? this.createdAt,
+      createdBy: createdBy ?? this.createdBy,
+      updatedAt: updatedAt ?? this.updatedAt,
+      updatedBy: updatedBy ?? this.updatedBy,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedBy: deletedBy ?? this.deletedBy,
+    );
+  }
+
   /// Validates all required fields and business rules.
   void validate() {
     if (id.isEmpty) {

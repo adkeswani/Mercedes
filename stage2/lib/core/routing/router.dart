@@ -8,6 +8,8 @@ import 'package:stage2/features/auth/presentation/login_screen.dart';
 import 'package:stage2/features/auth/presentation/onboarding_screen.dart';
 import 'package:stage2/features/exercises/presentation/exercise_form_screen.dart';
 import 'package:stage2/features/exercises/presentation/exercise_list_screen.dart';
+import 'package:stage2/features/programs/presentation/program_builder_screen.dart';
+import 'package:stage2/features/programs/presentation/program_list_screen.dart';
 import 'package:stage2/features/workouts/presentation/workout_builder_screen.dart';
 import 'package:stage2/features/workouts/presentation/workout_list_screen.dart';
 
@@ -82,6 +84,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/workouts/:id',
         builder: (context, state) => WorkoutBuilderScreen(
           workoutId: state.pathParameters['id'],
+        ),
+      ),
+      GoRoute(
+        path: '/programs',
+        builder: (context, state) => const ProgramListScreen(),
+      ),
+      GoRoute(
+        path: '/programs/new',
+        builder: (context, state) => const ProgramBuilderScreen(),
+      ),
+      GoRoute(
+        path: '/programs/:id',
+        builder: (context, state) => ProgramBuilderScreen(
+          programId: state.pathParameters['id'],
         ),
       ),
       GoRoute(
