@@ -32,14 +32,16 @@
 
 ## Roadmap
 
-1. [MVP] Foundation planning (hard-to-change architecture): finalize auth model, role/ACL boundaries, enrollment lifecycle fields, and versioning/audit requirements before feature build-out.
-2. [MVP] Workout plan creation: exercise templates, workout templates, program structure, versioned publishing, owner program copy, and workout template duplicate.
-3. [MVP] Auth + athlete assignment: sign-in, role model, enrollment, athlete exercise notes, athlete personal program creation (with copy + nesting + day assignment parity), and schedule assignment to athletes.
-4. [MVP] Load/difficulty model: RPE + duration logging, workout-type-based weighting, dashboard load summaries, and athlete download/export of workout + load data.
-5. [MVP] Community features (core): direct athlete↔owner messaging and private workout comments, with support for external photo links and YouTube links (plus in-app link preview when available).
-6. [Post-MVP] Community features (forum): program-level forum with reply notifications and athlete download/export of community conversation data.
-7. [Post-MVP] Marketplace and access lifecycle: program discovery, durations, consent/waiver tracking, expiry notifications, automatic enrollment removal, and paid Program Owner entitlement for assignable-program creation.
-8. [Post-MVP] Group workouts/plans: shared group progress, completion visibility, and group comments visible to members of the same group.
+> **Progress key:** ✅ Done · 🔶 Partially done · ⬚ Not started
+
+1. ✅ [MVP] Foundation planning (hard-to-change architecture): finalize auth model, role/ACL boundaries, enrollment lifecycle fields, and versioning/audit requirements before feature build-out. — *Completed 2026-04-05. 198 domain model tests. Branch `user/akeswani/start_implementation` merged to `main`.*
+2. ✅ [MVP] Workout plan creation: exercise templates, workout templates, program structure, versioned publishing, owner program copy, and workout template duplicate. — *Completed 2026-05-11. Exercise CRUD, workout builder, program structure, copy/duplicate, delete guards. 254 tests. Branch `user/akeswani/stage2-auth-and-plans` merged to `main`.*
+3. 🔶 [MVP] Auth + athlete assignment: sign-in, role model, enrollment, athlete exercise notes, athlete personal program creation (with copy + nesting + day assignment parity), and schedule assignment to athletes. — *Auth scaffolding done in Stage 2 (Google Sign-In, `onUserCreated` Cloud Function, user profile). Remaining: enrollment, security rules, athlete features, scheduling.*
+4. ⬚ [MVP] Load/difficulty model: RPE + duration logging, workout-type-based weighting, dashboard load summaries, and athlete download/export of workout + load data.
+5. ⬚ [MVP] Community features (core): direct athlete↔owner messaging and private workout comments, with support for external photo links and YouTube links (plus in-app link preview when available).
+6. ⬚ [Post-MVP] Community features (forum): program-level forum with reply notifications and athlete download/export of community conversation data.
+7. ⬚ [Post-MVP] Marketplace and access lifecycle: program discovery, durations, consent/waiver tracking, expiry notifications, automatic enrollment removal, and paid Program Owner entitlement for assignable-program creation.
+8. ⬚ [Post-MVP] Group workouts/plans: shared group progress, completion visibility, and group comments visible to members of the same group.
 
 ### Exit Criteria by Area
 
