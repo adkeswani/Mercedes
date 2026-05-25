@@ -10,6 +10,7 @@ import 'package:stage3/features/exercises/presentation/exercise_form_screen.dart
 import 'package:stage3/features/exercises/presentation/exercise_list_screen.dart';
 import 'package:stage3/features/programs/presentation/program_builder_screen.dart';
 import 'package:stage3/features/programs/presentation/program_list_screen.dart';
+import 'package:stage3/features/programs/presentation/roster_screen.dart';
 import 'package:stage3/features/workouts/presentation/workout_builder_screen.dart';
 import 'package:stage3/features/workouts/presentation/workout_list_screen.dart';
 
@@ -100,6 +101,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => ProgramBuilderScreen(
           programId: state.pathParameters['id'],
           copyFromId: state.uri.queryParameters['copyFrom'],
+        ),
+      ),
+      GoRoute(
+        path: '/programs/:id/roster',
+        builder: (context, state) => RosterScreen(
+          programId: state.pathParameters['id']!,
         ),
       ),
       GoRoute(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stage3/features/auth/presentation/auth_providers.dart';
+import 'package:stage3/features/programs/presentation/enrollment_providers.dart';
 
 /// Home screen shown after authentication and onboarding.
 class HomeScreen extends ConsumerWidget {
@@ -78,6 +79,9 @@ class HomeScreen extends ConsumerWidget {
             subtitle: 'Create programs and assign workouts',
             onTap: () => context.push('/programs'),
           ),
+          const SizedBox(height: 24),
+          // Enrolled programs section
+          _EnrolledProgramsSection(),
         ],
       ),
     );
@@ -109,5 +113,53 @@ class _FeatureCard extends StatelessWidget {
         onTap: onTap,
       ),
     );
+  }
+}
+
+/// Shows programs the current user is enrolled in as an athlete.
+class _EnrolledProgramsSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enrollmentsAsync = ref.watch(myEnrollmentsProvider);
+
+    return enrollmentsAsync.when(
+      data: (enrollments) {
+        if (enrollments.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Enrolled Programs',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            ...enrollments.map((enrollment) {
+              return Card(
+                clipBehavior: Clip.antiAlias,
+                child: ListTile(
+                  leading: const Icon(Icons.school, size: 32),
+                  title: Text('Program'),
+                  subtitle: Text(
+                    'Enrolled ${_formatDate(enrollment.addedAt)}',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push(
+                    '/programs/${enrollment.programId}',
+                  ),
+                ),
+              );
+            }),
+          ],
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    if (date.millisecondsSinceEpoch == 0) return '';
+    return '${date.month}/${date.day}/${date.year}';
   }
 }

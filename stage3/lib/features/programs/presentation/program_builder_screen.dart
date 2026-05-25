@@ -246,6 +246,14 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
       appBar: AppBar(
         title: const Text('Program Builder'),
         actions: [
+          if (_programType == ProgramType.assignable)
+            IconButton(
+              icon: const Icon(Icons.group),
+              tooltip: 'Manage roster',
+              onPressed: () => context.push(
+                '/programs/${widget.programId}/roster',
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: 'Delete program',

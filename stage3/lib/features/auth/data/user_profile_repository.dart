@@ -44,6 +44,21 @@ class UserProfileRepository {
     return snap.exists;
   }
 
+  /// Looks up a user profile by exact username.
+  ///
+  /// Returns the profile if found, or null if the username doesn't exist.
+  /// Used for athlete enrollment (exact match, privacy-safe).
+  Future<UserProfile?> getUserByUsername(String username) async {
+    final canonical = canonicalizeUsername(username);
+    final reservation = await _usernamesRef.doc(canonical).get();
+    if (!reservation.exists || reservation.data() == null) return null;
+
+    final uid = reservation.data()!['uid'] as String?;
+    if (uid == null) return null;
+
+    return getUserProfile(uid);
+  }
+
   /// Claims [username] for user [uid] in an atomic transaction.
   ///
   /// Creates the `usernames/{canonical}` reservation and updates
