@@ -1,0 +1,27 @@
+name: stage3
+version: 0.1.0
+publish_to: 'none'
+description: Stage 2 — Auth scaffolding and workout plan creation.
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  # Firebase
+  firebase_core: ^3.12.1
+  firebase_auth: ^5.5.2
+  google_sign_in: ^6.3.0
+  cloud_firestore: ^5.6.7
+  # State management
+  flutter_riverpod: ^2.6.1
+  # Routing
+  go_router: ^15.1.2
+
+dev_dependencies:
+  fake_cloud_firestore: ^3.1.0
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

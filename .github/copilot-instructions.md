@@ -16,6 +16,14 @@
 - Integrate topic branches into `main` using fast-forward merge only.
 - No pull request is required for this solo-maintained repository.
 
+## Stage-based directory convention
+
+- Each implementation stage lives in its own directory (`stage1/`, `stage2/`, `stage3/`, …).
+- When starting a new stage, copy the previous stage directory to a new one (e.g. `stage2/ → stage3/`).
+- Rename the package (`name:` in `pubspec.yaml` and all `package:` imports) to match the new stage.
+- Run `flutter pub get` and verify all existing tests pass before beginning new work.
+- Previous stage directories are kept as-is for reference; all new development happens in the latest stage directory.
+
 ## Implementation style
 
 - Keep changes focused and minimal.
