@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stage3/features/auth/presentation/auth_providers.dart';
+import 'package:stage3/features/programs/domain/enrollment.dart';
 import 'package:stage3/features/programs/presentation/enrollment_providers.dart';
+import 'package:stage3/features/programs/presentation/program_providers.dart';
 
 /// Home screen shown after authentication and onboarding.
 class HomeScreen extends ConsumerWidget {
@@ -135,26 +137,56 @@ class _EnrolledProgramsSection extends ConsumerWidget {
             ),
             const SizedBox(height: 8),
             ...enrollments.map((enrollment) {
-              return Card(
-                clipBehavior: Clip.antiAlias,
-                child: ListTile(
-                  leading: const Icon(Icons.school, size: 32),
-                  title: Text('Program'),
-                  subtitle: Text(
-                    'Enrolled ${_formatDate(enrollment.addedAt)}',
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push(
-                    '/programs/${enrollment.programId}',
-                  ),
-                ),
-              );
+              return _EnrolledProgramCard(enrollment: enrollment);
             }),
           ],
         );
       },
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
+/// Card for a single enrolled program. Fetches the program name.
+class _EnrolledProgramCard extends ConsumerWidget {
+  const _EnrolledProgramCard({required this.enrollment});
+
+  final Enrollment enrollment;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final programRepo = ref.watch(programRepositoryProvider);
+
+    return FutureBuilder(
+      future: programRepo.getById(enrollment.programId),
+      builder: (context, snapshot) {
+        final program = snapshot.data;
+
+        // Hide card if program was deleted
+        if (snapshot.connectionState == ConnectionState.done &&
+            program == null) {
+          return const SizedBox.shrink();
+        }
+
+        final name = program?.name ?? 'Loading...';
+        final description = program?.description;
+
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          child: ListTile(
+            leading: const Icon(Icons.school, size: 32),
+            title: Text(name),
+            subtitle: Text(
+              description ?? 'Enrolled ${_formatDate(enrollment.addedAt)}',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push(
+              '/programs/${enrollment.programId}',
+            ),
+          ),
+        );
+      },
     );
   }
 

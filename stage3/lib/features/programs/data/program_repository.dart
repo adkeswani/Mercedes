@@ -110,9 +110,23 @@ class ProgramRepository {
 
   /// Soft-deletes the program.
   ///
-  /// Throws [StateError] if the caller is not the program owner.
+  /// Throws [StateError] if the caller is not the program owner,
+  /// or if athletes are actively enrolled.
   Future<void> softDelete(String id, String userId) async {
     await verifyOwnership(id, userId);
+
+    // Block deletion if athletes are enrolled
+    final enrollments = await _firestore
+        .collection('enrollments')
+        .where('programId', isEqualTo: id)
+        .where('status', isEqualTo: 'active')
+        .limit(1)
+        .get();
+    if (enrollments.docs.isNotEmpty) {
+      throw StateError(
+        'Cannot delete program $id while athletes are enrolled',
+      );
+    }
     await _collection.doc(id).update({
       'deletedAt': FieldValue.serverTimestamp(),
       'deletedBy': userId,

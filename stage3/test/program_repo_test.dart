@@ -131,6 +131,48 @@ void main() {
       );
     });
 
+    test('softDelete throws when athletes are enrolled', () async {
+      final id = await repo.create(
+        name: 'Has Athletes',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+
+      // Create an active enrollment
+      await fakeFirestore.collection('enrollments').doc('${id}_athlete1').set({
+        'programId': id,
+        'athleteId': 'athlete1',
+        'status': 'active',
+        'addedBy': 'coach1',
+      });
+
+      expect(
+        () => repo.softDelete(id, 'coach1'),
+        throwsStateError,
+      );
+    });
+
+    test('softDelete succeeds when all enrollments are removed', () async {
+      final id = await repo.create(
+        name: 'Was Enrolled',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+
+      // Create a removed enrollment (not active)
+      await fakeFirestore.collection('enrollments').doc('${id}_athlete1').set({
+        'programId': id,
+        'athleteId': 'athlete1',
+        'status': 'removed',
+        'addedBy': 'coach1',
+      });
+
+      // Should succeed — no active enrollments
+      await repo.softDelete(id, 'coach1');
+      final result = await repo.getById(id);
+      expect(result, isNull);
+    });
+
     test('updateType throws when caller is not owner', () async {
       final id = await repo.create(
         name: 'Owned by coach1',

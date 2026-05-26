@@ -241,6 +241,23 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
   }
 
   Future<void> _deleteProgram() async {
+    // Block deletion if athletes are enrolled
+    if (_programType == ProgramType.assignable) {
+      final enrollmentRepo = ref.read(enrollmentRepositoryProvider);
+      final enrollments =
+          await enrollmentRepo.watchEnrollments(widget.programId!).first;
+      if (enrollments.isNotEmpty && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Remove all enrolled athletes before deleting this program',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -287,7 +304,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Program Builder'),
+        title: Text(isOwner ? 'Program Builder' : 'Program Details'),
         actions: [
           if (isOwner && _programType == ProgramType.assignable)
             IconButton(
@@ -323,14 +340,16 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
             controller: _nameController,
             decoration: const InputDecoration(labelText: 'Program Name'),
             textCapitalization: TextCapitalization.words,
-            onChanged: (_) => _saveHeader(),
+            onChanged: isOwner ? (_) => _saveHeader() : null,
+            readOnly: !isOwner,
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _descriptionController,
             decoration: const InputDecoration(labelText: 'Description'),
             maxLines: 3,
-            onChanged: (_) => _saveHeader(),
+            onChanged: isOwner ? (_) => _saveHeader() : null,
+            readOnly: !isOwner,
           ),
           if (isOwner) ...[
             const SizedBox(height: 16),
@@ -358,11 +377,12 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
                 'Workouts',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
-              TextButton.icon(
-                onPressed: _addWorkout,
-                icon: const Icon(Icons.add),
-                label: const Text('Add'),
-              ),
+              if (isOwner)
+                TextButton.icon(
+                  onPressed: _addWorkout,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add'),
+                ),
             ],
           ),
           if (workouts.isEmpty)
