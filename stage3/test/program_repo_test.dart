@@ -83,6 +83,71 @@ void main() {
       expect(program.description, 'New description');
     });
 
+    test('updateType changes program type', () async {
+      final id = await repo.create(
+        name: 'Type Test',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+
+      await repo.updateType(
+        id: id,
+        type: ProgramType.personal,
+        userId: 'coach1',
+      );
+
+      final program = await repo.getById(id);
+      expect(program!.type, ProgramType.personal);
+      expect(program.isAssignable, isFalse);
+    });
+
+    test('update throws when caller is not owner', () async {
+      final id = await repo.create(
+        name: 'Owned by coach1',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+
+      expect(
+        () => repo.update(
+          id: id,
+          name: 'Hijacked',
+          userId: 'not_the_owner',
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('softDelete throws when caller is not owner', () async {
+      final id = await repo.create(
+        name: 'Owned by coach1',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+
+      expect(
+        () => repo.softDelete(id, 'not_the_owner'),
+        throwsStateError,
+      );
+    });
+
+    test('updateType throws when caller is not owner', () async {
+      final id = await repo.create(
+        name: 'Owned by coach1',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+
+      expect(
+        () => repo.updateType(
+          id: id,
+          type: ProgramType.personal,
+          userId: 'not_the_owner',
+        ),
+        throwsStateError,
+      );
+    });
+
     test('watchAll streams programs for a user', () async {
       await repo.create(
         name: 'Program A',

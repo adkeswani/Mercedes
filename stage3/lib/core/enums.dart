@@ -53,6 +53,7 @@ enum WorkoutInstanceStatus {
   scheduled,
   completed,
   missed,
+  cancelled,
 }
 
 /// Exercise prescription mode.

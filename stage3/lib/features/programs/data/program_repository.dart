@@ -17,6 +17,18 @@ class ProgramRepository {
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('programs');
 
+  /// Verifies the caller is the program owner. Throws [StateError] if not.
+  Future<void> verifyOwnership(String programId, String userId) async {
+    final doc = await _collection.doc(programId).get();
+    if (!doc.exists) {
+      throw StateError('Program $programId not found');
+    }
+    final ownerId = doc.data()?['ownerId'] as String?;
+    if (ownerId != userId) {
+      throw StateError('User $userId is not the owner of program $programId');
+    }
+  }
+
   /// Streams all non-deleted programs owned by [userId],
   /// ordered by most recently updated first.
   Stream<List<Program>> watchAll(String userId) {
@@ -65,12 +77,15 @@ class ProgramRepository {
   }
 
   /// Updates an existing program's editable fields.
+  ///
+  /// Throws [StateError] if the caller is not the program owner.
   Future<void> update({
     required String id,
     required String name,
     required String userId,
     String? description,
   }) async {
+    await verifyOwnership(id, userId);
     await _collection.doc(id).update({
       'name': name,
       'description': description,
@@ -78,8 +93,26 @@ class ProgramRepository {
     });
   }
 
+  /// Updates the program type (assignable ↔ personal).
+  ///
+  /// Throws [StateError] if the caller is not the program owner.
+  Future<void> updateType({
+    required String id,
+    required ProgramType type,
+    required String userId,
+  }) async {
+    await verifyOwnership(id, userId);
+    await _collection.doc(id).update({
+      'type': type.name,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// Soft-deletes the program.
+  ///
+  /// Throws [StateError] if the caller is not the program owner.
   Future<void> softDelete(String id, String userId) async {
+    await verifyOwnership(id, userId);
     await _collection.doc(id).update({
       'deletedAt': FieldValue.serverTimestamp(),
       'deletedBy': userId,

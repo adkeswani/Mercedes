@@ -18,6 +18,30 @@ class EnrollmentRepository {
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('enrollments');
 
+  /// Verifies the caller is the program owner and the program is assignable.
+  /// Throws [StateError] if either check fails.
+  Future<void> _verifyCanManageRoster(
+    String programId,
+    String callerUserId,
+  ) async {
+    final programDoc = await _firestore
+        .collection('programs')
+        .doc(programId)
+        .get();
+    if (!programDoc.exists) {
+      throw StateError('Program $programId not found');
+    }
+    final data = programDoc.data()!;
+    if (data['ownerId'] != callerUserId) {
+      throw StateError(
+        'User $callerUserId is not the owner of program $programId',
+      );
+    }
+    if (data['type'] != ProgramType.assignable.name) {
+      throw StateError('Program $programId is not assignable');
+    }
+  }
+
   /// Generates the deterministic enrollment document ID.
   static String enrollmentId(String programId, String athleteId) =>
       '${programId}_$athleteId';
@@ -28,12 +52,15 @@ class EnrollmentRepository {
   /// If a removed enrollment already exists for this pair, it is overwritten
   /// with a fresh active enrollment (re-enrollment).
   ///
-  /// Throws [StateError] if the athlete is already actively enrolled.
+  /// Throws [StateError] if the athlete is already actively enrolled,
+  /// or if the caller is not the program owner,
+  /// or if the program is not assignable.
   Future<String> enrollAthlete({
     required String programId,
     required String athleteId,
     required String addedBy,
   }) async {
+    await _verifyCanManageRoster(programId, addedBy);
     final docId = enrollmentId(programId, athleteId);
     final docRef = _collection.doc(docId);
 
@@ -74,11 +101,14 @@ class EnrollmentRepository {
   ///
   /// Sets `removedAt`, `removedBy`, and status to `removed`.
   /// Does not hard-delete — the enrollment doc is preserved for audit.
+  ///
+  /// Throws [StateError] if the caller is not the program owner.
   Future<void> removeAthlete({
     required String programId,
     required String athleteId,
     required String removedBy,
   }) async {
+    await _verifyCanManageRoster(programId, removedBy);
     final docId = enrollmentId(programId, athleteId);
     await _collection.doc(docId).update({
       'removedAt': FieldValue.serverTimestamp(),

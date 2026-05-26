@@ -13,6 +13,21 @@ void main() {
     repo = EnrollmentRepository(firestore: fakeFirestore);
   });
 
+  /// Helper: creates a program doc so enrollment ownership checks pass.
+  Future<void> createProgram(
+    String id, {
+    String ownerId = 'coach1',
+    String type = 'assignable',
+  }) async {
+    await fakeFirestore.collection('programs').doc(id).set({
+      'name': 'Test Program',
+      'ownerId': ownerId,
+      'type': type,
+      'status': 'draft',
+      'currentVersion': 0,
+    });
+  }
+
   group('EnrollmentRepository', () {
     group('enrollmentId', () {
       test('generates deterministic ID from programId and athleteId', () {
@@ -25,6 +40,7 @@ void main() {
 
     group('enrollAthlete', () {
       test('creates enrollment doc with correct fields', () async {
+        await createProgram('prog1');
         final id = await repo.enrollAthlete(
           programId: 'prog1',
           athleteId: 'athlete1',
@@ -47,6 +63,7 @@ void main() {
       });
 
       test('throws when athlete is already actively enrolled', () async {
+        await createProgram('prog1');
         await repo.enrollAthlete(
           programId: 'prog1',
           athleteId: 'athlete1',
@@ -64,6 +81,7 @@ void main() {
       });
 
       test('allows re-enrollment after removal', () async {
+        await createProgram('prog1');
         await repo.enrollAthlete(
           programId: 'prog1',
           athleteId: 'athlete1',
@@ -91,10 +109,45 @@ void main() {
         expect(enrollment!.isActive, isTrue);
         expect(enrollment.removedAt, isNull);
       });
+      test('throws when caller is not program owner', () async {
+        await createProgram('prog1', ownerId: 'coach1');
+        expect(
+          () => repo.enrollAthlete(
+            programId: 'prog1',
+            athleteId: 'athlete1',
+            addedBy: 'not_the_owner',
+          ),
+          throwsStateError,
+        );
+      });
+
+      test('throws when program is personal', () async {
+        await createProgram('prog1', type: 'personal');
+        expect(
+          () => repo.enrollAthlete(
+            programId: 'prog1',
+            athleteId: 'athlete1',
+            addedBy: 'coach1',
+          ),
+          throwsStateError,
+        );
+      });
+
+      test('throws when program does not exist', () async {
+        expect(
+          () => repo.enrollAthlete(
+            programId: 'nonexistent',
+            athleteId: 'athlete1',
+            addedBy: 'coach1',
+          ),
+          throwsStateError,
+        );
+      });
     });
 
     group('removeAthlete', () {
       test('sets removal fields and status to removed', () async {
+        await createProgram('prog1');
         await repo.enrollAthlete(
           programId: 'prog1',
           athleteId: 'athlete1',
@@ -114,10 +167,30 @@ void main() {
         expect(doc.data()!['status'], 'removed');
         expect(doc.data()!['removedBy'], 'coach1');
       });
+
+      test('throws when caller is not program owner', () async {
+        await createProgram('prog1', ownerId: 'coach1');
+        await repo.enrollAthlete(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          addedBy: 'coach1',
+        );
+
+        expect(
+          () => repo.removeAthlete(
+            programId: 'prog1',
+            athleteId: 'athlete1',
+            removedBy: 'not_the_owner',
+          ),
+          throwsStateError,
+        );
+      });
     });
 
     group('watchEnrollments', () {
       test('streams active enrollments for a program', () async {
+        await createProgram('prog1');
+        await createProgram('prog2', ownerId: 'coach2');
         await repo.enrollAthlete(
           programId: 'prog1',
           athleteId: 'athlete1',
@@ -144,6 +217,7 @@ void main() {
       });
 
       test('excludes removed enrollments', () async {
+        await createProgram('prog1');
         await repo.enrollAthlete(
           programId: 'prog1',
           athleteId: 'athlete1',
@@ -169,6 +243,9 @@ void main() {
 
     group('watchMyEnrollments', () {
       test('streams active enrollments for an athlete', () async {
+        await createProgram('prog1');
+        await createProgram('prog2', ownerId: 'coach2');
+        await createProgram('prog3');
         await repo.enrollAthlete(
           programId: 'prog1',
           athleteId: 'athlete1',
@@ -196,6 +273,8 @@ void main() {
       });
 
       test('excludes removed enrollments', () async {
+        await createProgram('prog1');
+        await createProgram('prog2', ownerId: 'coach2');
         await repo.enrollAthlete(
           programId: 'prog1',
           athleteId: 'athlete1',
@@ -222,6 +301,7 @@ void main() {
 
     group('isEnrolled', () {
       test('returns true for active enrollment', () async {
+        await createProgram('prog1');
         await repo.enrollAthlete(
           programId: 'prog1',
           athleteId: 'athlete1',
@@ -233,6 +313,7 @@ void main() {
       });
 
       test('returns false for removed enrollment', () async {
+        await createProgram('prog1');
         await repo.enrollAthlete(
           programId: 'prog1',
           athleteId: 'athlete1',
@@ -256,6 +337,7 @@ void main() {
 
     group('getEnrollment', () {
       test('returns enrollment when it exists', () async {
+        await createProgram('prog1');
         await repo.enrollAthlete(
           programId: 'prog1',
           athleteId: 'athlete1',
@@ -277,6 +359,7 @@ void main() {
       });
 
       test('returns removed enrollment (not null)', () async {
+        await createProgram('prog1');
         await repo.enrollAthlete(
           programId: 'prog1',
           athleteId: 'athlete1',

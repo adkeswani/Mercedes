@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:stage3/core/enums.dart';
 import 'package:stage3/features/auth/presentation/auth_providers.dart';
 import 'package:stage3/features/programs/domain/program.dart';
+import 'package:stage3/features/programs/presentation/enrollment_providers.dart';
 import 'package:stage3/features/programs/presentation/program_providers.dart';
 import 'package:stage3/features/programs/presentation/workout_picker.dart';
 import 'package:stage3/features/workouts/presentation/workout_providers.dart';
@@ -33,6 +34,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
   ProgramType _programType = ProgramType.assignable;
   bool _isLoading = false;
   bool _didLoad = false;
+  String? _ownerId;
 
   @override
   void dispose() {
@@ -59,7 +61,10 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
 
     _nameController.text = program.name;
     _descriptionController.text = program.description ?? '';
-    setState(() => _programType = program.type);
+    setState(() {
+      _programType = program.type;
+      _ownerId = program.ownerId;
+    });
 
     // If copying from another program, load its workouts
     final sourceId = widget.copyFromId ?? widget.programId!;
@@ -200,6 +205,41 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
     );
   }
 
+  Future<void> _toggleProgramType() async {
+    if (!widget.isEditing) return;
+    final uid = ref.read(authStateProvider).value?.uid;
+    if (uid == null) return;
+
+    final newType = _programType == ProgramType.assignable
+        ? ProgramType.personal
+        : ProgramType.assignable;
+
+    // Block assignable → personal if athletes are enrolled
+    if (newType == ProgramType.personal) {
+      final enrollmentRepo = ref.read(enrollmentRepositoryProvider);
+      final enrollments =
+          await enrollmentRepo.watchEnrollments(widget.programId!).first;
+      if (enrollments.isNotEmpty && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Remove all enrolled athletes before switching to personal',
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    final repo = ref.read(programRepositoryProvider);
+    await repo.updateType(
+      id: widget.programId!,
+      type: newType,
+      userId: uid,
+    );
+    if (mounted) setState(() => _programType = newType);
+  }
+
   Future<void> _deleteProgram() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -242,11 +282,14 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
       return _buildCreationForm();
     }
 
+    final uid = ref.watch(authStateProvider).value?.uid;
+    final isOwner = _ownerId != null && _ownerId == uid;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Program Builder'),
         actions: [
-          if (_programType == ProgramType.assignable)
+          if (isOwner && _programType == ProgramType.assignable)
             IconButton(
               icon: const Icon(Icons.group),
               tooltip: 'Manage roster',
@@ -254,21 +297,23 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
                 '/programs/${widget.programId}/roster',
               ),
             ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'Delete program',
-            onPressed: _isLoading ? null : _deleteProgram,
-          ),
-          TextButton(
-            onPressed: _isLoading ? null : _publish,
-            child: _isLoading
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Publish'),
-          ),
+          if (isOwner)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Delete program',
+              onPressed: _isLoading ? null : _deleteProgram,
+            ),
+          if (isOwner)
+            TextButton(
+              onPressed: _isLoading ? null : _publish,
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Publish'),
+            ),
         ],
       ),
       body: ListView(
@@ -287,6 +332,23 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
             maxLines: 3,
             onChanged: (_) => _saveHeader(),
           ),
+          if (isOwner) ...[
+            const SizedBox(height: 16),
+            SwitchListTile(
+              title: Text(
+                _programType == ProgramType.assignable
+                    ? 'Assignable'
+                    : 'Personal',
+              ),
+              subtitle: Text(
+                _programType == ProgramType.assignable
+                    ? 'Athletes can be enrolled'
+                    : 'Self-use only',
+              ),
+              value: _programType == ProgramType.assignable,
+              onChanged: (_) => _toggleProgramType(),
+            ),
+          ],
           const SizedBox(height: 24),
           // Workout list
           Row(

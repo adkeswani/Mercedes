@@ -1,0 +1,282 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'package:stage3/core/enums.dart';
+import 'package:stage3/features/workouts/domain/workout_instance.dart';
+
+/// Firestore repository for workout instance management.
+///
+/// Targets the `workoutInstances/{instanceId}` collection.
+/// Handles scheduling, completion, cancellation, and calendar queries.
+class WorkoutInstanceRepository {
+  WorkoutInstanceRepository({
+    FirebaseFirestore? firestore,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _collection =>
+      _firestore.collection('workoutInstances');
+
+  /// Assigns a single workout to an athlete on a specific date.
+  ///
+  /// Creates a workout instance with status `scheduled`.
+  /// Returns the generated document ID.
+  Future<String> assignWorkout({
+    required String programId,
+    required String athleteId,
+    required String workoutTemplateId,
+    required int workoutTemplateVersion,
+    required String scheduledDate,
+    required WorkoutType workoutType,
+    required String assignedBy,
+  }) async {
+    final docRef = _collection.doc();
+    await docRef.set({
+      'programId': programId,
+      'athleteId': athleteId,
+      'workoutTemplateId': workoutTemplateId,
+      'workoutTemplateVersion': workoutTemplateVersion,
+      'scheduledDate': scheduledDate,
+      'workoutType': workoutType.name,
+      'assignedBy': assignedBy,
+      'assignedAt': FieldValue.serverTimestamp(),
+      'status': WorkoutInstanceStatus.scheduled.name,
+      'completedAt': null,
+      'missedAt': null,
+      'rpe': null,
+      'durationMinutes': null,
+      'loadPoints': null,
+      'loadPointsOverride': null,
+      'loadPointsOverriddenBy': null,
+      'loadPointsOverriddenAt': null,
+      'loadModelVersion': 1,
+      'loadStrategyId': null,
+      'recurrence': null,
+      'isRecurrenceRoot': false,
+      'recurrenceRootId': null,
+      'actuals': [],
+      'athleteNotes': null,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    return docRef.id;
+  }
+
+  /// Marks a workout instance as completed by the athlete.
+  ///
+  /// Sets status to `completed`, writes `completedAt`, and records
+  /// RPE, duration, and per-exercise actuals.
+  Future<void> completeWorkout({
+    required String instanceId,
+    required int rpe,
+    required int durationMinutes,
+    required List<ExerciseActual> actuals,
+    double? loadPoints,
+    String? loadStrategyId,
+    String? athleteNotes,
+  }) async {
+    await _collection.doc(instanceId).update({
+      'status': WorkoutInstanceStatus.completed.name,
+      'completedAt': FieldValue.serverTimestamp(),
+      'rpe': rpe,
+      'durationMinutes': durationMinutes,
+      'loadPoints': loadPoints,
+      'loadStrategyId': loadStrategyId,
+      'athleteNotes': athleteNotes,
+      'actuals': actuals.map(_actualToMap).toList(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Cancels all future scheduled workout instances for a program-athlete pair.
+  ///
+  /// Used when an athlete is removed from a program. Only cancels instances
+  /// with status `scheduled` — completed and missed instances are preserved.
+  Future<int> cancelFutureInstances({
+    required String programId,
+    required String athleteId,
+  }) async {
+    final snapshot = await _collection
+        .where('programId', isEqualTo: programId)
+        .where('athleteId', isEqualTo: athleteId)
+        .where('status', isEqualTo: WorkoutInstanceStatus.scheduled.name)
+        .get();
+
+    final batch = _firestore.batch();
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, {
+        'status': WorkoutInstanceStatus.cancelled.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+    return snapshot.docs.length;
+  }
+
+  /// Streams workout instances for an athlete within a date range.
+  ///
+  /// Used for the athlete's calendar view.
+  Stream<List<WorkoutInstance>> watchSchedule({
+    required String athleteId,
+    required String startDate,
+    required String endDate,
+  }) {
+    return _collection
+        .where('athleteId', isEqualTo: athleteId)
+        .where('scheduledDate', isGreaterThanOrEqualTo: startDate)
+        .where('scheduledDate', isLessThanOrEqualTo: endDate)
+        .orderBy('scheduledDate')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => _fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
+  /// Streams workout instances for a specific program-athlete pair.
+  ///
+  /// Used by the owner to view an athlete's schedule within a program.
+  Stream<List<WorkoutInstance>> watchProgramSchedule({
+    required String programId,
+    required String athleteId,
+  }) {
+    return _collection
+        .where('programId', isEqualTo: programId)
+        .where('athleteId', isEqualTo: athleteId)
+        .orderBy('scheduledDate', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => _fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
+  /// Returns a single workout instance by ID, or null.
+  Future<WorkoutInstance?> getById(String id) async {
+    final doc = await _collection.doc(id).get();
+    if (!doc.exists || doc.data() == null) return null;
+    return _fromMap(doc.data()!, doc.id);
+  }
+
+  // -- Serialization helpers --
+
+  WorkoutInstance _fromMap(Map<String, dynamic> data, String id) {
+    return WorkoutInstance(
+      id: id,
+      programId: data['programId'] as String? ?? '',
+      athleteId: data['athleteId'] as String? ?? '',
+      workoutTemplateId: data['workoutTemplateId'] as String? ?? '',
+      workoutTemplateVersion:
+          (data['workoutTemplateVersion'] as int?) ?? 1,
+      scheduledDate: data['scheduledDate'] as String? ?? '',
+      assignedBy: data['assignedBy'] as String? ?? '',
+      assignedAt: _toDateTime(data['assignedAt']),
+      status: _parseStatus(data['status'] as String?),
+      completedAt: data['completedAt'] != null
+          ? _toDateTime(data['completedAt'])
+          : null,
+      missedAt:
+          data['missedAt'] != null ? _toDateTime(data['missedAt']) : null,
+      rpe: data['rpe'] as int?,
+      durationMinutes: data['durationMinutes'] as int?,
+      loadPoints: (data['loadPoints'] as num?)?.toDouble(),
+      loadPointsOverride: (data['loadPointsOverride'] as num?)?.toDouble(),
+      loadPointsOverriddenBy: data['loadPointsOverriddenBy'] as String?,
+      loadPointsOverriddenAt: data['loadPointsOverriddenAt'] != null
+          ? _toDateTime(data['loadPointsOverriddenAt'])
+          : null,
+      loadModelVersion: (data['loadModelVersion'] as int?) ?? 1,
+      loadStrategyId: data['loadStrategyId'] as String?,
+      workoutType: _parseWorkoutType(data['workoutType'] as String?),
+      recurrence: data['recurrence'] != null
+          ? _recurrenceFromMap(data['recurrence'] as Map<String, dynamic>)
+          : null,
+      isRecurrenceRoot: data['isRecurrenceRoot'] as bool? ?? false,
+      recurrenceRootId: data['recurrenceRootId'] as String?,
+      actuals: _parseActuals(data['actuals']),
+      athleteNotes: data['athleteNotes'] as String?,
+      createdAt: _toDateTime(data['createdAt']),
+      updatedAt: _toDateTime(data['updatedAt']),
+    );
+  }
+
+  Map<String, dynamic> _actualToMap(ExerciseActual actual) {
+    return {
+      'exerciseId': actual.exerciseId,
+      'mode': actual.mode.name,
+      'sets': actual.sets,
+      'reps': actual.reps,
+      'durationSeconds': actual.durationSeconds,
+      'weight': actual.weight,
+      'restSeconds': actual.restSeconds,
+      'notes': actual.notes,
+    };
+  }
+
+  List<ExerciseActual> _parseActuals(dynamic data) {
+    if (data == null) return [];
+    if (data is! List) return [];
+    return data
+        .map((item) => _actualFromMap(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  ExerciseActual _actualFromMap(Map<String, dynamic> data) {
+    return ExerciseActual(
+      exerciseId: data['exerciseId'] as String? ?? '',
+      mode: _parseExerciseMode(data['mode'] as String?),
+      sets: data['sets'] as int?,
+      reps: data['reps'] as String?,
+      durationSeconds: data['durationSeconds'] as int?,
+      weight: data['weight'] as String?,
+      restSeconds: data['restSeconds'] as int?,
+      notes: data['notes'] as String?,
+    );
+  }
+
+  Recurrence _recurrenceFromMap(Map<String, dynamic> data) {
+    return Recurrence(
+      pattern: _parseRecurrencePattern(data['pattern'] as String?),
+      daysOfWeek: (data['daysOfWeek'] as List<dynamic>?)
+          ?.map((d) => d as int)
+          .toList(),
+      intervalDays: data['intervalDays'] as int?,
+      endDate: data['endDate'] as String? ?? '',
+    );
+  }
+
+  static WorkoutInstanceStatus _parseStatus(String? value) {
+    if (value == null) return WorkoutInstanceStatus.scheduled;
+    return WorkoutInstanceStatus.values.firstWhere(
+      (e) => e.name == value,
+      orElse: () => WorkoutInstanceStatus.scheduled,
+    );
+  }
+
+  static WorkoutType _parseWorkoutType(String? value) {
+    if (value == null) return WorkoutType.fullBody;
+    return WorkoutType.values.firstWhere(
+      (e) => e.name == value,
+      orElse: () => WorkoutType.fullBody,
+    );
+  }
+
+  static ExerciseMode _parseExerciseMode(String? value) {
+    if (value == null) return ExerciseMode.reps;
+    return ExerciseMode.values.firstWhere(
+      (e) => e.name == value,
+      orElse: () => ExerciseMode.reps,
+    );
+  }
+
+  static RecurrencePattern _parseRecurrencePattern(String? value) {
+    if (value == null) return RecurrencePattern.weekly;
+    return RecurrencePattern.values.firstWhere(
+      (e) => e.name == value,
+      orElse: () => RecurrencePattern.weekly,
+    );
+  }
+
+  static DateTime _toDateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+}
