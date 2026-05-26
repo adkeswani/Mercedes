@@ -232,6 +232,42 @@ void main() {
     });
   });
 
+  group('ExerciseTemplateRepository ownership', () {
+    test('update throws when caller is not creator', () async {
+      final id = await repo.create(
+        name: 'Owned Exercise',
+        description: 'desc',
+        instructions: 'instr',
+        userId: 'user1',
+      );
+
+      expect(
+        () => repo.update(
+          id: id,
+          name: 'Hijacked',
+          description: 'desc',
+          instructions: 'instr',
+          userId: 'not_the_creator',
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('softDelete throws when caller is not creator', () async {
+      final id = await repo.create(
+        name: 'Owned Exercise',
+        description: 'desc',
+        instructions: 'instr',
+        userId: 'user1',
+      );
+
+      expect(
+        () => repo.softDelete(id, 'not_the_creator'),
+        throwsStateError,
+      );
+    });
+  });
+
   group('ExerciseTemplateRepository.isExerciseReferenced', () {
     test('returns true when exercise is in a published workout', () async {
       final exerciseId = await repo.create(

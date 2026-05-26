@@ -331,6 +331,56 @@ void main() {
     });
   });
 
+  group('WorkoutTemplateRepository ownership', () {
+    test('update throws when caller is not creator', () async {
+      final id = await repo.create(
+        name: 'Owned Workout',
+        workoutType: WorkoutType.pull,
+        userId: 'user1',
+      );
+
+      expect(
+        () => repo.update(
+          id: id,
+          name: 'Hijacked',
+          workoutType: WorkoutType.pull,
+          userId: 'not_the_creator',
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('softDelete throws when caller is not creator', () async {
+      final id = await repo.create(
+        name: 'Owned Workout',
+        workoutType: WorkoutType.pull,
+        userId: 'user1',
+      );
+
+      expect(
+        () => repo.softDelete(id, 'not_the_creator'),
+        throwsStateError,
+      );
+    });
+
+    test('publishVersion throws when caller is not creator', () async {
+      final id = await repo.create(
+        name: 'Owned Workout',
+        workoutType: WorkoutType.pull,
+        userId: 'user1',
+      );
+
+      expect(
+        () => repo.publishVersion(
+          templateId: id,
+          exercises: [],
+          userId: 'not_the_creator',
+        ),
+        throwsStateError,
+      );
+    });
+  });
+
   group('WorkoutTemplateRepository duplicate', () {
     test('duplicateTemplate creates new template with copied name', () async {
       final sourceId = await repo.create(

@@ -34,3 +34,10 @@
 
 - Every code change must include unit tests for the new or modified behavior.
 - If a change cannot be unit tested (e.g. pure UI wiring), document why in the commit message.
+
+## Ownership and authorization
+
+- All repository mutation methods (create, update, delete, publish) must verify ownership before writing.
+- Use `verifyOwnership` or `_verifyOwnership` helpers that throw `StateError` on mismatch.
+- Enrollment mutations must additionally verify the program is assignable and the caller is the program owner.
+- These checks are defense-in-depth — Firestore security rules are the primary enforcement layer.

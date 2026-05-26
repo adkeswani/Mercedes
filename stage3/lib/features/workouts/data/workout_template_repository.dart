@@ -17,6 +17,18 @@ class WorkoutTemplateRepository {
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('workoutTemplates');
 
+  /// Verifies the caller is the workout creator. Throws [StateError] if not.
+  Future<void> _verifyOwnership(String id, String userId) async {
+    final doc = await _collection.doc(id).get();
+    if (!doc.exists) {
+      throw StateError('Workout template $id not found');
+    }
+    final createdBy = doc.data()?['createdBy'] as String?;
+    if (createdBy != userId) {
+      throw StateError('User $userId is not the creator of workout $id');
+    }
+  }
+
   /// Streams all non-deleted workout templates created by [userId],
   /// ordered by most recently updated first.
   Stream<List<WorkoutTemplate>> watchAll(String userId) {
@@ -62,12 +74,15 @@ class WorkoutTemplateRepository {
   }
 
   /// Updates the workout template header's editable fields.
+  ///
+  /// Throws [StateError] if the caller is not the creator.
   Future<void> update({
     required String id,
     required String name,
     required WorkoutType workoutType,
     required String userId,
   }) async {
+    await _verifyOwnership(id, userId);
     await _collection.doc(id).update({
       'name': name,
       'workoutType': workoutType.name,
@@ -77,7 +92,10 @@ class WorkoutTemplateRepository {
   }
 
   /// Soft-deletes the workout template.
+  ///
+  /// Throws [StateError] if the caller is not the creator.
   Future<void> softDelete(String id, String userId) async {
+    await _verifyOwnership(id, userId);
     await _collection.doc(id).update({
       'deletedAt': FieldValue.serverTimestamp(),
       'deletedBy': userId,
@@ -94,12 +112,14 @@ class WorkoutTemplateRepository {
   /// 2. Creates the version sub-doc with nextVersion
   /// 3. Increments the header's currentVersion
   ///
+  /// Throws [StateError] if the caller is not the creator.
   /// Returns the new version number.
   Future<int> publishVersion({
     required String templateId,
     required List<ExercisePrescription> exercises,
     required String userId,
   }) async {
+    await _verifyOwnership(templateId, userId);
     return _firestore.runTransaction<int>((txn) async {
       final headerRef = _collection.doc(templateId);
       final headerSnap = await txn.get(headerRef);

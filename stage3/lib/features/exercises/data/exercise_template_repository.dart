@@ -16,6 +16,18 @@ class ExerciseTemplateRepository {
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('exerciseTemplates');
 
+  /// Verifies the caller is the exercise creator. Throws [StateError] if not.
+  Future<void> _verifyOwnership(String id, String userId) async {
+    final doc = await _collection.doc(id).get();
+    if (!doc.exists) {
+      throw StateError('Exercise template $id not found');
+    }
+    final createdBy = doc.data()?['createdBy'] as String?;
+    if (createdBy != userId) {
+      throw StateError('User $userId is not the creator of exercise $id');
+    }
+  }
+
   /// Streams all non-deleted exercise templates created by [userId],
   /// ordered by most recently updated first.
   Stream<List<ExerciseTemplate>> watchAll(String userId) {
@@ -77,6 +89,8 @@ class ExerciseTemplateRepository {
   }
 
   /// Updates an existing exercise template's editable fields.
+  ///
+  /// Throws [StateError] if the caller is not the creator.
   Future<void> update({
     required String id,
     required String name,
@@ -85,6 +99,7 @@ class ExerciseTemplateRepository {
     required String userId,
     String? videoUrl,
   }) async {
+    await _verifyOwnership(id, userId);
     await _collection.doc(id).update({
       'name': name,
       'description': description,
@@ -96,7 +111,10 @@ class ExerciseTemplateRepository {
   }
 
   /// Soft-deletes the exercise template by setting deletedAt/deletedBy.
+  ///
+  /// Throws [StateError] if the caller is not the creator.
   Future<void> softDelete(String id, String userId) async {
+    await _verifyOwnership(id, userId);
     await _collection.doc(id).update({
       'deletedAt': FieldValue.serverTimestamp(),
       'deletedBy': userId,
