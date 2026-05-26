@@ -114,6 +114,19 @@ void main() {
       expect(template, isNull);
     });
 
+    test('getById returns template created by a different user', () async {
+      final id = await repo.create(
+        name: 'Coach Workout',
+        workoutType: WorkoutType.pull,
+        userId: 'coach1',
+      );
+
+      // Any user can read — getById has no ownership filter
+      final template = await repo.getById(id);
+      expect(template, isNotNull);
+      expect(template!.name, 'Coach Workout');
+    });
+
     test('getById returns null for soft-deleted', () async {
       final id = await repo.create(
         name: 'To Delete',
