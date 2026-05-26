@@ -411,6 +411,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
                   ),
                   workout: workout,
                   index: index,
+                  isOwner: isOwner,
                 );
               },
             ),
@@ -481,10 +482,12 @@ class _WorkoutCard extends ConsumerWidget {
     required super.key,
     required this.workout,
     required this.index,
+    required this.isOwner,
   });
 
   final ProgramWorkoutRef workout;
   final int index;
+  final bool isOwner;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -503,19 +506,23 @@ class _WorkoutCard extends ConsumerWidget {
 
     return Card(
       child: ListTile(
-        leading: ReorderableDragStartListener(
-          index: index,
-          child: const Icon(Icons.drag_handle),
-        ),
+        leading: isOwner
+            ? ReorderableDragStartListener(
+                index: index,
+                child: const Icon(Icons.drag_handle),
+              )
+            : null,
         title: Text(name),
         subtitle: Text('v${workout.workoutTemplateVersion}'),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete_outline),
-          tooltip: 'Remove',
-          onPressed: () {
-            ref.read(programDraftProvider.notifier).removeAt(index);
-          },
-        ),
+        trailing: isOwner
+            ? IconButton(
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Remove',
+                onPressed: () {
+                  ref.read(programDraftProvider.notifier).removeAt(index);
+                },
+              )
+            : null,
       ),
     );
   }
