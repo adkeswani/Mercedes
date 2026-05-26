@@ -491,19 +491,38 @@ class _WorkoutCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Prefer denormalized name, fall back to live stream lookup
-    final workoutsAsync = ref.watch(workoutTemplatesProvider);
-    final name = workout.workoutName ??
-        workoutsAsync.whenOrNull(
-          data: (templates) {
-            final match = templates
-                .where((t) => t.id == workout.workoutTemplateId)
-                .toList();
-            return match.isNotEmpty ? match.first.name : null;
-          },
-        ) ??
-        'Loading...';
+    // Prefer denormalized name from the published version snapshot
+    if (workout.workoutName != null) {
+      return _buildCard(context, ref, workout.workoutName!);
+    }
 
+    // For owners, fall back to live stream of own templates
+    if (isOwner) {
+      final workoutsAsync = ref.watch(workoutTemplatesProvider);
+      final name = workoutsAsync.whenOrNull(
+            data: (templates) {
+              final match = templates
+                  .where((t) => t.id == workout.workoutTemplateId)
+                  .toList();
+              return match.isNotEmpty ? match.first.name : null;
+            },
+          ) ??
+          'Loading...';
+      return _buildCard(context, ref, name);
+    }
+
+    // For non-owners, do a direct lookup by ID
+    final workoutRepo = ref.watch(workoutTemplateRepositoryProvider);
+    return FutureBuilder(
+      future: workoutRepo.getById(workout.workoutTemplateId),
+      builder: (context, snapshot) {
+        final name = snapshot.data?.name ?? 'Loading...';
+        return _buildCard(context, ref, name);
+      },
+    );
+  }
+
+  Widget _buildCard(BuildContext context, WidgetRef ref, String name) {
     return Card(
       child: ListTile(
         leading: isOwner
