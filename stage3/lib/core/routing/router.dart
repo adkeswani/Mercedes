@@ -11,7 +11,11 @@ import 'package:stage3/features/exercises/presentation/exercise_list_screen.dart
 import 'package:stage3/features/programs/presentation/program_builder_screen.dart';
 import 'package:stage3/features/programs/presentation/program_list_screen.dart';
 import 'package:stage3/features/programs/presentation/roster_screen.dart';
+import 'package:stage3/features/programs/presentation/athlete_schedule_screen.dart';
+import 'package:stage3/features/workouts/presentation/calendar_screen.dart';
+import 'package:stage3/features/workouts/presentation/schedule_assignment_screen.dart';
 import 'package:stage3/features/workouts/presentation/workout_builder_screen.dart';
+import 'package:stage3/features/workouts/presentation/workout_completion_screen.dart';
 import 'package:stage3/features/workouts/presentation/workout_list_screen.dart';
 
 /// App-level GoRouter configuration with auth and onboarding redirects.
@@ -107,6 +111,30 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/programs/:id/roster',
         builder: (context, state) => RosterScreen(
           programId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/programs/:id/assign',
+        builder: (context, state) => ScheduleAssignmentScreen(
+          programId: state.pathParameters['id']!,
+          preselectedAthleteId: state.uri.queryParameters['athleteId'],
+        ),
+      ),
+      GoRoute(
+        path: '/programs/:id/athlete/:athleteId',
+        builder: (context, state) => AthleteScheduleScreen(
+          programId: state.pathParameters['id']!,
+          athleteId: state.pathParameters['athleteId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/schedule',
+        builder: (context, state) => const CalendarScreen(),
+      ),
+      GoRoute(
+        path: '/workouts/complete/:instanceId',
+        builder: (context, state) => WorkoutCompletionScreen(
+          instanceId: state.pathParameters['instanceId']!,
         ),
       ),
       GoRoute(

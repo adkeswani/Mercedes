@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stage3/core/enums.dart';
+import 'package:stage3/features/auth/presentation/app_entry_providers.dart';
 import 'package:stage3/features/auth/presentation/auth_providers.dart';
 import 'package:stage3/features/programs/domain/program.dart';
 import 'package:stage3/features/programs/presentation/enrollment_providers.dart';
@@ -415,6 +416,33 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
                 );
               },
             ),
+          // Inline roster section (assignable programs only)
+          if (_programType == ProgramType.assignable) ...[
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 16),
+            Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Roster',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              if (isOwner)
+                TextButton.icon(
+                  onPressed: () => context.push(
+                    '/programs/${widget.programId}/roster',
+                  ),
+                  icon: const Icon(Icons.group_add, size: 18),
+                  label: const Text('Manage'),
+                ),
+            ],
+            ),
+            _InlineRoster(
+            programId: widget.programId!,
+            isOwner: isOwner,
+            ),
+          ],
         ],
       ),
     );
@@ -543,6 +571,96 @@ class _WorkoutCard extends ConsumerWidget {
               )
             : null,
       ),
+    );
+  }
+}
+
+/// Inline roster section shown on the program builder for assignable programs.
+class _InlineRoster extends ConsumerWidget {
+  const _InlineRoster({
+    required this.programId,
+    required this.isOwner,
+  });
+
+  final String programId;
+  final bool isOwner;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enrollmentsAsync = ref.watch(programEnrollmentsProvider(programId));
+
+    return enrollmentsAsync.when(
+      data: (enrollments) {
+        if (enrollments.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: Text('No athletes enrolled')),
+          );
+        }
+        return Column(
+          children: enrollments.map((enrollment) {
+            return _InlineAthleteCard(
+              programId: programId,
+              athleteId: enrollment.athleteId,
+              isOwner: isOwner,
+            );
+          }).toList(),
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Text('Error: $e'),
+    );
+  }
+}
+
+/// Compact athlete card for the inline roster.
+///
+/// Tapping navigates to the athlete's schedule within this program.
+/// Owner sees an assign button.
+class _InlineAthleteCard extends ConsumerWidget {
+  const _InlineAthleteCard({
+    required this.programId,
+    required this.athleteId,
+    required this.isOwner,
+  });
+
+  final String programId;
+  final String athleteId;
+  final bool isOwner;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profileRepo = ref.watch(userProfileRepositoryProvider);
+
+    return FutureBuilder(
+      future: profileRepo.getUserProfile(athleteId),
+      builder: (context, snapshot) {
+        final profile = snapshot.data;
+        final displayName = profile?.displayName ?? athleteId;
+
+        return Card(
+          child: ListTile(
+            leading: profile?.photoUrl != null
+                ? CircleAvatar(
+                    backgroundImage: NetworkImage(profile!.photoUrl!),
+                  )
+                : const CircleAvatar(child: Icon(Icons.person)),
+            title: Text(displayName),
+            trailing: isOwner
+                ? IconButton(
+                    icon: const Icon(Icons.assignment_add),
+                    tooltip: 'Assign workout',
+                    onPressed: () => context.push(
+                      '/programs/$programId/assign?athleteId=$athleteId',
+                    ),
+                  )
+                : null,
+            onTap: () => context.push(
+              '/programs/$programId/athlete/$athleteId',
+            ),
+          ),
+        );
+      },
     );
   }
 }

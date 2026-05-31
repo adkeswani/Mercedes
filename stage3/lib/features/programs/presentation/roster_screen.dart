@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:stage3/features/auth/domain/user_profile.dart';
 import 'package:stage3/features/auth/presentation/app_entry_providers.dart';
@@ -272,6 +273,7 @@ class _RosterScreenState extends ConsumerState<RosterScreen> {
               return Column(
                 children: enrollments.map((enrollment) {
                   return _AthleteCard(
+                    programId: widget.programId,
                     athleteId: enrollment.athleteId,
                     addedAt: enrollment.addedAt,
                     onRemove: (displayName) => _removeAthlete(
@@ -296,11 +298,13 @@ class _RosterScreenState extends ConsumerState<RosterScreen> {
 /// Loads the user profile asynchronously to display name and photo.
 class _AthleteCard extends ConsumerWidget {
   const _AthleteCard({
+    required this.programId,
     required this.athleteId,
     required this.addedAt,
     required this.onRemove,
   });
 
+  final String programId;
   final String athleteId;
   final DateTime addedAt;
   final void Function(String displayName) onRemove;
@@ -327,10 +331,22 @@ class _AthleteCard extends ConsumerWidget {
             subtitle: Text(
               username != null ? '@$username' : 'Enrolled ${_formatDate(addedAt)}',
             ),
-            trailing: IconButton(
-              icon: const Icon(Icons.person_remove),
-              tooltip: 'Remove athlete',
-              onPressed: () => onRemove(displayName),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.assignment_add),
+                  tooltip: 'Assign workout',
+                  onPressed: () => context.push(
+                    '/programs/$programId/assign?athleteId=$athleteId',
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.person_remove),
+                  tooltip: 'Remove athlete',
+                  onPressed: () => onRemove(displayName),
+                ),
+              ],
             ),
           ),
         );

@@ -1,0 +1,231 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import 'package:stage3/core/enums.dart';
+import 'package:stage3/features/workouts/domain/workout_instance.dart';
+import 'package:stage3/features/workouts/presentation/workout_instance_providers.dart';
+
+/// Screen for completing a scheduled workout.
+///
+/// The athlete enters RPE (1-10), duration, optional notes,
+/// and per-exercise actuals before marking the workout as completed.
+class WorkoutCompletionScreen extends ConsumerStatefulWidget {
+  const WorkoutCompletionScreen({super.key, required this.instanceId});
+
+  final String instanceId;
+
+  @override
+  ConsumerState<WorkoutCompletionScreen> createState() =>
+      _WorkoutCompletionScreenState();
+}
+
+class _WorkoutCompletionScreenState
+    extends ConsumerState<WorkoutCompletionScreen> {
+  final _notesController = TextEditingController();
+  int _rpe = 5;
+  int _durationMinutes = 45;
+  bool _isLoading = false;
+  WorkoutInstance? _instance;
+  bool _didLoad = false;
+
+  @override
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadInstance() async {
+    if (_didLoad) return;
+    _didLoad = true;
+
+    final repo = ref.read(workoutInstanceRepositoryProvider);
+    final instance = await repo.getById(widget.instanceId);
+    if (instance != null && mounted) {
+      setState(() => _instance = instance);
+    }
+  }
+
+  Future<void> _complete() async {
+    setState(() => _isLoading = true);
+    try {
+      final repo = ref.read(workoutInstanceRepositoryProvider);
+      await repo.completeWorkout(
+        instanceId: widget.instanceId,
+        rpe: _rpe,
+        durationMinutes: _durationMinutes,
+        actuals: [],
+        athleteNotes: _notesController.text.trim().isEmpty
+            ? null
+            : _notesController.text.trim(),
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Workout completed! 💪')),
+        );
+        context.pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to complete: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_didLoad) _loadInstance();
+
+    if (_instance == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Complete Workout')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final instance = _instance!;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Complete Workout'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Workout info
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    instance.workoutType.name.toUpperCase(),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Scheduled: ${instance.scheduledDate}',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // RPE slider
+          Text(
+            'Rate of Perceived Exertion (RPE)',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                '$_rpe',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: _rpeColor(_rpe),
+                    ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Slider(
+                  value: _rpe.toDouble(),
+                  min: 1,
+                  max: 10,
+                  divisions: 9,
+                  label: '$_rpe',
+                  onChanged: (value) {
+                    setState(() => _rpe = value.round());
+                  },
+                ),
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('1 (Easy)', style: Theme.of(context).textTheme.bodySmall),
+              Text('10 (Max)', style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
+          // Duration
+          Text(
+            'Duration (minutes)',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline),
+                onPressed: _durationMinutes > 5
+                    ? () => setState(() => _durationMinutes -= 5)
+                    : null,
+              ),
+              Text(
+                '$_durationMinutes min',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: () => setState(() => _durationMinutes += 5),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
+          // Notes
+          Text(
+            'Notes (optional)',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _notesController,
+            decoration: const InputDecoration(
+              hintText: 'How did it go?',
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 3,
+          ),
+
+          const SizedBox(height: 32),
+
+          // Complete button
+          FilledButton.icon(
+            onPressed: _isLoading ? null : _complete,
+            icon: _isLoading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check_circle),
+            label: const Text('Mark as Completed'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _rpeColor(int rpe) {
+    if (rpe <= 3) return Colors.green;
+    if (rpe <= 6) return Colors.orange;
+    return Colors.red;
+  }
+}

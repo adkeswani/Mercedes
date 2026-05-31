@@ -17,9 +17,60 @@ class WorkoutInstanceRepository {
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('workoutInstances');
 
+  /// Verifies the caller can assign workouts in this program.
+  ///
+  /// For assignable programs: caller must be the owner and athlete
+  /// must be actively enrolled. For personal programs: caller must
+  /// be both the owner and the athlete (self-assignment).
+  /// Throws [StateError] on any violation.
+  Future<void> _verifyCanAssign({
+    required String programId,
+    required String athleteId,
+    required String assignedBy,
+  }) async {
+    final programDoc = await _firestore
+        .collection('programs')
+        .doc(programId)
+        .get();
+    if (!programDoc.exists) {
+      throw StateError('Program $programId not found');
+    }
+    final data = programDoc.data()!;
+    final ownerId = data['ownerId'] as String?;
+    final type = data['type'] as String?;
+
+    if (ownerId != assignedBy) {
+      throw StateError(
+        'User $assignedBy is not the owner of program $programId',
+      );
+    }
+
+    if (type == 'personal') {
+      if (athleteId != assignedBy) {
+        throw StateError(
+          'Personal programs only allow self-assignment',
+        );
+      }
+    } else {
+      // Assignable — athlete must be enrolled
+      final enrollmentDoc = await _firestore
+          .collection('enrollments')
+          .doc('${programId}_$athleteId')
+          .get();
+      if (!enrollmentDoc.exists ||
+          enrollmentDoc.data()?['status'] != 'active') {
+        throw StateError(
+          'Athlete $athleteId is not actively enrolled in program $programId',
+        );
+      }
+    }
+  }
+
   /// Assigns a single workout to an athlete on a specific date.
   ///
   /// Creates a workout instance with status `scheduled`.
+  /// Throws [StateError] if the caller is not the program owner,
+  /// or if the athlete is not enrolled (for assignable programs).
   /// Returns the generated document ID.
   Future<String> assignWorkout({
     required String programId,
@@ -30,6 +81,11 @@ class WorkoutInstanceRepository {
     required WorkoutType workoutType,
     required String assignedBy,
   }) async {
+    await _verifyCanAssign(
+      programId: programId,
+      athleteId: athleteId,
+      assignedBy: assignedBy,
+    );
     final docRef = _collection.doc();
     await docRef.set({
       'programId': programId,
