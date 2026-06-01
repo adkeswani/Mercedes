@@ -28,6 +28,7 @@ class _WorkoutCompletionScreenState
   bool _isLoading = false;
   WorkoutInstance? _instance;
   bool _didLoad = false;
+  bool _isEditing = false;
 
   @override
   void dispose() {
@@ -42,7 +43,15 @@ class _WorkoutCompletionScreenState
     final repo = ref.read(workoutInstanceRepositoryProvider);
     final instance = await repo.getById(widget.instanceId);
     if (instance != null && mounted) {
-      setState(() => _instance = instance);
+      setState(() {
+        _instance = instance;
+        if (instance.isCompleted) {
+          _isEditing = true;
+          _rpe = instance.rpe ?? 5;
+          _durationMinutes = instance.durationMinutes ?? 45;
+          _notesController.text = instance.athleteNotes ?? '';
+        }
+      });
     }
   }
 
@@ -50,26 +59,40 @@ class _WorkoutCompletionScreenState
     setState(() => _isLoading = true);
     try {
       final repo = ref.read(workoutInstanceRepositoryProvider);
-      await repo.completeWorkout(
-        instanceId: widget.instanceId,
-        rpe: _rpe,
-        durationMinutes: _durationMinutes,
-        actuals: [],
-        athleteNotes: _notesController.text.trim().isEmpty
-            ? null
-            : _notesController.text.trim(),
-      );
+      if (_isEditing) {
+        await repo.updateCompletion(
+          instanceId: widget.instanceId,
+          rpe: _rpe,
+          durationMinutes: _durationMinutes,
+          actuals: [],
+          athleteNotes: _notesController.text.trim().isEmpty
+              ? null
+              : _notesController.text.trim(),
+        );
+      } else {
+        await repo.completeWorkout(
+          instanceId: widget.instanceId,
+          rpe: _rpe,
+          durationMinutes: _durationMinutes,
+          actuals: [],
+          athleteNotes: _notesController.text.trim().isEmpty
+              ? null
+              : _notesController.text.trim(),
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Workout completed! 💪')),
+          SnackBar(
+            content: Text(_isEditing ? 'Workout updated!' : 'Workout completed! 💪'),
+          ),
         );
         context.pop();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to complete: $e')),
+          SnackBar(content: Text('Failed: $e')),
         );
       }
     } finally {
@@ -92,7 +115,7 @@ class _WorkoutCompletionScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Complete Workout'),
+        title: Text(_isEditing ? 'Edit Workout' : 'Complete Workout'),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -215,8 +238,8 @@ class _WorkoutCompletionScreenState
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.check_circle),
-            label: const Text('Mark as Completed'),
+                : Icon(_isEditing ? Icons.save : Icons.check_circle),
+            label: Text(_isEditing ? 'Save Changes' : 'Mark as Completed'),
           ),
         ],
       ),

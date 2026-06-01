@@ -123,10 +123,10 @@ class _InstanceTile extends StatelessWidget {
         '${instance.rpe != null ? ' · RPE ${instance.rpe}' : ''}'
         '${instance.durationMinutes != null ? ' · ${instance.durationMinutes}min' : ''}',
       ),
-      trailing: instance.isScheduled
+      trailing: (instance.isScheduled || instance.isCompleted)
           ? const Icon(Icons.chevron_right)
           : null,
-      onTap: instance.isScheduled
+      onTap: (instance.isScheduled || instance.isCompleted)
           ? () => context.push('/workouts/complete/${instance.id}')
           : null,
     );

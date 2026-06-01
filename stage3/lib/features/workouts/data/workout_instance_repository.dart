@@ -144,6 +144,30 @@ class WorkoutInstanceRepository {
     });
   }
 
+  /// Updates completion data on an already-completed workout instance.
+  ///
+  /// Allows the athlete or program owner to revise RPE, duration, notes,
+  /// and per-exercise actuals after initial completion.
+  Future<void> updateCompletion({
+    required String instanceId,
+    required int rpe,
+    required int durationMinutes,
+    required List<ExerciseActual> actuals,
+    double? loadPoints,
+    String? loadStrategyId,
+    String? athleteNotes,
+  }) async {
+    await _collection.doc(instanceId).update({
+      'rpe': rpe,
+      'durationMinutes': durationMinutes,
+      'loadPoints': loadPoints,
+      'loadStrategyId': loadStrategyId,
+      'athleteNotes': athleteNotes,
+      'actuals': actuals.map(_actualToMap).toList(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// Cancels all future scheduled workout instances for a program-athlete pair.
   ///
   /// Used when an athlete is removed from a program. Only cancels instances

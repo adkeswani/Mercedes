@@ -244,8 +244,10 @@ class _WorkoutInstanceTile extends ConsumerWidget {
               ),
               child: const Text('Complete'),
             )
-          : null,
-      onTap: instance.isScheduled
+          : instance.isCompleted
+              ? const Icon(Icons.chevron_right)
+              : null,
+      onTap: (instance.isScheduled || instance.isCompleted)
           ? () => context.push('/workouts/complete/${instance.id}')
           : null,
     );
