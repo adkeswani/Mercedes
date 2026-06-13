@@ -578,6 +578,16 @@ describe('workoutInstances', () => {
     );
   });
 
+  it('denies owner from completing instance', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      db.collection('workoutInstances').doc(INSTANCE_ID).update({
+        status: 'completed', rpe: 7, durationMinutes: 60,
+      })
+    );
+  });
+
   it('denies stranger from updating instance', async () => {
     await seedInstance();
     const db = testEnv.authenticatedContext(STRANGER).firestore();

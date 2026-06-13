@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stage3/core/enums.dart';
+import 'package:stage3/features/auth/presentation/auth_providers.dart';
 import 'package:stage3/features/exercises/presentation/exercise_note_widget.dart';
 import 'package:stage3/features/workouts/domain/workout_instance.dart';
 import 'package:stage3/features/workouts/domain/workout_template.dart';
@@ -32,6 +33,7 @@ class _WorkoutCompletionScreenState
   WorkoutInstance? _instance;
   bool _didLoad = false;
   bool _isEditing = false;
+  bool _isAthlete = false;
   List<ExercisePrescription> _exercises = [];
 
   @override
@@ -53,9 +55,13 @@ class _WorkoutCompletionScreenState
         instance.workoutTemplateId,
       );
 
+      final uid = ref.read(authStateProvider).value?.uid;
+      final isAthlete = uid == instance.athleteId;
+
       setState(() {
         _instance = instance;
         _exercises = exercises;
+        _isAthlete = isAthlete;
         if (instance.isCompleted) {
           _isEditing = true;
           _rpe = instance.rpe ?? 5;
@@ -126,7 +132,9 @@ class _WorkoutCompletionScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isEditing ? 'Edit Workout' : 'Complete Workout'),
+        title: Text(_isAthlete
+            ? (_isEditing ? 'Edit Workout' : 'Complete Workout')
+            : 'Workout Details'),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -183,7 +191,8 @@ class _WorkoutCompletionScreenState
                         ),
                       ],
                       const SizedBox(height: 8),
-                      ExerciseNoteWidget(
+                      if (_isAthlete)
+                        ExerciseNoteWidget(
                         exerciseTemplateId: exercise.exerciseId,
                         exerciseName:
                             exercise.exerciseName ?? exercise.exerciseId,
@@ -198,101 +207,161 @@ class _WorkoutCompletionScreenState
             const SizedBox(height: 24),
 
           // RPE slider
-          Text(
-            'Rate of Perceived Exertion (RPE)',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                '$_rpe',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: _rpeColor(_rpe),
-                    ),
+          if (_isAthlete) ...[
+            Text(
+              'Rate of Perceived Exertion (RPE)',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  '$_rpe',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: _rpeColor(_rpe),
+                      ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Slider(
+                    value: _rpe.toDouble(),
+                    min: 1,
+                    max: 10,
+                    divisions: 9,
+                    label: '$_rpe',
+                    onChanged: (value) {
+                      setState(() => _rpe = value.round());
+                    },
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('1 (Easy)', style: Theme.of(context).textTheme.bodySmall),
+                Text('10 (Max)', style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+
+            // Duration
+            Text(
+              'Duration (minutes)',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline),
+                  onPressed: _durationMinutes > 5
+                      ? () => setState(() => _durationMinutes -= 5)
+                      : null,
+                ),
+                Text(
+                  '$_durationMinutes min',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline),
+                  onPressed: () => setState(() => _durationMinutes += 5),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+
+            // Notes
+            Text(
+              'Notes (optional)',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _notesController,
+              decoration: const InputDecoration(
+                hintText: 'How did it go?',
+                border: OutlineInputBorder(),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Slider(
-                  value: _rpe.toDouble(),
-                  min: 1,
-                  max: 10,
-                  divisions: 9,
-                  label: '$_rpe',
-                  onChanged: (value) {
-                    setState(() => _rpe = value.round());
-                  },
+              maxLines: 3,
+            ),
+
+            const SizedBox(height: 32),
+
+            // Complete button
+            FilledButton.icon(
+              onPressed: _isLoading ? null : _complete,
+              icon: _isLoading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(_isEditing ? Icons.save : Icons.check_circle),
+              label: Text(_isEditing ? 'Save Changes' : 'Mark as Completed'),
+            ),
+          ] else if (instance.isCompleted) ...[
+            // Read-only view for owner
+            Text(
+              'Completion Details',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text('RPE: ',
+                            style: Theme.of(context).textTheme.bodyMedium),
+                        Text(
+                          '${instance.rpe ?? '-'}',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: _rpeColor(instance.rpe ?? 5),
+                              ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Duration: ${instance.durationMinutes ?? '-'} min',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    if (instance.athleteNotes != null &&
+                        instance.athleteNotes!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Athlete notes: ${instance.athleteNotes}',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ],
                 ),
               ),
-            ],
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('1 (Easy)', style: Theme.of(context).textTheme.bodySmall),
-              Text('10 (Max)', style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // Duration
-          Text(
-            'Duration (minutes)',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.remove_circle_outline),
-                onPressed: _durationMinutes > 5
-                    ? () => setState(() => _durationMinutes -= 5)
-                    : null,
-              ),
-              Text(
-                '$_durationMinutes min',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              IconButton(
-                icon: const Icon(Icons.add_circle_outline),
-                onPressed: () => setState(() => _durationMinutes += 5),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // Notes
-          Text(
-            'Notes (optional)',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _notesController,
-            decoration: const InputDecoration(
-              hintText: 'How did it go?',
-              border: OutlineInputBorder(),
             ),
-            maxLines: 3,
-          ),
-
-          const SizedBox(height: 32),
-
-          // Complete button
-          FilledButton.icon(
-            onPressed: _isLoading ? null : _complete,
-            icon: _isLoading
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Icon(_isEditing ? Icons.save : Icons.check_circle),
-            label: Text(_isEditing ? 'Save Changes' : 'Mark as Completed'),
-          ),
+          ] else ...[
+            // Owner viewing a scheduled workout — no actions
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'This workout is scheduled for the athlete. '
+                  'Only the athlete can complete it.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

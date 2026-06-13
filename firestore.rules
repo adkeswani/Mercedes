@@ -127,7 +127,7 @@ service cloud.firestore {
     // ── Workout Instances ──
     // Read: athlete (own instances) or program owner
     // Create: program owner assigns workouts
-    // Update: athlete can complete/edit own; owner can update (cancel, override load)
+    // Update: athlete can complete/edit own; owner can only cancel
 
     match /workoutInstances/{instanceId} {
       allow read: if isSignedIn()
@@ -138,7 +138,8 @@ service cloud.firestore {
                       && request.resource.data.assignedBy == request.auth.uid;
       allow update: if isSignedIn()
                       && (resource.data.athleteId == request.auth.uid
-                          || isProgramOwner(resource.data.programId));
+                          || (isProgramOwner(resource.data.programId)
+                              && request.resource.data.status == 'cancelled'));
     }
   }
 }
