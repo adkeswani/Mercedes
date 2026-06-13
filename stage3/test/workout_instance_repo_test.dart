@@ -196,6 +196,74 @@ void main() {
       });
     });
 
+    group('updateCompletion', () {
+      test('updates completion fields on already-completed instance', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+
+        await repo.completeWorkout(
+          instanceId: id,
+          rpe: 6,
+          durationMinutes: 40,
+          actuals: [],
+          athleteNotes: 'Original notes',
+        );
+
+        await repo.updateCompletion(
+          instanceId: id,
+          rpe: 8,
+          durationMinutes: 55,
+          actuals: [
+            ExerciseActual(
+              exerciseId: 'ex1',
+              mode: ExerciseMode.reps,
+              sets: 4,
+              reps: '8',
+            ),
+          ],
+          athleteNotes: 'Updated notes',
+          loadPoints: 25.0,
+        );
+
+        final instance = await repo.getById(id);
+        expect(instance, isNotNull);
+        expect(instance!.isCompleted, isTrue);
+        expect(instance.rpe, 8);
+        expect(instance.durationMinutes, 55);
+        expect(instance.athleteNotes, 'Updated notes');
+        expect(instance.loadPoints, 25.0);
+        expect(instance.actuals.length, 1);
+        expect(instance.actuals.first.exerciseId, 'ex1');
+      });
+
+      test('preserves status and completedAt when updating', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+
+        await repo.completeWorkout(
+          instanceId: id,
+          rpe: 5,
+          durationMinutes: 30,
+          actuals: [],
+        );
+
+        final before = await repo.getById(id);
+
+        await repo.updateCompletion(
+          instanceId: id,
+          rpe: 9,
+          durationMinutes: 60,
+          actuals: [],
+        );
+
+        final after = await repo.getById(id);
+        expect(after!.status, before!.status);
+        expect(after.completedAt, before.completedAt);
+      });
+    });
+
     group('cancelFutureInstances', () {
       test('cancels scheduled instances for program-athlete pair', () async {
         await createProgram('prog1');
