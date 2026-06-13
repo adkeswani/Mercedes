@@ -61,8 +61,32 @@ class HomeScreen extends ConsumerWidget {
             loading: () => const CircularProgressIndicator(),
             error: (e, _) => Text('Error: $e'),
           ),
+
           const SizedBox(height: 24),
-          // Feature navigation cards
+
+          // ── My Training section ──
+          Text(
+            'My Training',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          _FeatureCard(
+            icon: Icons.calendar_month,
+            title: 'My Schedule',
+            subtitle: 'View your workout calendar',
+            onTap: () => context.push('/schedule'),
+          ),
+          const SizedBox(height: 4),
+          _EnrolledProgramsSection(),
+
+          const SizedBox(height: 32),
+
+          // ── Trainer Tools section ──
+          Text(
+            'Trainer Tools',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
           _FeatureCard(
             icon: Icons.fitness_center,
             title: 'Exercise Library',
@@ -81,15 +105,6 @@ class HomeScreen extends ConsumerWidget {
             subtitle: 'Create programs and assign workouts',
             onTap: () => context.push('/programs'),
           ),
-          _FeatureCard(
-            icon: Icons.calendar_month,
-            title: 'My Schedule',
-            subtitle: 'View your workout calendar',
-            onTap: () => context.push('/schedule'),
-          ),
-          const SizedBox(height: 24),
-          // Enrolled programs section
-          _EnrolledProgramsSection(),
         ],
       ),
     );
