@@ -242,6 +242,9 @@ class Recurrence {
   final int? intervalDays;
   final String endDate;
 
+  /// Maximum number of instances a single recurrence can generate.
+  static const int maxInstances = 364;
+
   /// Validates recurrence fields.
   void validate() {
     if (endDate.isEmpty) {
@@ -273,4 +276,85 @@ class Recurrence {
       );
     }
   }
+
+  /// Serializes this recurrence to a Firestore-compatible map.
+  Map<String, dynamic> toMap() {
+    return {
+      'pattern': pattern.name,
+      'daysOfWeek': daysOfWeek,
+      'intervalDays': intervalDays,
+      'endDate': endDate,
+    };
+  }
+}
+
+/// Expands a recurrence pattern into a list of ISO 8601 date strings.
+///
+/// Pure function — no side effects. The [startDate] is the first date
+/// in the series. Returns dates from [startDate] through [endDate]
+/// (inclusive) matching the pattern. Capped at [Recurrence.maxInstances].
+///
+/// For weekly/biweekly: uses [daysOfWeek] (1=Mon..7=Sun). If
+/// [daysOfWeek] is null or empty, uses the weekday of [startDate].
+/// For custom: advances by [intervalDays] from [startDate].
+List<String> expandRecurrence({
+  required String startDate,
+  required RecurrencePattern pattern,
+  required String endDate,
+  List<int>? daysOfWeek,
+  int? intervalDays,
+}) {
+  final start = DateTime.parse(startDate);
+  final end = DateTime.parse(endDate);
+
+  if (end.isBefore(start)) return [];
+
+  final dates = <String>[];
+
+  switch (pattern) {
+    case RecurrencePattern.weekly:
+      _expandWeekly(start, end, daysOfWeek, 1, dates);
+    case RecurrencePattern.biweekly:
+      _expandWeekly(start, end, daysOfWeek, 2, dates);
+    case RecurrencePattern.custom:
+      if (intervalDays == null || intervalDays < 1) return [];
+      var current = start;
+      while (!current.isAfter(end) && dates.length < Recurrence.maxInstances) {
+        dates.add(_formatDate(current));
+        current = current.add(Duration(days: intervalDays));
+      }
+  }
+
+  return dates;
+}
+
+void _expandWeekly(
+  DateTime start,
+  DateTime end,
+  List<int>? daysOfWeek,
+  int weekInterval,
+  List<String> dates,
+) {
+  // Default to start date's weekday if none specified
+  final targetDays = (daysOfWeek != null && daysOfWeek.isNotEmpty)
+      ? daysOfWeek.toList()
+      : [start.weekday];
+  targetDays.sort();
+
+  // Find the Monday of the start date's week
+  var weekStart = start.subtract(Duration(days: start.weekday - 1));
+
+  while (!weekStart.isAfter(end) && dates.length < Recurrence.maxInstances) {
+    for (final day in targetDays) {
+      final date = weekStart.add(Duration(days: day - 1));
+      if (date.isBefore(start) || date.isAfter(end)) continue;
+      dates.add(_formatDate(date));
+      if (dates.length >= Recurrence.maxInstances) break;
+    }
+    weekStart = weekStart.add(Duration(days: 7 * weekInterval));
+  }
+}
+
+String _formatDate(DateTime date) {
+  return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 }

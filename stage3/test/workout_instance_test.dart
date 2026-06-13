@@ -393,6 +393,148 @@ void main() {
       expect(() => recurrence.validate(), returnsNormally);
     });
   });
+
+  group('expandRecurrence', () {
+    test('weekly on Mon/Wed/Fri for 2 weeks', () {
+      final dates = expandRecurrence(
+        startDate: '2026-06-15', // Monday
+        pattern: RecurrencePattern.weekly,
+        endDate: '2026-06-28', // Sunday 2 weeks later
+        daysOfWeek: [1, 3, 5], // Mon, Wed, Fri
+      );
+      expect(dates, [
+        '2026-06-15', // Mon
+        '2026-06-17', // Wed
+        '2026-06-19', // Fri
+        '2026-06-22', // Mon
+        '2026-06-24', // Wed
+        '2026-06-26', // Fri
+      ]);
+    });
+
+    test('weekly defaults to start date weekday when daysOfWeek is null', () {
+      final dates = expandRecurrence(
+        startDate: '2026-06-17', // Wednesday
+        pattern: RecurrencePattern.weekly,
+        endDate: '2026-07-01',
+      );
+      expect(dates, [
+        '2026-06-17', // Wed
+        '2026-06-24', // Wed
+        '2026-07-01', // Wed
+      ]);
+    });
+
+    test('weekly defaults when daysOfWeek is empty', () {
+      final dates = expandRecurrence(
+        startDate: '2026-06-17', // Wednesday
+        pattern: RecurrencePattern.weekly,
+        endDate: '2026-07-01',
+        daysOfWeek: [],
+      );
+      expect(dates, [
+        '2026-06-17',
+        '2026-06-24',
+        '2026-07-01',
+      ]);
+    });
+
+    test('biweekly on Tuesday for 6 weeks', () {
+      final dates = expandRecurrence(
+        startDate: '2026-06-16', // Tuesday
+        pattern: RecurrencePattern.biweekly,
+        endDate: '2026-07-28',
+        daysOfWeek: [2], // Tuesday
+      );
+      expect(dates, [
+        '2026-06-16',
+        '2026-06-30',
+        '2026-07-14',
+        '2026-07-28',
+      ]);
+    });
+
+    test('custom every 3 days', () {
+      final dates = expandRecurrence(
+        startDate: '2026-06-15',
+        pattern: RecurrencePattern.custom,
+        endDate: '2026-06-24',
+        intervalDays: 3,
+      );
+      expect(dates, [
+        '2026-06-15',
+        '2026-06-18',
+        '2026-06-21',
+        '2026-06-24',
+      ]);
+    });
+
+    test('custom every day', () {
+      final dates = expandRecurrence(
+        startDate: '2026-06-15',
+        pattern: RecurrencePattern.custom,
+        endDate: '2026-06-17',
+        intervalDays: 1,
+      );
+      expect(dates, ['2026-06-15', '2026-06-16', '2026-06-17']);
+    });
+
+    test('returns empty when end is before start', () {
+      final dates = expandRecurrence(
+        startDate: '2026-06-20',
+        pattern: RecurrencePattern.weekly,
+        endDate: '2026-06-15',
+        daysOfWeek: [1],
+      );
+      expect(dates, isEmpty);
+    });
+
+    test('returns empty for custom with null intervalDays', () {
+      final dates = expandRecurrence(
+        startDate: '2026-06-15',
+        pattern: RecurrencePattern.custom,
+        endDate: '2026-06-20',
+      );
+      expect(dates, isEmpty);
+    });
+
+    test('single day range returns one date for matching day', () {
+      final dates = expandRecurrence(
+        startDate: '2026-06-15', // Monday
+        pattern: RecurrencePattern.weekly,
+        endDate: '2026-06-15',
+        daysOfWeek: [1], // Monday
+      );
+      expect(dates, ['2026-06-15']);
+    });
+
+    test('caps at maxInstances', () {
+      // Daily for 2 years would be ~730 days, cap at 364
+      final dates = expandRecurrence(
+        startDate: '2026-01-01',
+        pattern: RecurrencePattern.custom,
+        endDate: '2027-12-31',
+        intervalDays: 1,
+      );
+      expect(dates.length, Recurrence.maxInstances);
+    });
+
+    test('weekly skips start week days before start date', () {
+      // Start is Wednesday, ask for Mon/Wed/Fri
+      // Should NOT include the Monday before start
+      final dates = expandRecurrence(
+        startDate: '2026-06-17', // Wednesday
+        pattern: RecurrencePattern.weekly,
+        endDate: '2026-06-22',
+        daysOfWeek: [1, 3, 5], // Mon, Wed, Fri
+      );
+      expect(dates, [
+        '2026-06-17', // Wed
+        '2026-06-19', // Fri
+        '2026-06-22', // Mon next week
+      ]);
+    });
+  });
 }
 
 /// Helper to create a minimal valid scheduled instance with overrides.

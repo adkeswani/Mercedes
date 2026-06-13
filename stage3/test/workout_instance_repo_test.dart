@@ -453,5 +453,252 @@ void main() {
         expect(instance.actuals[1].durationSeconds, 30);
       });
     });
+
+    group('assignRecurringWorkouts', () {
+      test('creates batch of instances with recurrence fields', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+
+        final recurrence = Recurrence(
+          pattern: RecurrencePattern.weekly,
+          daysOfWeek: [1, 3], // Mon, Wed
+          endDate: '2026-06-28',
+        );
+
+        final count = await repo.assignRecurringWorkouts(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          workoutTemplateId: 'wt1',
+          workoutTemplateVersion: 1,
+          startDate: '2026-06-15', // Monday
+          workoutType: WorkoutType.pull,
+          assignedBy: 'coach1',
+          recurrence: recurrence,
+        );
+
+        // Mon 15, Wed 17, Mon 22, Wed 24 = 4
+        expect(count, 4);
+
+        final snapshot = await fakeFirestore
+            .collection('workoutInstances')
+            .get();
+        expect(snapshot.docs.length, 4);
+      });
+
+      test('first instance is root, rest have recurrenceRootId', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+
+        final recurrence = Recurrence(
+          pattern: RecurrencePattern.custom,
+          intervalDays: 7,
+          endDate: '2026-07-06',
+        );
+
+        await repo.assignRecurringWorkouts(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          workoutTemplateId: 'wt1',
+          workoutTemplateVersion: 1,
+          startDate: '2026-06-15',
+          workoutType: WorkoutType.push,
+          assignedBy: 'coach1',
+          recurrence: recurrence,
+        );
+
+        final snapshot = await fakeFirestore
+            .collection('workoutInstances')
+            .get();
+        final docs = snapshot.docs;
+        expect(docs.length, 4); // Jun 15, 22, 29, Jul 6
+
+        // Find the root
+        final rootDocs = docs
+            .where((d) => d.data()['isRecurrenceRoot'] == true)
+            .toList();
+        expect(rootDocs.length, 1);
+        final rootId = rootDocs.first.id;
+
+        // All children reference the root
+        final children = docs
+            .where((d) => d.data()['isRecurrenceRoot'] != true)
+            .toList();
+        for (final child in children) {
+          expect(child.data()['recurrenceRootId'], rootId);
+        }
+      });
+
+      test('stores recurrence pattern on all instances', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+
+        final recurrence = Recurrence(
+          pattern: RecurrencePattern.biweekly,
+          daysOfWeek: [5], // Friday
+          endDate: '2026-07-17',
+        );
+
+        await repo.assignRecurringWorkouts(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          workoutTemplateId: 'wt1',
+          workoutTemplateVersion: 2,
+          startDate: '2026-06-19', // Friday
+          workoutType: WorkoutType.legs,
+          assignedBy: 'coach1',
+          recurrence: recurrence,
+        );
+
+        final snapshot = await fakeFirestore
+            .collection('workoutInstances')
+            .get();
+        for (final doc in snapshot.docs) {
+          final rec = doc.data()['recurrence'] as Map<String, dynamic>;
+          expect(rec['pattern'], 'biweekly');
+          expect(rec['endDate'], '2026-07-17');
+        }
+      });
+
+      test('returns 0 when recurrence generates no dates', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+
+        final recurrence = Recurrence(
+          pattern: RecurrencePattern.weekly,
+          daysOfWeek: [1],
+          endDate: '2026-06-10', // Before start
+        );
+
+        final count = await repo.assignRecurringWorkouts(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          workoutTemplateId: 'wt1',
+          workoutTemplateVersion: 1,
+          startDate: '2026-06-15',
+          workoutType: WorkoutType.pull,
+          assignedBy: 'coach1',
+          recurrence: recurrence,
+        );
+
+        expect(count, 0);
+      });
+
+      test('verifies ownership before creating', () async {
+        await createProgram('prog1', ownerId: 'coach1');
+        await enrollAthlete('prog1', 'athlete1');
+
+        final recurrence = Recurrence(
+          pattern: RecurrencePattern.weekly,
+          daysOfWeek: [1],
+          endDate: '2026-06-30',
+        );
+
+        expect(
+          () => repo.assignRecurringWorkouts(
+            programId: 'prog1',
+            athleteId: 'athlete1',
+            workoutTemplateId: 'wt1',
+            workoutTemplateVersion: 1,
+            startDate: '2026-06-15',
+            workoutType: WorkoutType.pull,
+            assignedBy: 'not_owner',
+            recurrence: recurrence,
+          ),
+          throwsStateError,
+        );
+      });
+    });
+
+    group('cancelRecurrence', () {
+      test('cancels all scheduled instances in recurrence group', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+
+        final recurrence = Recurrence(
+          pattern: RecurrencePattern.custom,
+          intervalDays: 7,
+          endDate: '2026-07-06',
+        );
+
+        await repo.assignRecurringWorkouts(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          workoutTemplateId: 'wt1',
+          workoutTemplateVersion: 1,
+          startDate: '2026-06-15',
+          workoutType: WorkoutType.pull,
+          assignedBy: 'coach1',
+          recurrence: recurrence,
+        );
+
+        // Find the root
+        final snapshot = await fakeFirestore
+            .collection('workoutInstances')
+            .get();
+        final rootDoc = snapshot.docs
+            .firstWhere((d) => d.data()['isRecurrenceRoot'] == true);
+
+        final cancelled = await repo.cancelRecurrence(
+          recurrenceRootId: rootDoc.id,
+        );
+
+        expect(cancelled, 4); // All 4 instances
+
+        // Verify all are cancelled
+        final after = await fakeFirestore
+            .collection('workoutInstances')
+            .get();
+        for (final doc in after.docs) {
+          expect(doc.data()['status'], 'cancelled');
+        }
+      });
+
+      test('preserves completed instances in recurrence', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+
+        final recurrence = Recurrence(
+          pattern: RecurrencePattern.custom,
+          intervalDays: 7,
+          endDate: '2026-06-29',
+        );
+
+        await repo.assignRecurringWorkouts(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          workoutTemplateId: 'wt1',
+          workoutTemplateVersion: 1,
+          startDate: '2026-06-15',
+          workoutType: WorkoutType.pull,
+          assignedBy: 'coach1',
+          recurrence: recurrence,
+        );
+
+        // Complete the root instance
+        final snapshot = await fakeFirestore
+            .collection('workoutInstances')
+            .get();
+        final rootDoc = snapshot.docs
+            .firstWhere((d) => d.data()['isRecurrenceRoot'] == true);
+
+        await repo.completeWorkout(
+          instanceId: rootDoc.id,
+          rpe: 7,
+          durationMinutes: 45,
+          actuals: [],
+        );
+
+        final cancelled = await repo.cancelRecurrence(
+          recurrenceRootId: rootDoc.id,
+        );
+
+        // 3 instances: Jun 15 (root, completed), Jun 22, Jun 29
+        // Only 2 scheduled should be cancelled
+        expect(cancelled, 2);
+
+        final completed = await repo.getById(rootDoc.id);
+        expect(completed!.isCompleted, isTrue);
+      });
+    });
   });
 }

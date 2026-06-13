@@ -118,6 +118,154 @@ class WorkoutInstanceRepository {
     return docRef.id;
   }
 
+  /// Assigns a recurring series of workouts based on a recurrence pattern.
+  ///
+  /// Expands the recurrence into individual dates, creates a batch of
+  /// workout instances. The first instance is the "root" with
+  /// [isRecurrenceRoot] = true; all others reference it via
+  /// [recurrenceRootId]. Returns the number of instances created.
+  ///
+  /// Firestore batch writes are limited to 500 operations, which is
+  /// well within the [Recurrence.maxInstances] cap of 364.
+  Future<int> assignRecurringWorkouts({
+    required String programId,
+    required String athleteId,
+    required String workoutTemplateId,
+    required int workoutTemplateVersion,
+    required String startDate,
+    required WorkoutType workoutType,
+    required String assignedBy,
+    required Recurrence recurrence,
+  }) async {
+    recurrence.validate();
+
+    await _verifyCanAssign(
+      programId: programId,
+      athleteId: athleteId,
+      assignedBy: assignedBy,
+    );
+
+    final dates = expandRecurrence(
+      startDate: startDate,
+      pattern: recurrence.pattern,
+      endDate: recurrence.endDate,
+      daysOfWeek: recurrence.daysOfWeek,
+      intervalDays: recurrence.intervalDays,
+    );
+
+    if (dates.isEmpty) return 0;
+
+    final batch = _firestore.batch();
+    final rootRef = _collection.doc();
+    final recurrenceMap = recurrence.toMap();
+
+    // Create root instance (first date)
+    batch.set(rootRef, {
+      'programId': programId,
+      'athleteId': athleteId,
+      'workoutTemplateId': workoutTemplateId,
+      'workoutTemplateVersion': workoutTemplateVersion,
+      'scheduledDate': dates[0],
+      'workoutType': workoutType.name,
+      'assignedBy': assignedBy,
+      'assignedAt': FieldValue.serverTimestamp(),
+      'status': WorkoutInstanceStatus.scheduled.name,
+      'completedAt': null,
+      'missedAt': null,
+      'rpe': null,
+      'durationMinutes': null,
+      'loadPoints': null,
+      'loadPointsOverride': null,
+      'loadPointsOverriddenBy': null,
+      'loadPointsOverriddenAt': null,
+      'loadModelVersion': 1,
+      'loadStrategyId': null,
+      'recurrence': recurrenceMap,
+      'isRecurrenceRoot': true,
+      'recurrenceRootId': null,
+      'actuals': [],
+      'athleteNotes': null,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // Create child instances (remaining dates)
+    for (var i = 1; i < dates.length; i++) {
+      final childRef = _collection.doc();
+      batch.set(childRef, {
+        'programId': programId,
+        'athleteId': athleteId,
+        'workoutTemplateId': workoutTemplateId,
+        'workoutTemplateVersion': workoutTemplateVersion,
+        'scheduledDate': dates[i],
+        'workoutType': workoutType.name,
+        'assignedBy': assignedBy,
+        'assignedAt': FieldValue.serverTimestamp(),
+        'status': WorkoutInstanceStatus.scheduled.name,
+        'completedAt': null,
+        'missedAt': null,
+        'rpe': null,
+        'durationMinutes': null,
+        'loadPoints': null,
+        'loadPointsOverride': null,
+        'loadPointsOverriddenBy': null,
+        'loadPointsOverriddenAt': null,
+        'loadModelVersion': 1,
+        'loadStrategyId': null,
+        'recurrence': recurrenceMap,
+        'isRecurrenceRoot': false,
+        'recurrenceRootId': rootRef.id,
+        'actuals': [],
+        'athleteNotes': null,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+    return dates.length;
+  }
+
+  /// Cancels all future scheduled instances in a recurrence group.
+  ///
+  /// Finds all instances with the given [recurrenceRootId] (or the root
+  /// itself) that are still scheduled, and cancels them.
+  Future<int> cancelRecurrence({
+    required String recurrenceRootId,
+  }) async {
+    // Cancel children
+    final childSnapshot = await _collection
+        .where('recurrenceRootId', isEqualTo: recurrenceRootId)
+        .where('status', isEqualTo: WorkoutInstanceStatus.scheduled.name)
+        .get();
+
+    // Also check the root itself
+    final rootDoc = await _collection.doc(recurrenceRootId).get();
+
+    final batch = _firestore.batch();
+    var count = 0;
+
+    for (final doc in childSnapshot.docs) {
+      batch.update(doc.reference, {
+        'status': WorkoutInstanceStatus.cancelled.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      count++;
+    }
+
+    if (rootDoc.exists &&
+        rootDoc.data()?['status'] == WorkoutInstanceStatus.scheduled.name) {
+      batch.update(rootDoc.reference, {
+        'status': WorkoutInstanceStatus.cancelled.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      count++;
+    }
+
+    if (count > 0) await batch.commit();
+    return count;
+  }
+
   /// Marks a workout instance as completed by the athlete.
   ///
   /// Sets status to `completed`, writes `completedAt`, and records
