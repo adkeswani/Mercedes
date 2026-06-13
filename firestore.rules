@@ -63,12 +63,11 @@ service cloud.firestore {
     }
 
     // ── Workout Templates ──
-    // Read: creator only (private authoring tool)
+    // Read: any signed-in user (athletes need to read exercises for assigned workouts)
     // Create/update/delete: creator only
 
     match /workoutTemplates/{templateId} {
-      allow read: if isSignedIn()
-                    && resource.data.createdBy == request.auth.uid;
+      allow read: if isSignedIn();
       allow create: if isSignedIn()
                       && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if isSignedIn()
@@ -76,9 +75,7 @@ service cloud.firestore {
 
       // Workout template versions (subcollection)
       match /workoutTemplateVersions/{versionNumber} {
-        allow read: if isSignedIn()
-                      && get(/databases/$(database)/documents/workoutTemplates/$(templateId)).data.createdBy
-                         == request.auth.uid;
+        allow read: if isSignedIn();
         allow write: if isSignedIn()
                        && get(/databases/$(database)/documents/workoutTemplates/$(templateId)).data.createdBy
                           == request.auth.uid;
@@ -119,7 +116,7 @@ service cloud.firestore {
     match /enrollments/{enrollmentId} {
       allow read: if isSignedIn()
                     && (resource.data.athleteId == request.auth.uid
-                        || isProgramOwner(resource.data.programId));
+                        || resource.data.addedBy == request.auth.uid);
       allow create: if isSignedIn()
                       && isProgramOwner(request.resource.data.programId)
                       && request.resource.data.addedBy == request.auth.uid;
@@ -137,6 +134,7 @@ service cloud.firestore {
                     && (resource.data.athleteId == request.auth.uid
                         || isProgramOwner(resource.data.programId));
       allow create: if isSignedIn()
+                      && isProgramOwner(request.resource.data.programId)
                       && request.resource.data.assignedBy == request.auth.uid;
       allow update: if isSignedIn()
                       && (resource.data.athleteId == request.auth.uid

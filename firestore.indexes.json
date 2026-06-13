@@ -32,6 +32,15 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "programId", "order": "ASCENDING" },
+        { "fieldPath": "addedBy", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "enrollments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
     },

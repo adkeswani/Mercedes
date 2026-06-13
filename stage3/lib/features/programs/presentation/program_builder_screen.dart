@@ -219,7 +219,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
     if (newType == ProgramType.personal) {
       final enrollmentRepo = ref.read(enrollmentRepositoryProvider);
       final enrollments =
-          await enrollmentRepo.watchEnrollments(widget.programId!).first;
+          await enrollmentRepo.watchEnrollments(widget.programId!, ownerId: uid).first;
       if (enrollments.isNotEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -244,9 +244,11 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
   Future<void> _deleteProgram() async {
     // Block deletion if athletes are enrolled
     if (_programType == ProgramType.assignable) {
+      final uid = ref.read(authStateProvider).value?.uid;
+      if (uid == null) return;
       final enrollmentRepo = ref.read(enrollmentRepositoryProvider);
       final enrollments =
-          await enrollmentRepo.watchEnrollments(widget.programId!).first;
+          await enrollmentRepo.watchEnrollments(widget.programId!, ownerId: uid).first;
       if (enrollments.isNotEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -416,8 +418,8 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
                 );
               },
             ),
-          // Inline roster section (assignable programs only)
-          if (_programType == ProgramType.assignable) ...[
+          // Inline roster section (assignable programs, owner only)
+          if (_programType == ProgramType.assignable && isOwner) ...[
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 16),

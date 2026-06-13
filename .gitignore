@@ -20,3 +20,10 @@ key.properties
 .idea/
 *.iml
 .vscode/
+
+# Node.js (test-rules)
+test-rules/node_modules/
+
+# Firebase emulator logs
+firestore-debug.log
+ui-debug.log

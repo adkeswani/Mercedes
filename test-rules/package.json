@@ -1,0 +1,15 @@
+{
+  "name": "mercedes-rules-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Firestore security rules integration tests",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project mercedes-app-11ce2 \"npx vitest run\"",
+    "test:watch": "firebase emulators:exec --only firestore --project mercedes-app-11ce2 \"npx vitest\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "firebase-admin": "^13.4.0",
+    "vitest": "^3.2.4"
+  }
+}

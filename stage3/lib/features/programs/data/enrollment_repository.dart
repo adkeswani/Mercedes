@@ -120,9 +120,17 @@ class EnrollmentRepository {
   }
 
   /// Streams all active enrollments for a program (owner's roster view).
-  Stream<List<Enrollment>> watchEnrollments(String programId) {
+  ///
+  /// The [ownerId] parameter is required so the Firestore query includes
+  /// `addedBy == ownerId`, which satisfies the security rule allowing
+  /// program owners to list enrollments.
+  Stream<List<Enrollment>> watchEnrollments(
+    String programId, {
+    required String ownerId,
+  }) {
     return _collection
         .where('programId', isEqualTo: programId)
+        .where('addedBy', isEqualTo: ownerId)
         .where('status', isEqualTo: EnrollmentStatus.active.name)
         .snapshots()
         .map((snapshot) => snapshot.docs

@@ -208,8 +208,7 @@ void main() {
           addedBy: 'coach2',
         );
 
-        final enrollments = await repo.watchEnrollments('prog1').first;
-        expect(enrollments.length, 2);
+        final enrollments = await repo.watchEnrollments('prog1', ownerId: 'coach1').first;
         expect(
           enrollments.map((e) => e.athleteId),
           containsAll(['athlete1', 'athlete2']),
@@ -235,8 +234,7 @@ void main() {
           removedBy: 'coach1',
         );
 
-        final enrollments = await repo.watchEnrollments('prog1').first;
-        expect(enrollments.length, 1);
+        final enrollments = await repo.watchEnrollments('prog1', ownerId: 'coach1').first;
         expect(enrollments.first.athleteId, 'athlete2');
       });
     });

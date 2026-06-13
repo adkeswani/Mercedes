@@ -187,9 +187,14 @@ class _EnrolledProgramCard extends ConsumerWidget {
               description ?? 'Enrolled ${_formatDate(enrollment.addedAt)}',
             ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.push(
-              '/programs/${enrollment.programId}',
-            ),
+            onTap: () {
+              final uid = ref.read(authStateProvider).value?.uid;
+              if (uid != null) {
+                context.push(
+                  '/programs/${enrollment.programId}/athlete/$uid',
+                );
+              }
+            },
           ),
         );
       },
