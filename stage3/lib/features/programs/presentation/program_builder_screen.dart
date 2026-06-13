@@ -192,10 +192,12 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
   }
 
   void _addWorkout() async {
-    final result = await showWorkoutPicker(context, ref);
+    final workouts = ref.read(programDraftProvider);
+    final existingIds = workouts.map((w) => w.workoutTemplateId).toSet();
+    final result = await showWorkoutPicker(context, ref,
+        excludeIds: existingIds);
     if (result == null) return;
 
-    final workouts = ref.read(programDraftProvider);
     ref.read(programDraftProvider.notifier).addWorkout(
       ProgramWorkoutRef(
         workoutTemplateId: result.id,

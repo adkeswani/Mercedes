@@ -19,20 +19,24 @@ class WorkoutPickerResult {
 ///
 /// Returns the selected workout's ID, name, and current version,
 /// or null if cancelled. Only shows workouts with at least one
-/// published version.
+/// published version. Workouts whose IDs are in [excludeIds] are
+/// hidden (already added to the program).
 Future<WorkoutPickerResult?> showWorkoutPicker(
   BuildContext context,
-  WidgetRef ref,
-) {
+  WidgetRef ref, {
+  Set<String> excludeIds = const {},
+}) {
   return showModalBottomSheet<WorkoutPickerResult>(
     context: context,
     isScrollControlled: true,
-    builder: (context) => const _WorkoutPickerSheet(),
+    builder: (context) => _WorkoutPickerSheet(excludeIds: excludeIds),
   );
 }
 
 class _WorkoutPickerSheet extends ConsumerWidget {
-  const _WorkoutPickerSheet();
+  const _WorkoutPickerSheet({required this.excludeIds});
+
+  final Set<String> excludeIds;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -67,7 +71,8 @@ class _WorkoutPickerSheet extends ConsumerWidget {
               child: workoutsAsync.when(
                 data: (workouts) {
                   final published = workouts
-                      .where((w) => w.hasPublishedVersion)
+                      .where((w) => w.hasPublishedVersion &&
+                          !excludeIds.contains(w.id))
                       .toList();
                   if (published.isEmpty) {
                     return const Center(
