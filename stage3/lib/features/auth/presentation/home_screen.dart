@@ -151,16 +151,9 @@ class _EnrolledProgramsSection extends ConsumerWidget {
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Enrolled Programs',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            ...enrollments.map((enrollment) {
-              return _EnrolledProgramCard(enrollment: enrollment);
-            }),
-          ],
+          children: enrollments.map((enrollment) {
+            return _EnrolledProgramCard(enrollment: enrollment);
+          }).toList(),
         );
       },
       loading: () => const SizedBox.shrink(),
