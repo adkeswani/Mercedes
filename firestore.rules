@@ -2,10 +2,145 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Temporary: allow all reads/writes during development.
-    // TODO: Replace with per-collection rules before production.
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    // ── Helper functions ──
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isProgramOwner(programId) {
+      return isSignedIn()
+             && get(/databases/$(database)/documents/programs/$(programId)).data.ownerId
+                == request.auth.uid;
+    }
+
+    function isEnrolledActive(programId) {
+      let enrollmentId = programId + '_' + request.auth.uid;
+      return isSignedIn()
+             && exists(/databases/$(database)/documents/enrollments/$(enrollmentId))
+             && get(/databases/$(database)/documents/enrollments/$(enrollmentId)).data.status
+                == 'active';
+    }
+
+    // ── Users ──
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSelf(userId);
+
+      // Exercise notes — private to the owning user
+      match /exerciseNotes/{noteId} {
+        allow read, write: if isSelf(userId);
+      }
+    }
+
+    // ── Usernames ──
+    // Read: any signed-in user (for username lookup/availability check)
+    // Create: signed-in user (transaction enforces uid match)
+    // No update/delete: usernames are permanent reservations
+
+    match /usernames/{username} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+                      && request.resource.data.uid == request.auth.uid;
+    }
+
+    // ── Exercise Templates ──
+    // Shared library: any signed-in user can read (exercises referenced across programs)
+    // Create/update/delete: creator only
+
+    match /exerciseTemplates/{exerciseId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+                      && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if isSignedIn()
+                              && resource.data.createdBy == request.auth.uid;
+    }
+
+    // ── Workout Templates ──
+    // Read: creator only (private authoring tool)
+    // Create/update/delete: creator only
+
+    match /workoutTemplates/{templateId} {
+      allow read: if isSignedIn()
+                    && resource.data.createdBy == request.auth.uid;
+      allow create: if isSignedIn()
+                      && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if isSignedIn()
+                              && resource.data.createdBy == request.auth.uid;
+
+      // Workout template versions (subcollection)
+      match /workoutTemplateVersions/{versionNumber} {
+        allow read: if isSignedIn()
+                      && get(/databases/$(database)/documents/workoutTemplates/$(templateId)).data.createdBy
+                         == request.auth.uid;
+        allow write: if isSignedIn()
+                       && get(/databases/$(database)/documents/workoutTemplates/$(templateId)).data.createdBy
+                          == request.auth.uid;
+      }
+    }
+
+    // ── Programs ──
+    // Read: owner, or actively enrolled athlete
+    // Create: self (ownerId must match auth uid)
+    // Update/delete: owner only
+
+    match /programs/{programId} {
+      allow read: if isSignedIn()
+                    && (resource.data.ownerId == request.auth.uid
+                        || isEnrolledActive(programId));
+      allow create: if isSignedIn()
+                      && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn()
+                              && resource.data.ownerId == request.auth.uid;
+
+      // Program versions (subcollection)
+      match /programVersions/{versionNumber} {
+        allow read: if isSignedIn()
+                      && (get(/databases/$(database)/documents/programs/$(programId)).data.ownerId
+                          == request.auth.uid
+                          || isEnrolledActive(programId));
+        allow write: if isSignedIn()
+                       && get(/databases/$(database)/documents/programs/$(programId)).data.ownerId
+                          == request.auth.uid;
+      }
+    }
+
+    // ── Enrollments ──
+    // Read: program owner or the enrolled athlete
+    // Create/update: program owner only (and program must be assignable)
+    // No hard delete
+
+    match /enrollments/{enrollmentId} {
+      allow read: if isSignedIn()
+                    && (resource.data.athleteId == request.auth.uid
+                        || isProgramOwner(resource.data.programId));
+      allow create: if isSignedIn()
+                      && isProgramOwner(request.resource.data.programId)
+                      && request.resource.data.addedBy == request.auth.uid;
+      allow update: if isSignedIn()
+                      && isProgramOwner(resource.data.programId);
+    }
+
+    // ── Workout Instances ──
+    // Read: athlete (own instances) or program owner
+    // Create: program owner assigns workouts
+    // Update: athlete can complete/edit own; owner can update (cancel, override load)
+
+    match /workoutInstances/{instanceId} {
+      allow read: if isSignedIn()
+                    && (resource.data.athleteId == request.auth.uid
+                        || isProgramOwner(resource.data.programId));
+      allow create: if isSignedIn()
+                      && request.resource.data.assignedBy == request.auth.uid;
+      allow update: if isSignedIn()
+                      && (resource.data.athleteId == request.auth.uid
+                          || isProgramOwner(resource.data.programId));
     }
   }
 }
