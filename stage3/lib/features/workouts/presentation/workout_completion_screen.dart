@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stage3/core/enums.dart';
+import 'package:stage3/features/exercises/presentation/exercise_note_widget.dart';
 import 'package:stage3/features/workouts/domain/workout_instance.dart';
+import 'package:stage3/features/workouts/domain/workout_template.dart';
 import 'package:stage3/features/workouts/presentation/workout_instance_providers.dart';
+import 'package:stage3/features/workouts/presentation/workout_providers.dart';
 
 /// Screen for completing a scheduled workout.
 ///
@@ -29,6 +32,7 @@ class _WorkoutCompletionScreenState
   WorkoutInstance? _instance;
   bool _didLoad = false;
   bool _isEditing = false;
+  List<ExercisePrescription> _exercises = [];
 
   @override
   void dispose() {
@@ -43,8 +47,15 @@ class _WorkoutCompletionScreenState
     final repo = ref.read(workoutInstanceRepositoryProvider);
     final instance = await repo.getById(widget.instanceId);
     if (instance != null && mounted) {
+      // Load exercises from the workout template
+      final workoutRepo = ref.read(workoutTemplateRepositoryProvider);
+      final exercises = await workoutRepo.getLatestExercises(
+        instance.workoutTemplateId,
+      );
+
       setState(() {
         _instance = instance;
+        _exercises = exercises;
         if (instance.isCompleted) {
           _isEditing = true;
           _rpe = instance.rpe ?? 5;
@@ -145,6 +156,47 @@ class _WorkoutCompletionScreenState
 
           const SizedBox(height: 24),
 
+          // Exercises with personal notes
+          if (_exercises.isNotEmpty) ...[
+            Text(
+              'Exercises',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            ..._exercises.map((exercise) {
+              final summary = _prescriptionSummary(exercise);
+              return Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        exercise.exerciseName ?? exercise.exerciseId,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      if (summary.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          summary,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      ExerciseNoteWidget(
+                        exerciseTemplateId: exercise.exerciseId,
+                        exerciseName:
+                            exercise.exerciseName ?? exercise.exerciseId,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+            const SizedBox(height: 24),
+          ] else
+            const SizedBox(height: 24),
+
           // RPE slider
           Text(
             'Rate of Perceived Exertion (RPE)',
@@ -244,6 +296,18 @@ class _WorkoutCompletionScreenState
         ],
       ),
     );
+  }
+
+  String _prescriptionSummary(ExercisePrescription exercise) {
+    final parts = <String>[];
+    parts.add(exercise.mode.name);
+    if (exercise.sets != null) parts.add('${exercise.sets} sets');
+    if (exercise.reps != null) parts.add('${exercise.reps} reps');
+    if (exercise.durationSeconds != null) {
+      parts.add('${exercise.durationSeconds}s');
+    }
+    if (exercise.weight != null) parts.add(exercise.weight!);
+    return parts.join(' · ');
   }
 
   Color _rpeColor(int rpe) {

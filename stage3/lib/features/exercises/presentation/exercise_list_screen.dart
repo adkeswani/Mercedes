@@ -4,8 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import 'package:stage3/features/auth/presentation/auth_providers.dart';
 import 'package:stage3/features/exercises/domain/exercise_template.dart';
-import 'package:stage3/features/exercises/presentation/exercise_note_providers.dart';
-import 'package:stage3/features/exercises/presentation/exercise_note_widget.dart';
 import 'package:stage3/features/exercises/presentation/exercise_providers.dart';
 
 /// Displays the user's exercise template library.
@@ -128,54 +126,15 @@ class _ExerciseTile extends ConsumerWidget {
           uid,
         );
       },
-      child: Column(
-        children: [
-          ListTile(
-            title: Text(exercise.name),
-            subtitle: Text(
-              exercise.description,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _NoteIndicator(exerciseTemplateId: exercise.id),
-                const Icon(Icons.chevron_right),
-              ],
-            ),
-            onTap: () => context.push('/exercises/${exercise.id}'),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
-            child: ExerciseNoteWidget(
-              exerciseTemplateId: exercise.id,
-              exerciseName: exercise.name,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Small icon that appears when an exercise has a personal note.
-class _NoteIndicator extends ConsumerWidget {
-  const _NoteIndicator({required this.exerciseTemplateId});
-
-  final String exerciseTemplateId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final notes = ref.watch(exerciseNotesProvider).valueOrNull;
-    final hasNote = notes?.containsKey(exerciseTemplateId) ?? false;
-    if (!hasNote) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: Icon(
-        Icons.sticky_note_2,
-        size: 18,
-        color: Theme.of(context).colorScheme.tertiary,
+      child: ListTile(
+        title: Text(exercise.name),
+        subtitle: Text(
+          exercise.description,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => context.push('/exercises/${exercise.id}'),
       ),
     );
   }
