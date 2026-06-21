@@ -109,13 +109,19 @@ service cloud.firestore {
     }
 
     // ── Enrollments ──
-    // Read: program owner or the enrolled athlete
+    // Read: program owner or the enrolled athlete.
+    //   resource == null allows a get() of a non-existent enrollment to
+    //   return "not found" instead of permission-denied — required by the
+    //   isEnrolled() check when adding a not-yet-enrolled athlete. For
+    //   queries (list) resource is always populated, so this does not widen
+    //   query exposure.
     // Create/update: program owner only (and program must be assignable)
     // No hard delete
 
     match /enrollments/{enrollmentId} {
       allow read: if isSignedIn()
-                    && (resource.data.athleteId == request.auth.uid
+                    && (resource == null
+                        || resource.data.athleteId == request.auth.uid
                         || resource.data.addedBy == request.auth.uid);
       allow create: if isSignedIn()
                       && isProgramOwner(request.resource.data.programId)

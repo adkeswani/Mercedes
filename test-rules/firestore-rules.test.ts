@@ -396,6 +396,16 @@ describe('enrollments', () => {
     );
   });
 
+  it('allows get of a non-existent enrollment (isEnrolled check)', async () => {
+    // No seed: the enrollment doc does not exist. A get() must return
+    // "not found" rather than permission-denied so that searching for a
+    // not-yet-enrolled athlete works.
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('enrollments').doc(`${PROGRAM_ID}_${STRANGER}`).get()
+    );
+  });
+
   it('denies stranger from reading enrollment', async () => {
     await seedProgramWithEnrollment();
     const db = testEnv.authenticatedContext(STRANGER).firestore();
