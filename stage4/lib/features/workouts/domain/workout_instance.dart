@@ -383,3 +383,46 @@ String addDays(String isoDate, int days) {
   final date = DateTime.parse(isoDate).add(Duration(days: days));
   return _formatDate(date);
 }
+
+/// Anchor for translating program day offsets into weekdays.
+///
+/// 2024-01-01 is a Monday, so program day 0 is treated as a Monday,
+/// day 1 a Tuesday, and so on. This lets the program builder reuse the
+/// weekday-aware [expandRecurrence] logic against relative day offsets.
+const String _offsetAnchorDate = '2024-01-01';
+
+/// Expands a recurrence pattern into a list of program day offsets.
+///
+/// A program is a relative schedule, so this is the offset-based analogue of
+/// [expandRecurrence]: it returns the day offsets (>= 0, measured from
+/// program start) that a recurrence generator should fill, starting at
+/// [startDayOffset] and continuing for [horizonDays] days (inclusive).
+///
+/// Program day 0 is treated as a Monday (see [_offsetAnchorDate]), so
+/// [daysOfWeek] (1=Mon..7=Sun) selects weekdays within the program's weeks.
+/// Capped at [Recurrence.maxInstances].
+List<int> expandRecurrenceOffsets({
+  required int startDayOffset,
+  required RecurrencePattern pattern,
+  required int horizonDays,
+  List<int>? daysOfWeek,
+  int? intervalDays,
+}) {
+  if (startDayOffset < 0 || horizonDays < 0) return [];
+
+  final startDate = addDays(_offsetAnchorDate, startDayOffset);
+  final endDate = addDays(_offsetAnchorDate, startDayOffset + horizonDays);
+
+  final dates = expandRecurrence(
+    startDate: startDate,
+    pattern: pattern,
+    endDate: endDate,
+    daysOfWeek: daysOfWeek,
+    intervalDays: intervalDays,
+  );
+
+  final anchor = DateTime.parse(_offsetAnchorDate);
+  return dates
+      .map((d) => DateTime.parse(d).difference(anchor).inDays)
+      .toList();
+}

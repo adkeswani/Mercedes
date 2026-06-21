@@ -73,6 +73,28 @@ class ProgramDraftNotifier extends StateNotifier<List<ProgramScheduleEntry>> {
     ];
   }
 
+  /// Updates the [dayOffset] of the entry at [index].
+  ///
+  /// Day offsets are measured from the program start (day 0). Ignored if
+  /// [index] is out of range or [dayOffset] is negative.
+  void setDayOffset(int index, int dayOffset) {
+    if (index < 0 || index >= state.length || dayOffset < 0) return;
+    final updated = List.of(state);
+    updated[index] = updated[index].copyWith(dayOffset: dayOffset);
+    state = updated;
+  }
+
+  /// Appends multiple entries, assigning contiguous sort orders after the
+  /// current entries. Used by the recurrence generator.
+  void addAll(List<ProgramScheduleEntry> entries) {
+    final base = state.length;
+    state = [
+      ...state,
+      for (var i = 0; i < entries.length; i++)
+        entries[i].copyWith(sortOrder: base + i),
+    ];
+  }
+
   /// Clears the draft.
   void clear() {
     state = [];

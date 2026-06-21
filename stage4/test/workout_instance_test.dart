@@ -557,6 +557,62 @@ void main() {
       expect(addDays('2028-02-28', 1), '2028-02-29');
     });
   });
+
+  group('expandRecurrenceOffsets', () {
+    test('day 0 is treated as a Monday', () {
+      // Weekly on Wednesday (3), starting offset 0, one week horizon.
+      final offsets = expandRecurrenceOffsets(
+        startDayOffset: 0,
+        pattern: RecurrencePattern.weekly,
+        horizonDays: 6,
+        daysOfWeek: [3],
+      );
+      // Day 0 = Mon, so Wednesday of week 1 is offset 2.
+      expect(offsets, [2]);
+    });
+
+    test('weekly multiple days within two weeks', () {
+      final offsets = expandRecurrenceOffsets(
+        startDayOffset: 0,
+        pattern: RecurrencePattern.weekly,
+        horizonDays: 13,
+        daysOfWeek: [1, 5],
+      );
+      // Mon (0) and Fri (4) in week 1; Mon (7) and Fri (11) in week 2.
+      expect(offsets, [0, 4, 7, 11]);
+    });
+
+    test('respects a non-zero start offset', () {
+      final offsets = expandRecurrenceOffsets(
+        startDayOffset: 7,
+        pattern: RecurrencePattern.weekly,
+        horizonDays: 6,
+        daysOfWeek: [1],
+      );
+      expect(offsets, [7]);
+    });
+
+    test('custom interval advances by intervalDays', () {
+      final offsets = expandRecurrenceOffsets(
+        startDayOffset: 0,
+        pattern: RecurrencePattern.custom,
+        horizonDays: 10,
+        intervalDays: 3,
+      );
+      expect(offsets, [0, 3, 6, 9]);
+    });
+
+    test('returns empty for negative inputs', () {
+      expect(
+        expandRecurrenceOffsets(
+          startDayOffset: -1,
+          pattern: RecurrencePattern.weekly,
+          horizonDays: 7,
+        ),
+        isEmpty,
+      );
+    });
+  });
 }
 
 /// Helper to create a minimal valid scheduled instance with overrides.
