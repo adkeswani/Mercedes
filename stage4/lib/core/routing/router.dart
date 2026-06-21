@@ -10,8 +10,7 @@ import 'package:stage4/features/exercises/presentation/exercise_form_screen.dart
 import 'package:stage4/features/exercises/presentation/exercise_list_screen.dart';
 import 'package:stage4/features/programs/presentation/program_builder_screen.dart';
 import 'package:stage4/features/programs/presentation/program_list_screen.dart';
-import 'package:stage4/features/programs/presentation/roster_screen.dart';
-import 'package:stage4/features/programs/presentation/roster_programs_screen.dart';
+import 'package:stage4/features/programs/presentation/roster_athletes_screen.dart';
 import 'package:stage4/features/programs/presentation/athlete_schedule_screen.dart';
 import 'package:stage4/features/workouts/presentation/calendar_screen.dart';
 import 'package:stage4/features/workouts/presentation/schedule_assignment_screen.dart';
@@ -100,7 +99,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/roster',
-        builder: (context, state) => const RosterProgramsScreen(),
+        builder: (context, state) => const RosterAthletesScreen(),
       ),
       GoRoute(
         path: '/programs/new',
@@ -114,15 +113,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
-        path: '/programs/:id/roster',
-        builder: (context, state) => RosterScreen(
-          programId: state.pathParameters['id']!,
-        ),
-      ),
-      GoRoute(
-        path: '/programs/:id/assign',
+        path: '/assign',
         builder: (context, state) => ScheduleAssignmentScreen(
-          programId: state.pathParameters['id']!,
           preselectedAthleteId: state.uri.queryParameters['athleteId'],
           preselectedDate:
               DateTime.tryParse(state.uri.queryParameters['date'] ?? ''),
@@ -143,7 +135,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/trainer-calendar',
-        builder: (context, state) => const TrainerCalendarScreen(),
+        builder: (context, state) => TrainerCalendarScreen(
+          athleteId: state.uri.queryParameters['athleteId'],
+        ),
       ),
       GoRoute(
         path: '/workouts/complete/:instanceId',

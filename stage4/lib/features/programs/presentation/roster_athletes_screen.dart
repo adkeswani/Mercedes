@@ -5,22 +5,26 @@ import 'package:go_router/go_router.dart';
 import 'package:stage4/features/auth/domain/user_profile.dart';
 import 'package:stage4/features/auth/presentation/app_entry_providers.dart';
 import 'package:stage4/features/auth/presentation/auth_providers.dart';
+import 'package:stage4/features/programs/domain/enrollment.dart';
+import 'package:stage4/features/programs/domain/program.dart';
 import 'package:stage4/features/programs/presentation/enrollment_providers.dart';
+import 'package:stage4/features/programs/presentation/program_providers.dart';
 
-/// Roster management screen for program owners.
+/// Top-level roster: a flat list of every athlete enrolled across the coach's
+/// programs.
 ///
-/// Shows currently enrolled athletes and allows adding/removing athletes
-/// via exact username search.
-class RosterScreen extends ConsumerStatefulWidget {
-  const RosterScreen({super.key, required this.programId});
-
-  final String programId;
+/// Tapping an athlete opens their calendar. Athletes are added by username
+/// search followed by picking one of the coach's assignable programs to enroll
+/// them into, and removed (from every owned program) via the trailing button.
+class RosterAthletesScreen extends ConsumerStatefulWidget {
+  const RosterAthletesScreen({super.key});
 
   @override
-  ConsumerState<RosterScreen> createState() => _RosterScreenState();
+  ConsumerState<RosterAthletesScreen> createState() =>
+      _RosterAthletesScreenState();
 }
 
-class _RosterScreenState extends ConsumerState<RosterScreen> {
+class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
   final _usernameController = TextEditingController();
   bool _isSearching = false;
   String? _searchError;
@@ -43,9 +47,10 @@ class _RosterScreenState extends ConsumerState<RosterScreen> {
     });
 
     try {
-      final profileRepo = ref.read(userProfileRepositoryProvider);
-      final profile = await profileRepo.getUserByUsername(username);
-
+      final profile =
+          await ref.read(userProfileRepositoryProvider).getUserByUsername(
+                username,
+              );
       if (!mounted) return;
 
       if (profile == null) {
@@ -56,24 +61,6 @@ class _RosterScreenState extends ConsumerState<RosterScreen> {
         return;
       }
 
-      // Check if already enrolled
-      final enrollmentRepo = ref.read(enrollmentRepositoryProvider);
-      final enrolled = await enrollmentRepo.isEnrolled(
-        widget.programId,
-        profile.uid,
-      );
-
-      if (!mounted) return;
-
-      if (enrolled) {
-        setState(() {
-          _searchError = '${profile.displayName} is already enrolled';
-          _isSearching = false;
-        });
-        return;
-      }
-
-      // Check if searching for self
       final currentUid = ref.read(authStateProvider).value?.uid;
       if (profile.uid == currentUid) {
         setState(() {
@@ -97,21 +84,54 @@ class _RosterScreenState extends ConsumerState<RosterScreen> {
     }
   }
 
+  /// Programs the coach owns that athletes can be enrolled into.
+  List<Program> _assignablePrograms() {
+    final programs = ref.read(programsProvider).valueOrNull ?? const [];
+    return programs.where((p) => p.isAssignable).toList();
+  }
+
   Future<void> _enrollAthlete(UserProfile profile) async {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;
 
-    try {
-      final repo = ref.read(enrollmentRepositoryProvider);
-      await repo.enrollAthlete(
-        programId: widget.programId,
-        athleteId: profile.uid,
-        addedBy: uid,
+    final programs = _assignablePrograms();
+    if (programs.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Create an assignable program before enrolling athletes',
+          ),
+        ),
       );
+      return;
+    }
 
+    final program = await showDialog<Program>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text('Enroll ${profile.displayName} in...'),
+        children: [
+          for (final p in programs)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(p),
+              child: Text(p.name),
+            ),
+        ],
+      ),
+    );
+    if (program == null) return;
+
+    try {
+      await ref.read(enrollmentRepositoryProvider).enrollAthlete(
+            programId: program.id,
+            athleteId: profile.uid,
+            addedBy: uid,
+          );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${profile.displayName} enrolled')),
+          SnackBar(
+            content: Text('${profile.displayName} enrolled in ${program.name}'),
+          ),
         );
         setState(() {
           _searchResult = null;
@@ -127,14 +147,19 @@ class _RosterScreenState extends ConsumerState<RosterScreen> {
     }
   }
 
-  Future<void> _removeAthlete(String athleteId, String displayName) async {
+  Future<void> _removeAthlete(
+    String athleteId,
+    String displayName,
+    List<Enrollment> enrollments,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Remove athlete?'),
         content: Text(
-          'Remove $displayName from this program? '
-          'Their future scheduled workouts will be cancelled.',
+          'Remove $displayName from your roster? They will be removed from '
+          'all of your programs and their future scheduled workouts will be '
+          'cancelled.',
         ),
         actions: [
           TextButton(
@@ -153,14 +178,20 @@ class _RosterScreenState extends ConsumerState<RosterScreen> {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;
 
+    final programIds = enrollments
+        .where((e) => e.athleteId == athleteId)
+        .map((e) => e.programId)
+        .toSet();
+
     try {
       final repo = ref.read(enrollmentRepositoryProvider);
-      await repo.removeAthlete(
-        programId: widget.programId,
-        athleteId: athleteId,
-        removedBy: uid,
-      );
-
+      for (final programId in programIds) {
+        await repo.removeAthlete(
+          programId: programId,
+          athleteId: athleteId,
+          removedBy: uid,
+        );
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$displayName removed')),
@@ -177,15 +208,14 @@ class _RosterScreenState extends ConsumerState<RosterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final enrollmentsAsync =
-        ref.watch(programEnrollmentsProvider(widget.programId));
+    final enrollmentsAsync = ref.watch(ownerEnrollmentsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Manage Roster')),
+      appBar: AppBar(title: const Text('Roster')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Search section
+          // Add athlete by username
           Text(
             'Add Athlete',
             style: Theme.of(context).textTheme.titleMedium,
@@ -224,9 +254,7 @@ class _RosterScreenState extends ConsumerState<RosterScreen> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 _searchError!,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                ),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
 
@@ -253,33 +281,30 @@ class _RosterScreenState extends ConsumerState<RosterScreen> {
           const Divider(),
           const SizedBox(height: 16),
 
-          // Current roster
           Text(
-            'Current Roster',
+            'Athletes',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
 
           enrollmentsAsync.when(
             data: (enrollments) {
-              if (enrollments.isEmpty) {
+              final athleteIds =
+                  {for (final e in enrollments) e.athleteId}.toList();
+              if (athleteIds.isEmpty) {
                 return const Padding(
                   padding: EdgeInsets.symmetric(vertical: 32),
-                  child: Center(
-                    child: Text('No athletes enrolled yet'),
-                  ),
+                  child: Center(child: Text('No athletes on your roster yet')),
                 );
               }
               return Column(
-                children: enrollments.map((enrollment) {
-                  return _AthleteCard(
-                    programId: widget.programId,
-                    athleteId: enrollment.athleteId,
-                    addedAt: enrollment.addedAt,
-                    onRemove: (displayName) => _removeAthlete(
-                      enrollment.athleteId,
-                      displayName,
-                    ),
+                children: athleteIds.map((athleteId) {
+                  return _AthleteRow(
+                    athleteId: athleteId,
+                    onOpen: () =>
+                        context.push('/trainer-calendar?athleteId=$athleteId'),
+                    onRemove: (displayName) =>
+                        _removeAthlete(athleteId, displayName, enrollments),
                   );
                 }).toList(),
               );
@@ -293,20 +318,16 @@ class _RosterScreenState extends ConsumerState<RosterScreen> {
   }
 }
 
-/// Card showing an enrolled athlete with their profile info.
-///
-/// Loads the user profile asynchronously to display name and photo.
-class _AthleteCard extends ConsumerWidget {
-  const _AthleteCard({
-    required this.programId,
+/// Roster row for a single athlete, resolving their profile asynchronously.
+class _AthleteRow extends ConsumerWidget {
+  const _AthleteRow({
     required this.athleteId,
-    required this.addedAt,
+    required this.onOpen,
     required this.onRemove,
   });
 
-  final String programId;
   final String athleteId;
-  final DateTime addedAt;
+  final VoidCallback onOpen;
   final void Function(String displayName) onRemove;
 
   @override
@@ -322,40 +343,22 @@ class _AthleteCard extends ConsumerWidget {
 
         return Card(
           child: ListTile(
+            onTap: onOpen,
             leading: profile?.photoUrl != null
                 ? CircleAvatar(
                     backgroundImage: NetworkImage(profile!.photoUrl!),
                   )
                 : const CircleAvatar(child: Icon(Icons.person)),
             title: Text(displayName),
-            subtitle: Text(
-              username != null ? '@$username' : 'Enrolled ${_formatDate(addedAt)}',
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.assignment_add),
-                  tooltip: 'Assign workout or program',
-                  onPressed: () => context.push(
-                    '/programs/$programId/assign?athleteId=$athleteId',
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.person_remove),
-                  tooltip: 'Remove athlete',
-                  onPressed: () => onRemove(displayName),
-                ),
-              ],
+            subtitle: username != null ? Text('@$username') : null,
+            trailing: IconButton(
+              icon: const Icon(Icons.person_remove),
+              tooltip: 'Remove athlete',
+              onPressed: () => onRemove(displayName),
             ),
           ),
         );
       },
     );
-  }
-
-  String _formatDate(DateTime date) {
-    if (date.millisecondsSinceEpoch == 0) return '';
-    return '${date.month}/${date.day}/${date.year}';
   }
 }

@@ -6,6 +6,7 @@ import 'package:stage4/core/enums.dart';
 import 'package:stage4/features/auth/presentation/app_entry_providers.dart';
 import 'package:stage4/features/auth/presentation/auth_providers.dart';
 import 'package:stage4/features/programs/domain/program.dart';
+import 'package:stage4/features/programs/domain/enrollment.dart';
 import 'package:stage4/features/programs/presentation/enrollment_providers.dart';
 import 'package:stage4/features/programs/presentation/program_providers.dart';
 import 'package:stage4/features/workouts/domain/workout_instance.dart';
@@ -22,18 +23,21 @@ enum _AssignmentType { workout, program }
 /// - Workout: a single workout with optional recurrence.
 /// - Program: an entire published program starting on the chosen date.
 ///
-/// Shared by the program roster (program fixed, athlete preselected) and the
-/// trainer calendar (program picked first, athlete + date preselected).
+/// The program the work attaches to can either be fixed by the caller
+/// ([programId] non-null) or chosen on the screen ([programId] null) — used by
+/// the trainer calendar and roster where the athlete is known but the program
+/// is not yet picked. In Program mode the picker lists the coach's assignable
+/// programs; in Workout mode it lists the programs the athlete is enrolled in.
 class ScheduleAssignmentScreen extends ConsumerStatefulWidget {
   const ScheduleAssignmentScreen({
     super.key,
-    required this.programId,
+    this.programId,
     this.preselectedAthleteId,
     this.preselectedDate,
     this.startInProgramMode = false,
   });
 
-  final String programId;
+  final String? programId;
   final String? preselectedAthleteId;
   final DateTime? preselectedDate;
   final bool startInProgramMode;
@@ -46,6 +50,7 @@ class ScheduleAssignmentScreen extends ConsumerStatefulWidget {
 class _ScheduleAssignmentScreenState
     extends ConsumerState<ScheduleAssignmentScreen> {
   String? _selectedAthleteId;
+  String? _selectedProgramId;
   String? _selectedWorkoutId;
   int? _selectedWorkoutVersion;
   WorkoutType? _selectedWorkoutType;
@@ -65,6 +70,7 @@ class _ScheduleAssignmentScreenState
   void initState() {
     super.initState();
     _selectedAthleteId = widget.preselectedAthleteId;
+    _selectedProgramId = widget.programId;
     _type = widget.startInProgramMode
         ? _AssignmentType.program
         : _AssignmentType.workout;
@@ -135,12 +141,20 @@ class _ScheduleAssignmentScreenState
       return;
     }
 
+    final programId = _selectedProgramId;
+    if (programId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select a program first')),
+      );
+      return;
+    }
+
     if (_type == _AssignmentType.program) {
       setState(() => _isLoading = true);
       try {
         final result =
             await ref.read(workoutInstanceRepositoryProvider).assignProgram(
-                  programId: widget.programId,
+                  programId: programId,
                   athleteId: _selectedAthleteId!,
                   startDate: _formatDate(_selectedDate),
                   assignedBy: uid,
@@ -193,7 +207,7 @@ class _ScheduleAssignmentScreenState
         );
 
         final count = await repo.assignRecurringWorkouts(
-          programId: widget.programId,
+          programId: programId,
           athleteId: _selectedAthleteId!,
           workoutTemplateId: _selectedWorkoutId!,
           workoutTemplateVersion: _selectedWorkoutVersion!,
@@ -211,7 +225,7 @@ class _ScheduleAssignmentScreenState
         }
       } else {
         await repo.assignWorkout(
-          programId: widget.programId,
+          programId: programId,
           athleteId: _selectedAthleteId!,
           workoutTemplateId: _selectedWorkoutId!,
           workoutTemplateVersion: _selectedWorkoutVersion!,
@@ -246,20 +260,38 @@ class _ScheduleAssignmentScreenState
 
   @override
   Widget build(BuildContext context) {
-    final enrollmentsAsync =
-        ref.watch(programEnrollmentsProvider(widget.programId));
     final workoutsAsync = ref.watch(workoutTemplatesProvider);
-    final programsAsync = ref.watch(programsProvider);
+    final allPrograms = ref.watch(programsProvider).valueOrNull ?? const [];
+    final ownerEnrollments =
+        ref.watch(ownerEnrollmentsProvider).valueOrNull ?? const [];
 
-    final Program? program = programsAsync.maybeWhen(
-      data: (programs) {
-        for (final p in programs) {
-          if (p.id == widget.programId) return p;
-        }
-        return null;
-      },
-      orElse: () => null,
-    );
+    final fixedProgram = widget.programId != null;
+    final showProgramPicker = !fixedProgram;
+
+    final enrolledProgramIds = {
+      for (final e in ownerEnrollments)
+        if (e.athleteId == _selectedAthleteId) e.programId,
+    };
+
+    // Programs offered by the in-screen picker, depending on mode.
+    final programModePrograms = allPrograms
+        .where((p) => p.isAssignable && p.currentVersion > 0)
+        .toList();
+    final workoutModePrograms =
+        allPrograms.where((p) => enrolledProgramIds.contains(p.id)).toList();
+    final pickerPrograms = _type == _AssignmentType.program
+        ? programModePrograms
+        : workoutModePrograms;
+
+    Program? findProgram(String? id) {
+      if (id == null) return null;
+      for (final p in allPrograms) {
+        if (p.id == id) return p;
+      }
+      return null;
+    }
+
+    final program = findProgram(_selectedProgramId);
     final programPublished = (program?.currentVersion ?? 0) > 0;
 
     return Scaffold(
@@ -288,10 +320,17 @@ class _ScheduleAssignmentScreenState
             ],
             selected: {_type},
             onSelectionChanged: (selection) {
-              setState(() => _type = selection.first);
+              setState(() {
+                _type = selection.first;
+                // The valid program set differs between modes; clear the
+                // in-screen selection so a stale program can't be assigned.
+                if (showProgramPicker) _selectedProgramId = null;
+              });
             },
           ),
-          if (_type == _AssignmentType.program && !programPublished) ...[
+          if (_type == _AssignmentType.program &&
+              _selectedProgramId != null &&
+              !programPublished) ...[
             const SizedBox(height: 8),
             Text(
               'This program has no published version yet, so it cannot be '
@@ -313,47 +352,47 @@ class _ScheduleAssignmentScreenState
           if (widget.preselectedAthleteId != null)
             _buildFixedAthleteTile(widget.preselectedAthleteId!)
           else
-            enrollmentsAsync.when(
-              data: (enrollments) {
-                if (enrollments.isEmpty) {
-                  return const Text('No athletes enrolled in this program');
-                }
-                final profileRepo = ref.read(userProfileRepositoryProvider);
-                for (final e in enrollments) {
-                  if (!_athleteNames.containsKey(e.athleteId)) {
-                    _athleteNames[e.athleteId] = e.athleteId;
-                    profileRepo.getUserProfile(e.athleteId).then((profile) {
-                      if (profile != null && mounted) {
-                        setState(() {
-                          _athleteNames[e.athleteId] = profile.displayName;
-                        });
-                      }
-                    });
-                  }
-                }
-                return DropdownButtonFormField<String>(
-                  value: _selectedAthleteId,
-                  decoration:
-                      const InputDecoration(labelText: 'Select athlete'),
-                  items: enrollments.map((e) {
-                    return DropdownMenuItem(
-                      value: e.athleteId,
-                      child: Text(_athleteNames[e.athleteId] ?? e.athleteId),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() => _selectedAthleteId = value);
-                  },
-                );
-              },
-              loading: () => const CircularProgressIndicator(),
-              error: (e, _) => Text('Error: $e'),
-            ),
+            _buildAthleteDropdown(ownerEnrollments),
 
           const SizedBox(height: 24),
 
+          // Program picker (only when the caller didn't fix the program)
+          if (showProgramPicker) ...[
+            Text(
+              'Program',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            if (pickerPrograms.isEmpty)
+              Text(
+                _type == _AssignmentType.program
+                    ? 'No assignable published programs available'
+                    : 'This athlete is not enrolled in any of your programs '
+                        'yet. Assign a program first.',
+              )
+            else
+              DropdownButtonFormField<String>(
+                key: ValueKey('program-picker-${_type.name}-$_selectedAthleteId'),
+                initialValue: pickerPrograms.any((p) => p.id == _selectedProgramId)
+                    ? _selectedProgramId
+                    : null,
+                decoration:
+                    const InputDecoration(labelText: 'Select program'),
+                items: pickerPrograms.map((p) {
+                  return DropdownMenuItem(
+                    value: p.id,
+                    child: Text(p.name),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() => _selectedProgramId = value);
+                },
+              ),
+            const SizedBox(height: 24),
+          ],
+
           // Program summary (program mode only)
-          if (_type == _AssignmentType.program) ...[
+          if (_type == _AssignmentType.program && _selectedProgramId != null) ...[
             Card(
               child: ListTile(
                 leading: const Icon(Icons.calendar_month),
@@ -627,6 +666,42 @@ class _ScheduleAssignmentScreenState
         leading: const Icon(Icons.person),
         title: Text(_athleteNames[athleteId] ?? athleteId),
       ),
+    );
+  }
+
+  Widget _buildAthleteDropdown(List<Enrollment> enrollments) {
+    final athleteIds = {for (final e in enrollments) e.athleteId}.toList();
+    if (athleteIds.isEmpty) {
+      return const Text('No athletes enrolled in your programs yet');
+    }
+    final profileRepo = ref.read(userProfileRepositoryProvider);
+    for (final id in athleteIds) {
+      if (!_athleteNames.containsKey(id)) {
+        _athleteNames[id] = id;
+        profileRepo.getUserProfile(id).then((profile) {
+          if (profile != null && mounted) {
+            setState(() => _athleteNames[id] = profile.displayName);
+          }
+        });
+      }
+    }
+    return DropdownButtonFormField<String>(
+      initialValue:
+          athleteIds.contains(_selectedAthleteId) ? _selectedAthleteId : null,
+      decoration: const InputDecoration(labelText: 'Select athlete'),
+      items: athleteIds.map((id) {
+        return DropdownMenuItem(
+          value: id,
+          child: Text(_athleteNames[id] ?? id),
+        );
+      }).toList(),
+      onChanged: (value) {
+        setState(() {
+          _selectedAthleteId = value;
+          // Enrolled-program set changes with the athlete in workout mode.
+          if (widget.programId == null) _selectedProgramId = null;
+        });
+      },
     );
   }
 }

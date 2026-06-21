@@ -19,7 +19,11 @@ import 'package:stage4/features/workouts/presentation/workout_instance_providers
 /// rescheduled, or cancelled) and actions to assign a program or a single
 /// workout to that day.
 class TrainerCalendarScreen extends ConsumerStatefulWidget {
-  const TrainerCalendarScreen({super.key});
+  const TrainerCalendarScreen({super.key, this.athleteId});
+
+  /// When provided, the calendar opens focused on this athlete instead of
+  /// defaulting to the first enrolled athlete.
+  final String? athleteId;
 
   @override
   ConsumerState<TrainerCalendarScreen> createState() =>
@@ -46,6 +50,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedAthleteId = widget.athleteId;
     final now = DateTime.now();
     _month = DateTime(now.year, now.month);
   }
@@ -116,7 +121,10 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
               ),
             );
           }
-          _selectedAthleteId ??= athleteIds.first;
+          if (_selectedAthleteId == null ||
+              !athleteIds.contains(_selectedAthleteId)) {
+            _selectedAthleteId = athleteIds.first;
+          }
 
           return Column(
             children: [
@@ -447,20 +455,11 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                 const Divider(),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.playlist_add),
-                  title: const Text('Assign a program starting this day'),
-                  onTap: () {
-                    Navigator.of(sheetContext).pop();
-                    _assignViaSharedScreen(context, date, 'program');
-                  },
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.add),
-                  title: const Text('Assign a workout (optional recurrence)'),
+                  title: const Text('Assign workout or program'),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
-                    _assignViaSharedScreen(context, date, 'workout');
+                    _assignOnDay(context, date);
                   },
                 ),
                 const SizedBox(height: 8),
@@ -472,60 +471,13 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     );
   }
 
-  /// Programs the current user owns that can be assigned to the athlete.
-  List<Program> _assignablePrograms() {
-    final uid = ref.read(authStateProvider).value?.uid;
-    final programs = ref.read(programsProvider).valueOrNull ?? [];
-    return programs.where((p) {
-      if (p.currentVersion == 0) return false;
-      if (p.isAssignable) return true;
-      // Personal programs only self-assign.
-      return _selectedAthleteId == uid;
-    }).toList();
-  }
-
-  Future<Program?> _pickProgram(BuildContext context) {
-    final programs = _assignablePrograms();
-    if (programs.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No published programs available to assign'),
-        ),
-      );
-      return Future.value(null);
-    }
-    return showDialog<Program>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Select program'),
-        children: [
-          for (final p in programs)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(ctx).pop(p),
-              child: Text('${p.name} (v${p.currentVersion})'),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _assignViaSharedScreen(
-    BuildContext context,
-    DateTime date,
-    String mode,
-  ) async {
+  void _assignOnDay(BuildContext context, DateTime date) {
     final athleteId = _selectedAthleteId;
     if (athleteId == null) return;
-
-    final program = await _pickProgram(context);
-    if (program == null || !context.mounted) return;
-
     final iso = _formatIsoDate(date);
-    context.push(
-      '/programs/${program.id}/assign'
-      '?athleteId=$athleteId&date=$iso&mode=$mode',
-    );
+    context.push('/assign?athleteId=$athleteId&date=$iso');
   }
+
   Future<void> _reschedule(BuildContext context, WorkoutInstance instance) async {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;
