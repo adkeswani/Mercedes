@@ -11,6 +11,7 @@ import 'package:stage4/features/exercises/presentation/exercise_list_screen.dart
 import 'package:stage4/features/programs/presentation/program_builder_screen.dart';
 import 'package:stage4/features/programs/presentation/program_list_screen.dart';
 import 'package:stage4/features/programs/presentation/roster_screen.dart';
+import 'package:stage4/features/programs/presentation/roster_programs_screen.dart';
 import 'package:stage4/features/programs/presentation/athlete_schedule_screen.dart';
 import 'package:stage4/features/workouts/presentation/calendar_screen.dart';
 import 'package:stage4/features/workouts/presentation/schedule_assignment_screen.dart';
@@ -96,6 +97,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/programs',
         builder: (context, state) => const ProgramListScreen(),
+      ),
+      GoRoute(
+        path: '/roster',
+        builder: (context, state) => const RosterProgramsScreen(),
       ),
       GoRoute(
         path: '/programs/new',
