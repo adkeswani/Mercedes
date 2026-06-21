@@ -152,14 +152,56 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
     String displayName,
     List<Enrollment> enrollments,
   ) async {
+    final uid = ref.read(authStateProvider).value?.uid;
+    if (uid == null) return;
+
+    final programNames = {
+      for (final p in ref.read(programsProvider).valueOrNull ?? const [])
+        p.id: p.name,
+    };
+    final enrolledProgramIds = enrollments
+        .where((e) => e.athleteId == athleteId)
+        .map((e) => e.programId)
+        .toSet()
+        .toList();
+    if (enrolledProgramIds.isEmpty) return;
+
+    // Step 1: choose which program (or all) to remove from.
+    const allSentinel = '__all__';
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text('Remove $displayName from...'),
+        children: [
+          for (final pid in enrolledProgramIds)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(pid),
+              child: Text(programNames[pid] ?? pid),
+            ),
+          if (enrolledProgramIds.length > 1)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(ctx).pop(allSentinel),
+              child: const Text('All programs'),
+            ),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    final removeAll = choice == allSentinel;
+    final targetIds = removeAll ? enrolledProgramIds : [choice];
+    final targetLabel =
+        removeAll ? 'all of your programs' : (programNames[choice] ?? choice);
+
+    // Step 2: confirm the (destructive) removal.
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Remove athlete?'),
         content: Text(
-          'Remove $displayName from your roster? They will be removed from '
-          'all of your programs and their future scheduled workouts will be '
-          'cancelled.',
+          'Remove $displayName from $targetLabel? Their future scheduled '
+          'workouts in ${removeAll ? 'those programs' : 'that program'} will '
+          'be cancelled.',
         ),
         actions: [
           TextButton(
@@ -175,17 +217,9 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
     );
     if (confirmed != true) return;
 
-    final uid = ref.read(authStateProvider).value?.uid;
-    if (uid == null) return;
-
-    final programIds = enrollments
-        .where((e) => e.athleteId == athleteId)
-        .map((e) => e.programId)
-        .toSet();
-
     try {
       final repo = ref.read(enrollmentRepositoryProvider);
-      for (final programId in programIds) {
+      for (final programId in targetIds) {
         await repo.removeAthlete(
           programId: programId,
           athleteId: athleteId,
@@ -194,7 +228,9 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$displayName removed')),
+          SnackBar(
+            content: Text('$displayName removed from $targetLabel'),
+          ),
         );
       }
     } catch (e) {
