@@ -127,7 +127,9 @@ service cloud.firestore {
     // ── Workout Instances ──
     // Read: athlete (own instances) or program owner
     // Create: program owner assigns workouts
-    // Update: athlete can complete/edit own; owner can only cancel
+    // Update: athlete can complete/edit own; owner can edit scheduling
+    //   fields only (reschedule, swap workout, cancel) — never completion
+    //   data (rpe, duration, notes, actuals, load), which is athlete-only.
 
     match /workoutInstances/{instanceId} {
       allow read: if isSignedIn()
@@ -139,7 +141,12 @@ service cloud.firestore {
       allow update: if isSignedIn()
                       && (resource.data.athleteId == request.auth.uid
                           || (isProgramOwner(resource.data.programId)
-                              && request.resource.data.status == 'cancelled'));
+                              && request.resource.data.diff(resource.data)
+                                   .affectedKeys()
+                                   .hasOnly(['status', 'scheduledDate',
+                                             'workoutTemplateId',
+                                             'workoutTemplateVersion',
+                                             'workoutType', 'updatedAt'])));
     }
   }
 }

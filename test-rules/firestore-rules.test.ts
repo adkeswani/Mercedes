@@ -588,6 +588,37 @@ describe('workoutInstances', () => {
     );
   });
 
+  it('allows owner to reschedule instance', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('workoutInstances').doc(INSTANCE_ID).update({
+        scheduledDate: '2026-06-20', updatedAt: new Date(),
+      })
+    );
+  });
+
+  it('allows owner to swap the workout on an instance', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('workoutInstances').doc(INSTANCE_ID).update({
+        workoutTemplateId: 'w2', workoutTemplateVersion: 2,
+        workoutType: 'pull', updatedAt: new Date(),
+      })
+    );
+  });
+
+  it('denies owner from editing athlete completion notes', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      db.collection('workoutInstances').doc(INSTANCE_ID).update({
+        athleteNotes: 'owner trying to edit notes',
+      })
+    );
+  });
+
   it('denies stranger from updating instance', async () => {
     await seedInstance();
     const db = testEnv.authenticatedContext(STRANGER).firestore();

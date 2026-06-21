@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:stage4/core/enums.dart';
+import 'package:stage4/features/programs/data/enrollment_repository.dart';
 import 'package:stage4/features/workouts/domain/workout_instance.dart';
 
 /// Firestore repository for workout instance management.
@@ -89,6 +90,8 @@ class WorkoutInstanceRepository {
     final docRef = _collection.doc();
     await docRef.set({
       'programId': programId,
+      'programVersion': 0,
+      'programAssignmentId': null,
       'athleteId': athleteId,
       'workoutTemplateId': workoutTemplateId,
       'workoutTemplateVersion': workoutTemplateVersion,
@@ -162,6 +165,8 @@ class WorkoutInstanceRepository {
     // Create root instance (first date)
     batch.set(rootRef, {
       'programId': programId,
+      'programVersion': 0,
+      'programAssignmentId': null,
       'athleteId': athleteId,
       'workoutTemplateId': workoutTemplateId,
       'workoutTemplateVersion': workoutTemplateVersion,
@@ -194,6 +199,8 @@ class WorkoutInstanceRepository {
       final childRef = _collection.doc();
       batch.set(childRef, {
         'programId': programId,
+        'programVersion': 0,
+        'programAssignmentId': null,
         'athleteId': athleteId,
         'workoutTemplateId': workoutTemplateId,
         'workoutTemplateVersion': workoutTemplateVersion,
@@ -224,6 +231,173 @@ class WorkoutInstanceRepository {
 
     await batch.commit();
     return dates.length;
+  }
+
+  /// Assigns an entire published program to an athlete starting on a date.
+  ///
+  /// Materializes every [ProgramScheduleEntry] of the program's current
+  /// published version into a workout instance at
+  /// `scheduledDate = startDate + dayOffset`. All created instances share a
+  /// single [WorkoutInstance.programAssignmentId] so the block can later be
+  /// cancelled or rescheduled together, and record the [programVersion] they
+  /// were materialized from (an immutable snapshot — editing the program
+  /// afterwards does not change already-assigned athletes).
+  ///
+  /// For assignable programs the athlete is auto-enrolled if not already
+  /// enrolled. For personal programs only self-assignment is allowed.
+  ///
+  /// Throws [StateError] if the caller is not the program owner, if the
+  /// program has no published version, or for a personal program assigned to
+  /// someone other than the owner. Returns the assignment id and instance
+  /// count.
+  Future<ProgramAssignmentResult> assignProgram({
+    required String programId,
+    required String athleteId,
+    required String startDate,
+    required String assignedBy,
+  }) async {
+    final dateRegex = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+    if (!dateRegex.hasMatch(startDate)) {
+      throw ArgumentError(
+        'startDate must be ISO 8601 date format (YYYY-MM-DD)',
+      );
+    }
+
+    final programRef = _firestore.collection('programs').doc(programId);
+    final programDoc = await programRef.get();
+    if (!programDoc.exists) {
+      throw StateError('Program $programId not found');
+    }
+    final programData = programDoc.data()!;
+    final ownerId = programData['ownerId'] as String?;
+    final type = programData['type'] as String?;
+    final currentVersion = (programData['currentVersion'] as int?) ?? 0;
+
+    if (ownerId != assignedBy) {
+      throw StateError(
+        'User $assignedBy is not the owner of program $programId',
+      );
+    }
+    if (currentVersion == 0) {
+      throw StateError(
+        'Program $programId has no published version to assign',
+      );
+    }
+
+    if (type == ProgramType.personal.name) {
+      if (athleteId != assignedBy) {
+        throw StateError('Personal programs only allow self-assignment');
+      }
+    } else {
+      // Assignable — auto-enroll the athlete if needed.
+      final enrollmentRepo = EnrollmentRepository(firestore: _firestore);
+      final enrolled = await enrollmentRepo.isEnrolled(programId, athleteId);
+      if (!enrolled) {
+        await enrollmentRepo.enrollAthlete(
+          programId: programId,
+          athleteId: athleteId,
+          addedBy: assignedBy,
+        );
+      }
+    }
+
+    final versionDoc = await programRef
+        .collection('programVersions')
+        .doc(currentVersion.toString())
+        .get();
+    final entries =
+        (versionDoc.data()?['entries'] as List<dynamic>?) ?? <dynamic>[];
+    if (entries.isEmpty) {
+      throw StateError(
+        'Program $programId version $currentVersion has no schedule entries',
+      );
+    }
+
+    // Resolve each referenced workout template's type for load metrics.
+    final templateIds = <String>{
+      for (final e in entries)
+        (e as Map<String, dynamic>)['workoutTemplateId'] as String? ?? '',
+    }..removeWhere((id) => id.isEmpty);
+    final typeByTemplate = <String, WorkoutType>{};
+    await Future.wait(templateIds.map((tid) async {
+      final tDoc =
+          await _firestore.collection('workoutTemplates').doc(tid).get();
+      typeByTemplate[tid] =
+          _parseWorkoutType(tDoc.data()?['workoutType'] as String?);
+    }));
+
+    final assignmentId = _collection.doc().id;
+    final batch = _firestore.batch();
+
+    for (final raw in entries) {
+      final entry = raw as Map<String, dynamic>;
+      final templateId = entry['workoutTemplateId'] as String? ?? '';
+      final templateVersion = (entry['workoutTemplateVersion'] as int?) ?? 1;
+      final dayOffset = (entry['dayOffset'] as int?) ?? 0;
+      final scheduledDate = addDays(startDate, dayOffset);
+      final workoutType = typeByTemplate[templateId] ?? WorkoutType.fullBody;
+
+      final docRef = _collection.doc();
+      batch.set(docRef, {
+        'programId': programId,
+        'programVersion': currentVersion,
+        'programAssignmentId': assignmentId,
+        'athleteId': athleteId,
+        'workoutTemplateId': templateId,
+        'workoutTemplateVersion': templateVersion,
+        'scheduledDate': scheduledDate,
+        'workoutType': workoutType.name,
+        'assignedBy': assignedBy,
+        'assignedAt': FieldValue.serverTimestamp(),
+        'status': WorkoutInstanceStatus.scheduled.name,
+        'completedAt': null,
+        'missedAt': null,
+        'rpe': null,
+        'durationMinutes': null,
+        'loadPoints': null,
+        'loadPointsOverride': null,
+        'loadPointsOverriddenBy': null,
+        'loadPointsOverriddenAt': null,
+        'loadModelVersion': 1,
+        'loadStrategyId': null,
+        'recurrence': null,
+        'isRecurrenceRoot': false,
+        'recurrenceRootId': null,
+        'actuals': [],
+        'athleteNotes': null,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+    return ProgramAssignmentResult(
+      assignmentId: assignmentId,
+      instanceCount: entries.length,
+    );
+  }
+
+  /// Cancels all still-scheduled instances belonging to a program assignment.
+  ///
+  /// Completed and missed instances are preserved. Returns the number of
+  /// instances cancelled.
+  Future<int> cancelProgramAssignment({
+    required String programAssignmentId,
+  }) async {
+    final snapshot = await _collection
+        .where('programAssignmentId', isEqualTo: programAssignmentId)
+        .where('status', isEqualTo: WorkoutInstanceStatus.scheduled.name)
+        .get();
+
+    final batch = _firestore.batch();
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, {
+        'status': WorkoutInstanceStatus.cancelled.name,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    if (snapshot.docs.isNotEmpty) await batch.commit();
+    return snapshot.docs.length;
   }
 
   /// Cancels all future scheduled instances in a recurrence group.
@@ -390,6 +564,8 @@ class WorkoutInstanceRepository {
     return WorkoutInstance(
       id: id,
       programId: data['programId'] as String? ?? '',
+      programVersion: (data['programVersion'] as int?) ?? 0,
+      programAssignmentId: data['programAssignmentId'] as String?,
       athleteId: data['athleteId'] as String? ?? '',
       workoutTemplateId: data['workoutTemplateId'] as String? ?? '',
       workoutTemplateVersion:
@@ -507,4 +683,18 @@ class WorkoutInstanceRepository {
     if (value is Timestamp) return value.toDate();
     return DateTime.fromMillisecondsSinceEpoch(0);
   }
+}
+
+/// Result of an [WorkoutInstanceRepository.assignProgram] call.
+class ProgramAssignmentResult {
+  const ProgramAssignmentResult({
+    required this.assignmentId,
+    required this.instanceCount,
+  });
+
+  /// Shared id tagging every instance created by this assignment.
+  final String assignmentId;
+
+  /// Number of workout instances materialized.
+  final int instanceCount;
 }

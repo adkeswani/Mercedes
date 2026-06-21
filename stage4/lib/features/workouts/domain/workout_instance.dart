@@ -20,6 +20,8 @@ class WorkoutInstance {
     required this.workoutType,
     required this.createdAt,
     required this.updatedAt,
+    this.programVersion = 0,
+    this.programAssignmentId,
     this.completedAt,
     this.missedAt,
     this.rpe,
@@ -39,6 +41,20 @@ class WorkoutInstance {
 
   final String id;
   final String programId;
+
+  /// The published program version this instance was materialized from.
+  ///
+  /// 0 means the instance was assigned ad-hoc (a single or recurring
+  /// workout), not from a program schedule.
+  final int programVersion;
+
+  /// Groups all instances materialized from a single program assignment.
+  ///
+  /// Null for ad-hoc assignments. Shared across every instance created by
+  /// one `assignProgram` call so the block can be rescheduled or cancelled
+  /// together.
+  final String? programAssignmentId;
+
   final String athleteId;
   final String workoutTemplateId;
   final int workoutTemplateVersion;
@@ -357,4 +373,13 @@ void _expandWeekly(
 
 String _formatDate(DateTime date) {
   return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+}
+
+/// Returns [isoDate] (YYYY-MM-DD) advanced by [days] calendar days.
+///
+/// Used to materialize a program's relative schedule entries against a
+/// concrete start date: `scheduledDate = addDays(startDate, dayOffset)`.
+String addDays(String isoDate, int days) {
+  final date = DateTime.parse(isoDate).add(Duration(days: days));
+  return _formatDate(date);
 }

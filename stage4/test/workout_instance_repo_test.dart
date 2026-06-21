@@ -700,5 +700,214 @@ void main() {
         expect(completed!.isCompleted, isTrue);
       });
     });
+
+    group('assignProgram', () {
+      Future<void> publishVersion(
+        String programId,
+        List<Map<String, dynamic>> entries,
+      ) async {
+        await fakeFirestore
+            .collection('programs')
+            .doc(programId)
+            .collection('programVersions')
+            .doc('1')
+            .set({
+          'versionNumber': 1,
+          'entries': entries,
+        });
+      }
+
+      Future<void> createWorkoutTemplate(String id, String workoutType) async {
+        await fakeFirestore.collection('workoutTemplates').doc(id).set({
+          'name': 'WT $id',
+          'workoutType': workoutType,
+        });
+      }
+
+      test('materializes entries at startDate + dayOffset', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await createWorkoutTemplate('wt1', 'push');
+        await createWorkoutTemplate('wt2', 'pull');
+        await publishVersion('prog1', [
+          {
+            'workoutTemplateId': 'wt1',
+            'workoutTemplateVersion': 1,
+            'dayOffset': 0,
+            'sortOrder': 0,
+          },
+          {
+            'workoutTemplateId': 'wt2',
+            'workoutTemplateVersion': 1,
+            'dayOffset': 3,
+            'sortOrder': 1,
+          },
+        ]);
+
+        final result = await repo.assignProgram(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          startDate: '2026-06-01',
+          assignedBy: 'coach1',
+        );
+
+        expect(result.instanceCount, 2);
+        expect(result.assignmentId, isNotEmpty);
+
+        final snapshot = await fakeFirestore
+            .collection('workoutInstances')
+            .where('programAssignmentId', isEqualTo: result.assignmentId)
+            .get();
+        expect(snapshot.docs.length, 2);
+
+        final byTemplate = {
+          for (final d in snapshot.docs) d.data()['workoutTemplateId']: d.data()
+        };
+        expect(byTemplate['wt1']!['scheduledDate'], '2026-06-01');
+        expect(byTemplate['wt2']!['scheduledDate'], '2026-06-04');
+        expect(byTemplate['wt1']!['workoutType'], 'push');
+        expect(byTemplate['wt2']!['workoutType'], 'pull');
+        expect(byTemplate['wt1']!['programVersion'], 1);
+        expect(byTemplate['wt1']!['status'], 'scheduled');
+      });
+
+      test('rolls dayOffset across month boundaries', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await createWorkoutTemplate('wt1', 'push');
+        await publishVersion('prog1', [
+          {
+            'workoutTemplateId': 'wt1',
+            'workoutTemplateVersion': 1,
+            'dayOffset': 5,
+            'sortOrder': 0,
+          },
+        ]);
+
+        final result = await repo.assignProgram(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          startDate: '2026-06-29',
+          assignedBy: 'coach1',
+        );
+
+        final snapshot = await fakeFirestore
+            .collection('workoutInstances')
+            .where('programAssignmentId', isEqualTo: result.assignmentId)
+            .get();
+        expect(snapshot.docs.first.data()['scheduledDate'], '2026-07-04');
+      });
+
+      test('auto-enrolls the athlete when not already enrolled', () async {
+        await createProgram('prog1');
+        await createWorkoutTemplate('wt1', 'push');
+        await publishVersion('prog1', [
+          {
+            'workoutTemplateId': 'wt1',
+            'workoutTemplateVersion': 1,
+            'dayOffset': 0,
+            'sortOrder': 0,
+          },
+        ]);
+
+        await repo.assignProgram(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          startDate: '2026-06-01',
+          assignedBy: 'coach1',
+        );
+
+        final enrollment = await fakeFirestore
+            .collection('enrollments')
+            .doc('prog1_athlete1')
+            .get();
+        expect(enrollment.exists, isTrue);
+        expect(enrollment.data()!['status'], 'active');
+      });
+
+      test('throws when caller is not the program owner', () async {
+        await createProgram('prog1');
+        await createWorkoutTemplate('wt1', 'push');
+        await publishVersion('prog1', [
+          {
+            'workoutTemplateId': 'wt1',
+            'workoutTemplateVersion': 1,
+            'dayOffset': 0,
+            'sortOrder': 0,
+          },
+        ]);
+
+        expect(
+          () => repo.assignProgram(
+            programId: 'prog1',
+            athleteId: 'athlete1',
+            startDate: '2026-06-01',
+            assignedBy: 'intruder',
+          ),
+          throwsStateError,
+        );
+      });
+
+      test('throws when program has no published version', () async {
+        await fakeFirestore.collection('programs').doc('prog1').set({
+          'name': 'Draft',
+          'ownerId': 'coach1',
+          'type': 'assignable',
+          'status': 'draft',
+          'currentVersion': 0,
+        });
+
+        expect(
+          () => repo.assignProgram(
+            programId: 'prog1',
+            athleteId: 'athlete1',
+            startDate: '2026-06-01',
+            assignedBy: 'coach1',
+          ),
+          throwsStateError,
+        );
+      });
+
+      test('cancelProgramAssignment cancels only scheduled instances',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await createWorkoutTemplate('wt1', 'push');
+        await publishVersion('prog1', [
+          {
+            'workoutTemplateId': 'wt1',
+            'workoutTemplateVersion': 1,
+            'dayOffset': 0,
+            'sortOrder': 0,
+          },
+          {
+            'workoutTemplateId': 'wt1',
+            'workoutTemplateVersion': 1,
+            'dayOffset': 7,
+            'sortOrder': 1,
+          },
+        ]);
+
+        final result = await repo.assignProgram(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          startDate: '2026-06-01',
+          assignedBy: 'coach1',
+        );
+
+        final cancelled = await repo.cancelProgramAssignment(
+          programAssignmentId: result.assignmentId,
+        );
+        expect(cancelled, 2);
+
+        final snapshot = await fakeFirestore
+            .collection('workoutInstances')
+            .where('programAssignmentId', isEqualTo: result.assignmentId)
+            .get();
+        for (final doc in snapshot.docs) {
+          expect(doc.data()['status'], 'cancelled');
+        }
+      });
+    });
   });
 }

@@ -535,6 +535,28 @@ void main() {
       ]);
     });
   });
+
+  group('addDays', () {
+    test('adds zero days returns same date', () {
+      expect(addDays('2026-06-01', 0), '2026-06-01');
+    });
+
+    test('adds days within a month', () {
+      expect(addDays('2026-06-01', 3), '2026-06-04');
+    });
+
+    test('rolls across a month boundary', () {
+      expect(addDays('2026-06-29', 5), '2026-07-04');
+    });
+
+    test('rolls across a year boundary', () {
+      expect(addDays('2026-12-30', 3), '2027-01-02');
+    });
+
+    test('handles a leap day', () {
+      expect(addDays('2028-02-28', 1), '2028-02-29');
+    });
+  });
 }
 
 /// Helper to create a minimal valid scheduled instance with overrides.
