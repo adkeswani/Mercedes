@@ -8,7 +8,6 @@ import 'package:stage4/features/auth/presentation/auth_providers.dart';
 import 'package:stage4/features/programs/domain/program.dart';
 import 'package:stage4/features/programs/presentation/enrollment_providers.dart';
 import 'package:stage4/features/programs/presentation/program_providers.dart';
-import 'package:stage4/features/programs/presentation/workout_picker.dart';
 import 'package:stage4/features/workouts/domain/workout_instance.dart';
 import 'package:stage4/features/workouts/presentation/workout_instance_providers.dart';
 
@@ -452,16 +451,16 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                   title: const Text('Assign a program starting this day'),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
-                    _assignProgram(context, date);
+                    _assignViaSharedScreen(context, date, 'program');
                   },
                 ),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.add),
-                  title: const Text('Add a single workout'),
+                  title: const Text('Assign a workout (optional recurrence)'),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
-                    _addSingleWorkout(context, date);
+                    _assignViaSharedScreen(context, date, 'workout');
                   },
                 ),
                 const SizedBox(height: 8),
@@ -510,75 +509,23 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     );
   }
 
-  Future<void> _assignProgram(BuildContext context, DateTime date) async {
-    final uid = ref.read(authStateProvider).value?.uid;
+  Future<void> _assignViaSharedScreen(
+    BuildContext context,
+    DateTime date,
+    String mode,
+  ) async {
     final athleteId = _selectedAthleteId;
-    if (uid == null || athleteId == null) return;
-
-    final program = await _pickProgram(context);
-    if (program == null) return;
-
-    try {
-      final result =
-          await ref.read(workoutInstanceRepositoryProvider).assignProgram(
-                programId: program.id,
-                athleteId: athleteId,
-                startDate: _formatIsoDate(date),
-                assignedBy: uid,
-              );
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Assigned ${result.instanceCount} workouts'),
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to assign: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _addSingleWorkout(BuildContext context, DateTime date) async {
-    final uid = ref.read(authStateProvider).value?.uid;
-    final athleteId = _selectedAthleteId;
-    if (uid == null || athleteId == null) return;
+    if (athleteId == null) return;
 
     final program = await _pickProgram(context);
     if (program == null || !context.mounted) return;
 
-    final workout = await showWorkoutPicker(context, ref);
-    if (workout == null) return;
-
-    try {
-      await ref.read(workoutInstanceRepositoryProvider).assignWorkout(
-            programId: program.id,
-            athleteId: athleteId,
-            workoutTemplateId: workout.id,
-            workoutTemplateVersion: workout.currentVersion,
-            scheduledDate: _formatIsoDate(date),
-            workoutType: workout.workoutType,
-            assignedBy: uid,
-          );
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Added ${workout.name} on ${_formatIsoDate(date)}'),
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add: $e')),
-        );
-      }
-    }
+    final iso = _formatIsoDate(date);
+    context.push(
+      '/programs/${program.id}/assign'
+      '?athleteId=$athleteId&date=$iso&mode=$mode',
+    );
   }
-
   Future<void> _reschedule(BuildContext context, WorkoutInstance instance) async {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;

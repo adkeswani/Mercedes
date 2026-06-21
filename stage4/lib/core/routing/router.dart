@@ -124,6 +124,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => ScheduleAssignmentScreen(
           programId: state.pathParameters['id']!,
           preselectedAthleteId: state.uri.queryParameters['athleteId'],
+          preselectedDate:
+              DateTime.tryParse(state.uri.queryParameters['date'] ?? ''),
+          startInProgramMode:
+              state.uri.queryParameters['mode'] == 'program',
         ),
       ),
       GoRoute(

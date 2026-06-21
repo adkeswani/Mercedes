@@ -336,7 +336,7 @@ class _AthleteCard extends ConsumerWidget {
               children: [
                 IconButton(
                   icon: const Icon(Icons.assignment_add),
-                  tooltip: 'Assign workout',
+                  tooltip: 'Assign workout or program',
                   onPressed: () => context.push(
                     '/programs/$programId/assign?athleteId=$athleteId',
                   ),
