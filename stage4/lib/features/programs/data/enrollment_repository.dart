@@ -149,6 +149,20 @@ class EnrollmentRepository {
             .toList());
   }
 
+  /// Streams all active enrollments created by [ownerId] across every
+  /// program they own. Used to build the trainer's athlete picker.
+  ///
+  /// Requires a composite index on (addedBy, status).
+  Stream<List<Enrollment>> watchEnrollmentsByOwner(String ownerId) {
+    return _collection
+        .where('addedBy', isEqualTo: ownerId)
+        .where('status', isEqualTo: EnrollmentStatus.active.name)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => _fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
   /// Checks whether an athlete is actively enrolled in a program.
   Future<bool> isEnrolled(String programId, String athleteId) async {
     final docId = enrollmentId(programId, athleteId);

@@ -551,6 +551,84 @@ class WorkoutInstanceRepository {
             .toList());
   }
 
+  /// Streams all instances the [ownerId] has assigned to [athleteId] across
+  /// all of the owner's programs, within a date range.
+  ///
+  /// Used by the per-athlete trainer calendar so a coach can see every
+  /// workout they've scheduled for an athlete, regardless of program.
+  /// Requires a composite index on (assignedBy, athleteId, scheduledDate).
+  Stream<List<WorkoutInstance>> watchAthleteCalendar({
+    required String ownerId,
+    required String athleteId,
+    required String startDate,
+    required String endDate,
+  }) {
+    return _collection
+        .where('assignedBy', isEqualTo: ownerId)
+        .where('athleteId', isEqualTo: athleteId)
+        .where('scheduledDate', isGreaterThanOrEqualTo: startDate)
+        .where('scheduledDate', isLessThanOrEqualTo: endDate)
+        .orderBy('scheduledDate')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => _fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
+  /// Moves a scheduled instance to [newDate].
+  ///
+  /// Defense-in-depth: verifies [ownerId] assigned the instance and that it
+  /// is still `scheduled` before writing. Throws [StateError] otherwise.
+  /// Firestore rules remain the primary enforcement layer.
+  Future<void> rescheduleInstance({
+    required String instanceId,
+    required String newDate,
+    required String ownerId,
+  }) async {
+    final dateRegex = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+    if (!dateRegex.hasMatch(newDate)) {
+      throw ArgumentError('newDate must be ISO 8601 date format (YYYY-MM-DD)');
+    }
+    final instance = await getById(instanceId);
+    if (instance == null) {
+      throw StateError('Instance $instanceId not found');
+    }
+    if (instance.assignedBy != ownerId) {
+      throw StateError('User $ownerId did not assign instance $instanceId');
+    }
+    if (instance.status != WorkoutInstanceStatus.scheduled) {
+      throw StateError('Only scheduled instances can be rescheduled');
+    }
+    await _collection.doc(instanceId).update({
+      'scheduledDate': newDate,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Cancels a single scheduled instance.
+  ///
+  /// Defense-in-depth: verifies [ownerId] assigned the instance and that it
+  /// is still `scheduled`. Throws [StateError] otherwise.
+  Future<void> cancelInstance({
+    required String instanceId,
+    required String ownerId,
+  }) async {
+    final instance = await getById(instanceId);
+    if (instance == null) {
+      throw StateError('Instance $instanceId not found');
+    }
+    if (instance.assignedBy != ownerId) {
+      throw StateError('User $ownerId did not assign instance $instanceId');
+    }
+    if (instance.status != WorkoutInstanceStatus.scheduled) {
+      throw StateError('Only scheduled instances can be cancelled');
+    }
+    await _collection.doc(instanceId).update({
+      'status': WorkoutInstanceStatus.cancelled.name,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// Returns a single workout instance by ID, or null.
   Future<WorkoutInstance?> getById(String id) async {
     final doc = await _collection.doc(id).get();

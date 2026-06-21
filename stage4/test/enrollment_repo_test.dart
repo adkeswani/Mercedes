@@ -297,6 +297,56 @@ void main() {
       });
     });
 
+    group('watchEnrollmentsByOwner', () {
+      test('streams all active enrollments created by the owner', () async {
+        await createProgram('prog1');
+        await createProgram('prog2');
+        await createProgram('prog3', ownerId: 'coach2');
+        await repo.enrollAthlete(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          addedBy: 'coach1',
+        );
+        await repo.enrollAthlete(
+          programId: 'prog2',
+          athleteId: 'athlete2',
+          addedBy: 'coach1',
+        );
+        // Another coach's enrollment — should not appear.
+        await repo.enrollAthlete(
+          programId: 'prog3',
+          athleteId: 'athlete3',
+          addedBy: 'coach2',
+        );
+
+        final enrollments =
+            await repo.watchEnrollmentsByOwner('coach1').first;
+        expect(enrollments.length, 2);
+        expect(
+          enrollments.map((e) => e.athleteId),
+          containsAll(['athlete1', 'athlete2']),
+        );
+      });
+
+      test('excludes removed enrollments', () async {
+        await createProgram('prog1');
+        await repo.enrollAthlete(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          addedBy: 'coach1',
+        );
+        await repo.removeAthlete(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          removedBy: 'coach1',
+        );
+
+        final enrollments =
+            await repo.watchEnrollmentsByOwner('coach1').first;
+        expect(enrollments, isEmpty);
+      });
+    });
+
     group('isEnrolled', () {
       test('returns true for active enrollment', () async {
         await createProgram('prog1');

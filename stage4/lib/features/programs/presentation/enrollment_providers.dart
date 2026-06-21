@@ -21,6 +21,16 @@ final programEnrollmentsProvider =
   return repo.watchEnrollments(programId, ownerId: user.uid);
 });
 
+/// Streams all athletes enrolled across the current user's owned programs.
+///
+/// Powers the trainer's athlete picker for the per-athlete calendar.
+final ownerEnrollmentsProvider = StreamProvider<List<Enrollment>>((ref) {
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) return const Stream.empty();
+  final repo = ref.watch(enrollmentRepositoryProvider);
+  return repo.watchEnrollmentsByOwner(user.uid);
+});
+
 /// Streams all programs the current user is enrolled in as an athlete.
 ///
 /// Used on the home screen to show "Enrolled Programs" section.

@@ -53,6 +53,14 @@
       ]
     },
     {
+      "collectionGroup": "enrollments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "addedBy", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "workoutInstances",
       "queryScope": "COLLECTION",
       "fields": [
@@ -67,6 +75,15 @@
         { "fieldPath": "programId", "order": "ASCENDING" },
         { "fieldPath": "athleteId", "order": "ASCENDING" },
         { "fieldPath": "scheduledDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "workoutInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assignedBy", "order": "ASCENDING" },
+        { "fieldPath": "athleteId", "order": "ASCENDING" },
+        { "fieldPath": "scheduledDate", "order": "ASCENDING" }
       ]
     }
   ],

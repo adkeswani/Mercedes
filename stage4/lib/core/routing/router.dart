@@ -14,6 +14,7 @@ import 'package:stage4/features/programs/presentation/roster_screen.dart';
 import 'package:stage4/features/programs/presentation/athlete_schedule_screen.dart';
 import 'package:stage4/features/workouts/presentation/calendar_screen.dart';
 import 'package:stage4/features/workouts/presentation/schedule_assignment_screen.dart';
+import 'package:stage4/features/workouts/presentation/trainer_calendar_screen.dart';
 import 'package:stage4/features/workouts/presentation/workout_builder_screen.dart';
 import 'package:stage4/features/workouts/presentation/workout_completion_screen.dart';
 import 'package:stage4/features/workouts/presentation/workout_list_screen.dart';
@@ -130,6 +131,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/schedule',
         builder: (context, state) => const CalendarScreen(),
+      ),
+      GoRoute(
+        path: '/trainer-calendar',
+        builder: (context, state) => const TrainerCalendarScreen(),
       ),
       GoRoute(
         path: '/workouts/complete/:instanceId',

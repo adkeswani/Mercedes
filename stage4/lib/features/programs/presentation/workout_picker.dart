@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:stage4/core/enums.dart';
 import 'package:stage4/features/workouts/presentation/workout_providers.dart';
 
 /// Result returned from the workout picker.
@@ -9,10 +10,12 @@ class WorkoutPickerResult {
     required this.id,
     required this.name,
     required this.currentVersion,
+    required this.workoutType,
   });
   final String id;
   final String name;
   final int currentVersion;
+  final WorkoutType workoutType;
 }
 
 /// Shows a modal bottom sheet to pick a published workout template.
@@ -94,6 +97,7 @@ class _WorkoutPickerSheet extends ConsumerWidget {
                             id: workout.id,
                             name: workout.name,
                             currentVersion: workout.currentVersion,
+                            workoutType: workout.workoutType,
                           ),
                         ),
                       );

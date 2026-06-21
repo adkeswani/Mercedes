@@ -37,6 +37,23 @@ final programAthleteScheduleProvider = StreamProvider.family<
   );
 });
 
+/// Streams every instance the current user (owner) has assigned to a given
+/// athlete across all programs, within a date range.
+///
+/// Powers the per-athlete trainer calendar.
+final athleteCalendarProvider = StreamProvider.family<List<WorkoutInstance>,
+    AthleteCalendarKey>((ref, key) {
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) return const Stream.empty();
+  final repo = ref.watch(workoutInstanceRepositoryProvider);
+  return repo.watchAthleteCalendar(
+    ownerId: user.uid,
+    athleteId: key.athleteId,
+    startDate: key.startDate,
+    endDate: key.endDate,
+  );
+});
+
 /// Key for date range queries.
 class DateRange {
   const DateRange({required this.startDate, required this.endDate});
@@ -70,4 +87,26 @@ class ProgramAthleteKey {
 
   @override
   int get hashCode => Object.hash(programId, athleteId);
+}
+
+/// Key for per-athlete trainer calendar queries (owner-scoped).
+class AthleteCalendarKey {
+  const AthleteCalendarKey({
+    required this.athleteId,
+    required this.startDate,
+    required this.endDate,
+  });
+  final String athleteId;
+  final String startDate;
+  final String endDate;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AthleteCalendarKey &&
+      athleteId == other.athleteId &&
+      startDate == other.startDate &&
+      endDate == other.endDate;
+
+  @override
+  int get hashCode => Object.hash(athleteId, startDate, endDate);
 }

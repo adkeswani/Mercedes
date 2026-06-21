@@ -909,5 +909,109 @@ void main() {
         }
       });
     });
+
+    group('watchAthleteCalendar', () {
+      test('returns owner-assigned instances for the athlete in range',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await assignWorkout(scheduledDate: '2026-06-05');
+        await assignWorkout(scheduledDate: '2026-06-20');
+        // Out of range and other-athlete instances should be excluded.
+        await assignWorkout(scheduledDate: '2026-07-05');
+
+        final instances = await repo
+            .watchAthleteCalendar(
+              ownerId: 'coach1',
+              athleteId: 'athlete1',
+              startDate: '2026-06-01',
+              endDate: '2026-06-30',
+            )
+            .first;
+
+        expect(instances.length, 2);
+        expect(
+          instances.map((i) => i.scheduledDate).toList(),
+          ['2026-06-05', '2026-06-20'],
+        );
+      });
+    });
+
+    group('rescheduleInstance', () {
+      test('moves a scheduled instance to a new date', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout(scheduledDate: '2026-06-05');
+
+        await repo.rescheduleInstance(
+          instanceId: id,
+          newDate: '2026-06-10',
+          ownerId: 'coach1',
+        );
+
+        final doc = await fakeFirestore
+            .collection('workoutInstances')
+            .doc(id)
+            .get();
+        expect(doc.data()!['scheduledDate'], '2026-06-10');
+      });
+
+      test('throws when caller did not assign the instance', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout(scheduledDate: '2026-06-05');
+
+        expect(
+          () => repo.rescheduleInstance(
+            instanceId: id,
+            newDate: '2026-06-10',
+            ownerId: 'intruder',
+          ),
+          throwsStateError,
+        );
+      });
+
+      test('throws on invalid date format', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout(scheduledDate: '2026-06-05');
+
+        expect(
+          () => repo.rescheduleInstance(
+            instanceId: id,
+            newDate: 'June 10',
+            ownerId: 'coach1',
+          ),
+          throwsArgumentError,
+        );
+      });
+    });
+
+    group('cancelInstance', () {
+      test('cancels a scheduled instance', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout(scheduledDate: '2026-06-05');
+
+        await repo.cancelInstance(instanceId: id, ownerId: 'coach1');
+
+        final doc = await fakeFirestore
+            .collection('workoutInstances')
+            .doc(id)
+            .get();
+        expect(doc.data()!['status'], 'cancelled');
+      });
+
+      test('throws when caller did not assign the instance', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout(scheduledDate: '2026-06-05');
+
+        expect(
+          () => repo.cancelInstance(instanceId: id, ownerId: 'intruder'),
+          throwsStateError,
+        );
+      });
+    });
   });
 }

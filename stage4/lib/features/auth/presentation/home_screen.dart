@@ -105,6 +105,12 @@ class HomeScreen extends ConsumerWidget {
             subtitle: 'Create programs and assign workouts',
             onTap: () => context.push('/programs'),
           ),
+          _FeatureCard(
+            icon: Icons.calendar_month,
+            title: 'Athlete Calendar',
+            subtitle: "View and schedule an athlete's workouts",
+            onTap: () => context.push('/trainer-calendar'),
+          ),
         ],
       ),
     );
