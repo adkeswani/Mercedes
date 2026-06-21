@@ -131,7 +131,13 @@ service cloud.firestore {
     }
 
     // ── Workout Instances ──
-    // Read: athlete (own instances) or program owner
+    // Read: athlete (own instances) or the coach who assigned them.
+    //   Owner access uses the assignedBy field (a plain field match) rather
+    //   than isProgramOwner(): a get()-based condition cannot be evaluated
+    //   for list/query operations, so the trainer calendar query (filtered
+    //   by assignedBy) would otherwise be rejected. assignedBy is the program
+    //   owner at assignment time (create rule enforces isProgramOwner), so
+    //   this is equivalent and also robust if the program doc is removed.
     // Create: program owner assigns workouts
     // Update: athlete can complete/edit own; owner can edit scheduling
     //   fields only (reschedule, swap workout, cancel) — never completion
@@ -140,7 +146,7 @@ service cloud.firestore {
     match /workoutInstances/{instanceId} {
       allow read: if isSignedIn()
                     && (resource.data.athleteId == request.auth.uid
-                        || isProgramOwner(resource.data.programId));
+                        || resource.data.assignedBy == request.auth.uid);
       allow create: if isSignedIn()
                       && isProgramOwner(request.resource.data.programId)
                       && request.resource.data.assignedBy == request.auth.uid;

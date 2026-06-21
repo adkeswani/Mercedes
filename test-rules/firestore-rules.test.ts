@@ -568,6 +568,40 @@ describe('workoutInstances', () => {
     );
   });
 
+  it('allows owner to query an athletes calendar by assignedBy', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('workoutInstances')
+        .where('assignedBy', '==', OWNER)
+        .where('athleteId', '==', ATHLETE)
+        .where('scheduledDate', '>=', '2026-06-01')
+        .where('scheduledDate', '<=', '2026-06-30')
+        .orderBy('scheduledDate')
+        .get()
+    );
+  });
+
+  it('allows athlete to query own calendar by athleteId', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertSucceeds(
+      db.collection('workoutInstances')
+        .where('athleteId', '==', ATHLETE)
+        .get()
+    );
+  });
+
+  it('denies stranger from querying an athletes calendar', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(STRANGER).firestore();
+    await assertFails(
+      db.collection('workoutInstances')
+        .where('athleteId', '==', ATHLETE)
+        .get()
+    );
+  });
+
   it('allows athlete to complete own instance', async () => {
     await seedInstance();
     const db = testEnv.authenticatedContext(ATHLETE).firestore();
