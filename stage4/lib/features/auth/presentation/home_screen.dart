@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:stage4/core/enums.dart';
 import 'package:stage4/features/auth/presentation/auth_providers.dart';
 import 'package:stage4/features/programs/domain/enrollment.dart';
 import 'package:stage4/features/programs/presentation/enrollment_providers.dart';
 import 'package:stage4/features/programs/presentation/program_providers.dart';
+import 'package:stage4/features/workouts/domain/workout_instance.dart';
+import 'package:stage4/features/workouts/presentation/workout_instance_providers.dart';
 
 /// Home screen shown after authentication and onboarding.
 class HomeScreen extends ConsumerWidget {
@@ -70,6 +73,8 @@ class HomeScreen extends ConsumerWidget {
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 8),
+          _TodaysWorkoutsSection(),
+          const SizedBox(height: 4),
           _FeatureCard(
             icon: Icons.calendar_month,
             title: 'My Schedule',
@@ -146,6 +151,105 @@ class _FeatureCard extends StatelessWidget {
         subtitle: Text(subtitle),
         trailing: const Icon(Icons.chevron_right),
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+/// Shows the current user's workouts scheduled for today, with quick access
+/// to open details / mark completion.
+class _TodaysWorkoutsSection extends ConsumerWidget {
+  String _formatIsoDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final today = _formatIsoDate(DateTime.now());
+    final scheduleAsync = ref.watch(
+      athleteScheduleProvider(DateRange(startDate: today, endDate: today)),
+    );
+
+    return scheduleAsync.when(
+      data: (instances) {
+        if (instances.isEmpty) {
+          return const Card(
+            child: ListTile(
+              leading: Icon(Icons.event_available, size: 32),
+              title: Text('No workouts scheduled today'),
+            ),
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: instances
+              .map((i) => _TodaysWorkoutTile(instance: i))
+              .toList(),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
+/// A single today's-workout row that links to the completion/detail screen.
+class _TodaysWorkoutTile extends StatelessWidget {
+  const _TodaysWorkoutTile({required this.instance});
+
+  final WorkoutInstance instance;
+
+  Color _statusColor(BuildContext context) {
+    switch (instance.status) {
+      case WorkoutInstanceStatus.scheduled:
+        return Theme.of(context).colorScheme.primary;
+      case WorkoutInstanceStatus.completed:
+        return Colors.green;
+      case WorkoutInstanceStatus.missed:
+        return Colors.orange;
+      case WorkoutInstanceStatus.cancelled:
+        return Colors.grey;
+    }
+  }
+
+  IconData _statusIcon() {
+    switch (instance.status) {
+      case WorkoutInstanceStatus.scheduled:
+        return Icons.schedule;
+      case WorkoutInstanceStatus.completed:
+        return Icons.check_circle;
+      case WorkoutInstanceStatus.missed:
+        return Icons.warning_amber;
+      case WorkoutInstanceStatus.cancelled:
+        return Icons.cancel_outlined;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _statusColor(context);
+    final canOpen = instance.isScheduled || instance.isCompleted;
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        leading: Icon(_statusIcon(), color: color),
+        title: Text(instance.workoutTemplateId),
+        subtitle: Text(
+          '${instance.workoutType.name} · ${instance.status.name}'
+          '${instance.rpe != null ? ' · RPE ${instance.rpe}' : ''}',
+        ),
+        trailing: instance.isScheduled
+            ? FilledButton(
+                onPressed: () =>
+                    context.push('/workouts/complete/${instance.id}'),
+                child: const Text('Complete'),
+              )
+            : const Icon(Icons.chevron_right),
+        onTap: canOpen
+            ? () => context.push('/workouts/complete/${instance.id}')
+            : null,
       ),
     );
   }
