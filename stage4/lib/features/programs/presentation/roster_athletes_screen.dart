@@ -84,10 +84,18 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
     }
   }
 
-  /// Programs the coach owns that athletes can be enrolled into.
-  List<Program> _assignablePrograms() {
-    final programs = ref.read(programsProvider).valueOrNull ?? const [];
-    return programs.where((p) => p.isAssignable).toList();
+  /// Programs the coach owns that someone can be enrolled into. Always
+  /// includes assignable programs; when [includePersonal] is true, personal
+  /// (self-only) programs are added too.
+  ///
+  /// Awaits the programs stream's first value so callers never see an empty
+  /// list merely because the stream has not loaded yet.
+  Future<List<Program>> _enrollablePrograms(
+      {bool includePersonal = false}) async {
+    final programs = await ref.read(programsProvider.future);
+    return programs
+        .where((p) => p.isAssignable || (includePersonal && p.isPersonal))
+        .toList();
   }
 
   /// Builds the enroll dialog's children, grouping programs under
@@ -137,27 +145,34 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
     return items;
   }
 
-  /// Enrolls the current user into one of their own assignable programs so
-  /// they appear on their own roster and can self-assign workouts/programs.
+  /// Enrolls the current user into one of their own programs (assignable or
+  /// personal) so they appear on their own roster and can self-assign work.
   Future<void> _enrollSelf() async {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;
     final profile =
         await ref.read(userProfileRepositoryProvider).getUserProfile(uid);
     if (profile == null || !mounted) return;
-    await _enrollAthlete(profile);
+    await _enrollAthlete(profile, includePersonal: true);
   }
 
-  Future<void> _enrollAthlete(UserProfile profile) async {
+  Future<void> _enrollAthlete(
+    UserProfile profile, {
+    bool includePersonal = false,
+  }) async {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;
 
-    final programs = _assignablePrograms();
+    final programs =
+        await _enrollablePrograms(includePersonal: includePersonal);
+    if (!mounted) return;
     if (programs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Create an assignable program before enrolling athletes',
+            includePersonal
+                ? 'Create a program before adding yourself to the roster'
+                : 'Create an assignable program before enrolling athletes',
           ),
         ),
       );

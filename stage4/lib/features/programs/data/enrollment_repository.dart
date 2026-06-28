@@ -18,16 +18,16 @@ class EnrollmentRepository {
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('enrollments');
 
-  /// Verifies the caller is the program owner and the program is assignable.
-  /// Throws [StateError] if either check fails.
+  /// Verifies the caller is the program owner and the program is enrollable.
+  /// Assignable programs accept any athlete. Personal programs only accept the
+  /// owner themselves (self-enrollment). Throws [StateError] if any check fails.
   Future<void> _verifyCanManageRoster(
     String programId,
+    String athleteId,
     String callerUserId,
   ) async {
-    final programDoc = await _firestore
-        .collection('programs')
-        .doc(programId)
-        .get();
+    final programDoc =
+        await _firestore.collection('programs').doc(programId).get();
     if (!programDoc.exists) {
       throw StateError('Program $programId not found');
     }
@@ -38,6 +38,11 @@ class EnrollmentRepository {
       );
     }
     if (data['type'] != ProgramType.assignable.name) {
+      // Personal programs only allow self-enrollment.
+      if (data['type'] == ProgramType.personal.name &&
+          athleteId == callerUserId) {
+        return;
+      }
       throw StateError('Program $programId is not assignable');
     }
   }
@@ -60,7 +65,7 @@ class EnrollmentRepository {
     required String athleteId,
     required String addedBy,
   }) async {
-    await _verifyCanManageRoster(programId, addedBy);
+    await _verifyCanManageRoster(programId, athleteId, addedBy);
     final docId = enrollmentId(programId, athleteId);
     final docRef = _collection.doc(docId);
 
@@ -108,7 +113,7 @@ class EnrollmentRepository {
     required String athleteId,
     required String removedBy,
   }) async {
-    await _verifyCanManageRoster(programId, removedBy);
+    await _verifyCanManageRoster(programId, athleteId, removedBy);
     final docId = enrollmentId(programId, athleteId);
     await _collection.doc(docId).update({
       'removedAt': FieldValue.serverTimestamp(),
@@ -133,9 +138,8 @@ class EnrollmentRepository {
         .where('addedBy', isEqualTo: ownerId)
         .where('status', isEqualTo: EnrollmentStatus.active.name)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => _fromMap(doc.data(), doc.id))
-            .toList());
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => _fromMap(doc.data(), doc.id)).toList());
   }
 
   /// Streams all active enrollments for an athlete (athlete's enrolled programs).
@@ -144,9 +148,8 @@ class EnrollmentRepository {
         .where('athleteId', isEqualTo: athleteId)
         .where('status', isEqualTo: EnrollmentStatus.active.name)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => _fromMap(doc.data(), doc.id))
-            .toList());
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => _fromMap(doc.data(), doc.id)).toList());
   }
 
   /// Streams all active enrollments created by [ownerId] across every
@@ -158,9 +161,8 @@ class EnrollmentRepository {
         .where('addedBy', isEqualTo: ownerId)
         .where('status', isEqualTo: EnrollmentStatus.active.name)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => _fromMap(doc.data(), doc.id))
-            .toList());
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => _fromMap(doc.data(), doc.id)).toList());
   }
 
   /// Checks whether an athlete is actively enrolled in a program.

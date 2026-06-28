@@ -12,7 +12,6 @@ import 'package:stage4/features/load/domain/load_model.dart';
 /// (per-type weight adjustments) and [loadStrategyId] (alternative
 /// calculation formula).
 class Program with Auditable {
-
   Program({
     required this.id,
     required this.name,
@@ -83,6 +82,9 @@ class Program with Auditable {
 
   /// Whether athletes can be enrolled in this program.
   bool get isAssignable => type == ProgramType.assignable;
+
+  /// Whether this is a personal (self-only) program.
+  bool get isPersonal => type == ProgramType.personal;
 
   /// Whether this program has custom load weights.
   bool get hasCustomLoadWeights =>
@@ -172,7 +174,6 @@ class Program with Auditable {
 /// Enrollments and workout instances reference the (programId,
 /// programVersion) pair to preserve history.
 class ProgramVersion {
-
   ProgramVersion({
     required this.versionNumber,
     required this.publishedAt,
@@ -224,7 +225,6 @@ class ProgramVersion {
 /// even if the workout template is later renamed or deleted, published
 /// versions retain the name as it was when published.
 class ProgramScheduleEntry {
-
   ProgramScheduleEntry({
     required this.workoutTemplateId,
     required this.workoutTemplateVersion,
@@ -282,7 +282,6 @@ class ProgramScheduleEntry {
 /// Folders have no nesting. A program references at most one folder via
 /// [Program.folderId]; a null reference means "Uncategorized".
 class ProgramFolder {
-
   ProgramFolder({
     required this.id,
     required this.ownerId,

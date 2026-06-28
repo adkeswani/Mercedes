@@ -49,8 +49,7 @@ void main() {
 
         expect(id, 'prog1_athlete1');
 
-        final doc =
-            await fakeFirestore.collection('enrollments').doc(id).get();
+        final doc = await fakeFirestore.collection('enrollments').doc(id).get();
         expect(doc.exists, isTrue);
         expect(doc.data()!['programId'], 'prog1');
         expect(doc.data()!['athleteId'], 'athlete1');
@@ -103,8 +102,7 @@ void main() {
 
         expect(id, 'prog1_athlete1');
 
-        final enrollment =
-            await repo.getEnrollment('prog1', 'athlete1');
+        final enrollment = await repo.getEnrollment('prog1', 'athlete1');
         expect(enrollment, isNotNull);
         expect(enrollment!.isActive, isTrue);
         expect(enrollment.removedAt, isNull);
@@ -131,6 +129,18 @@ void main() {
           ),
           throwsStateError,
         );
+      });
+
+      test('allows self-enrollment into a personal program', () async {
+        await createProgram('prog1', ownerId: 'coach1', type: 'personal');
+        final id = await repo.enrollAthlete(
+          programId: 'prog1',
+          athleteId: 'coach1',
+          addedBy: 'coach1',
+        );
+        expect(id, 'prog1_coach1');
+        final enrollment = await repo.getEnrollment('prog1', 'coach1');
+        expect(enrollment!.isActive, isTrue);
       });
 
       test('throws when program does not exist', () async {
@@ -208,7 +218,8 @@ void main() {
           addedBy: 'coach2',
         );
 
-        final enrollments = await repo.watchEnrollments('prog1', ownerId: 'coach1').first;
+        final enrollments =
+            await repo.watchEnrollments('prog1', ownerId: 'coach1').first;
         expect(
           enrollments.map((e) => e.athleteId),
           containsAll(['athlete1', 'athlete2']),
@@ -234,7 +245,8 @@ void main() {
           removedBy: 'coach1',
         );
 
-        final enrollments = await repo.watchEnrollments('prog1', ownerId: 'coach1').first;
+        final enrollments =
+            await repo.watchEnrollments('prog1', ownerId: 'coach1').first;
         expect(enrollments.first.athleteId, 'athlete2');
       });
     });
@@ -261,8 +273,7 @@ void main() {
           addedBy: 'coach1',
         );
 
-        final enrollments =
-            await repo.watchMyEnrollments('athlete1').first;
+        final enrollments = await repo.watchMyEnrollments('athlete1').first;
         expect(enrollments.length, 2);
         expect(
           enrollments.map((e) => e.programId),
@@ -290,8 +301,7 @@ void main() {
           removedBy: 'coach1',
         );
 
-        final enrollments =
-            await repo.watchMyEnrollments('athlete1').first;
+        final enrollments = await repo.watchMyEnrollments('athlete1').first;
         expect(enrollments.length, 1);
         expect(enrollments.first.programId, 'prog2');
       });
@@ -319,8 +329,7 @@ void main() {
           addedBy: 'coach2',
         );
 
-        final enrollments =
-            await repo.watchEnrollmentsByOwner('coach1').first;
+        final enrollments = await repo.watchEnrollmentsByOwner('coach1').first;
         expect(enrollments.length, 2);
         expect(
           enrollments.map((e) => e.athleteId),
@@ -341,8 +350,7 @@ void main() {
           removedBy: 'coach1',
         );
 
-        final enrollments =
-            await repo.watchEnrollmentsByOwner('coach1').first;
+        final enrollments = await repo.watchEnrollmentsByOwner('coach1').first;
         expect(enrollments, isEmpty);
       });
     });
@@ -392,8 +400,7 @@ void main() {
           addedBy: 'coach1',
         );
 
-        final enrollment =
-            await repo.getEnrollment('prog1', 'athlete1');
+        final enrollment = await repo.getEnrollment('prog1', 'athlete1');
         expect(enrollment, isNotNull);
         expect(enrollment!.programId, 'prog1');
         expect(enrollment.athleteId, 'athlete1');
@@ -401,8 +408,7 @@ void main() {
       });
 
       test('returns null for non-existent enrollment', () async {
-        final enrollment =
-            await repo.getEnrollment('prog1', 'athlete1');
+        final enrollment = await repo.getEnrollment('prog1', 'athlete1');
         expect(enrollment, isNull);
       });
 
@@ -419,8 +425,7 @@ void main() {
           removedBy: 'coach1',
         );
 
-        final enrollment =
-            await repo.getEnrollment('prog1', 'athlete1');
+        final enrollment = await repo.getEnrollment('prog1', 'athlete1');
         expect(enrollment, isNotNull);
         expect(enrollment!.isRemoved, isTrue);
         expect(enrollment.removedBy, 'coach1');

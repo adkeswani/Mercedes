@@ -124,9 +124,8 @@ class _ScheduleAssignmentScreenState
       pattern: _recurrencePattern,
       endDate: _formatDate(_endDate),
       daysOfWeek: days,
-      intervalDays: _recurrencePattern == RecurrencePattern.custom
-          ? _intervalDays
-          : null,
+      intervalDays:
+          _recurrencePattern == RecurrencePattern.custom ? _intervalDays : null,
     ).length;
   }
 
@@ -330,9 +329,15 @@ class _ScheduleAssignmentScreenState
         if (e.athleteId == _selectedAthleteId) e.programId,
     };
 
+    final isSelf = _selectedAthleteId != null &&
+        _selectedAthleteId == ref.watch(authStateProvider).value?.uid;
+
     // Programs offered by the in-screen picker, depending on mode.
+    // Personal programs are only offered when assigning to yourself.
     final programModePrograms = allPrograms
-        .where((p) => p.isAssignable && p.currentVersion > 0)
+        .where((p) =>
+            p.currentVersion > 0 &&
+            (p.isAssignable || (isSelf && p.isPersonal)))
         .toList();
     final workoutModePrograms =
         allPrograms.where((p) => enrolledProgramIds.contains(p.id)).toList();
@@ -429,12 +434,13 @@ class _ScheduleAssignmentScreenState
               )
             else
               DropdownButtonFormField<String>(
-                key: ValueKey('program-picker-${_type.name}-$_selectedAthleteId'),
-                initialValue: pickerPrograms.any((p) => p.id == _selectedProgramId)
-                    ? _selectedProgramId
-                    : null,
-                decoration:
-                    const InputDecoration(labelText: 'Select program'),
+                key: ValueKey(
+                    'program-picker-${_type.name}-$_selectedAthleteId'),
+                initialValue:
+                    pickerPrograms.any((p) => p.id == _selectedProgramId)
+                        ? _selectedProgramId
+                        : null,
+                decoration: const InputDecoration(labelText: 'Select program'),
                 items: _groupedProgramItems(context, pickerPrograms, folders),
                 onChanged: (value) {
                   setState(() => _selectedProgramId = value);
@@ -444,7 +450,8 @@ class _ScheduleAssignmentScreenState
           ],
 
           // Program summary (program mode only)
-          if (_type == _AssignmentType.program && _selectedProgramId != null) ...[
+          if (_type == _AssignmentType.program &&
+              _selectedProgramId != null) ...[
             Card(
               child: ListTile(
                 leading: const Icon(Icons.calendar_month),
@@ -485,8 +492,7 @@ class _ScheduleAssignmentScreenState
                     );
                   }).toList(),
                   onChanged: (value) {
-                    final workout =
-                        published.firstWhere((w) => w.id == value);
+                    final workout = published.firstWhere((w) => w.id == value);
                     setState(() {
                       _selectedWorkoutId = value;
                       _selectedWorkoutVersion = workout.currentVersion;
@@ -498,7 +504,6 @@ class _ScheduleAssignmentScreenState
               loading: () => const CircularProgressIndicator(),
               error: (e, _) => Text('Error: $e'),
             ),
-
             const SizedBox(height: 24),
           ],
 
@@ -535,140 +540,140 @@ class _ScheduleAssignmentScreenState
 
             // Recurrence options (shown when recurring is on)
             if (_isRecurring) ...[
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-            // Pattern selector
-            Text(
-              'Pattern',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            SegmentedButton<RecurrencePattern>(
-              segments: const [
-                ButtonSegment(
-                  value: RecurrencePattern.weekly,
-                  label: Text('Weekly'),
+              // Pattern selector
+              Text(
+                'Pattern',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<RecurrencePattern>(
+                segments: const [
+                  ButtonSegment(
+                    value: RecurrencePattern.weekly,
+                    label: Text('Weekly'),
+                  ),
+                  ButtonSegment(
+                    value: RecurrencePattern.biweekly,
+                    label: Text('Biweekly'),
+                  ),
+                  ButtonSegment(
+                    value: RecurrencePattern.custom,
+                    label: Text('Custom'),
+                  ),
+                ],
+                selected: {_recurrencePattern},
+                onSelectionChanged: (selection) {
+                  setState(() => _recurrencePattern = selection.first);
+                },
+              ),
+
+              const SizedBox(height: 16),
+
+              // Days of week (for weekly/biweekly)
+              if (_recurrencePattern == RecurrencePattern.weekly ||
+                  _recurrencePattern == RecurrencePattern.biweekly) ...[
+                Text(
+                  'Days of Week',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-                ButtonSegment(
-                  value: RecurrencePattern.biweekly,
-                  label: Text('Biweekly'),
+                const SizedBox(height: 4),
+                Text(
+                  'If none selected, uses the start date\'s day',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-                ButtonSegment(
-                  value: RecurrencePattern.custom,
-                  label: Text('Custom'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: List.generate(7, (index) {
+                    final day = index + 1; // 1=Mon..7=Sun
+                    return FilterChip(
+                      label: Text(_dayLabels[index]),
+                      selected: _selectedDays.contains(day),
+                      onSelected: (selected) {
+                        setState(() {
+                          if (selected) {
+                            _selectedDays.add(day);
+                          } else {
+                            _selectedDays.remove(day);
+                          }
+                        });
+                      },
+                    );
+                  }),
                 ),
               ],
-              selected: {_recurrencePattern},
-              onSelectionChanged: (selection) {
-                setState(() => _recurrencePattern = selection.first);
-              },
-            ),
 
-            const SizedBox(height: 16),
-
-            // Days of week (for weekly/biweekly)
-            if (_recurrencePattern == RecurrencePattern.weekly ||
-                _recurrencePattern == RecurrencePattern.biweekly) ...[
-              Text(
-                'Days of Week',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'If none selected, uses the start date\'s day',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: List.generate(7, (index) {
-                  final day = index + 1; // 1=Mon..7=Sun
-                  return FilterChip(
-                    label: Text(_dayLabels[index]),
-                    selected: _selectedDays.contains(day),
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedDays.add(day);
-                        } else {
-                          _selectedDays.remove(day);
-                        }
-                      });
-                    },
-                  );
-                }),
-              ),
-            ],
-
-            // Interval days (for custom)
-            if (_recurrencePattern == RecurrencePattern.custom) ...[
-              Text(
-                'Repeat every N days',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.remove),
-                    onPressed: _intervalDays > 1
-                        ? () => setState(() => _intervalDays--)
-                        : null,
-                  ),
-                  Text(
-                    '$_intervalDays',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add),
-                    onPressed: _intervalDays < 30
-                        ? () => setState(() => _intervalDays++)
-                        : null,
-                  ),
-                  const Text(' days'),
-                ],
-              ),
-            ],
-
-            const SizedBox(height: 16),
-
-            // End date
-            Text(
-              'End Date',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            ListTile(
-              title: Text(_formatDate(_endDate)),
-              trailing: const Icon(Icons.calendar_today),
-              onTap: _pickEndDate,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: BorderSide(
-                  color: Theme.of(context).colorScheme.outline,
+              // Interval days (for custom)
+              if (_recurrencePattern == RecurrencePattern.custom) ...[
+                Text(
+                  'Repeat every N days',
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // Preview count
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
+                const SizedBox(height: 8),
+                Row(
                   children: [
-                    const Icon(Icons.event_repeat),
-                    const SizedBox(width: 12),
-                    Text(
-                      '${_previewCount()} workouts will be created',
-                      style: Theme.of(context).textTheme.titleSmall,
+                    IconButton(
+                      icon: const Icon(Icons.remove),
+                      onPressed: _intervalDays > 1
+                          ? () => setState(() => _intervalDays--)
+                          : null,
                     ),
+                    Text(
+                      '$_intervalDays',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add),
+                      onPressed: _intervalDays < 30
+                          ? () => setState(() => _intervalDays++)
+                          : null,
+                    ),
+                    const Text(' days'),
                   ],
                 ),
+              ],
+
+              const SizedBox(height: 16),
+
+              // End date
+              Text(
+                'End Date',
+                style: Theme.of(context).textTheme.titleMedium,
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              ListTile(
+                title: Text(_formatDate(_endDate)),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: _pickEndDate,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: BorderSide(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Preview count
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.event_repeat),
+                      const SizedBox(width: 12),
+                      Text(
+                        '${_previewCount()} workouts will be created',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
 
           const SizedBox(height: 32),
