@@ -301,6 +301,99 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
     );
   }
 
+  /// Compact relative-week calendar overview of the draft schedule, showing
+  /// the workout name(s) on each day so owners can see what they've assigned.
+  Widget _buildScheduleCalendar(
+    BuildContext context,
+    List<ProgramScheduleEntry> entries,
+  ) {
+    // Resolve template names for entries lacking a denormalized workoutName.
+    final templates =
+        ref.watch(workoutTemplatesProvider).valueOrNull ?? const [];
+    final nameById = {for (final t in templates) t.id: t.name};
+    String nameFor(ProgramScheduleEntry e) =>
+        e.workoutName ?? nameById[e.workoutTemplateId] ?? 'Workout';
+
+    final byOffset = <int, List<String>>{};
+    var maxOffset = 0;
+    for (final e in entries) {
+      byOffset.putIfAbsent(e.dayOffset, () => []).add(nameFor(e));
+      if (e.dayOffset > maxOffset) maxOffset = e.dayOffset;
+    }
+    final weeks = maxOffset ~/ 7 + 1;
+    final theme = Theme.of(context);
+
+    final weekRows = <Widget>[];
+    for (var w = 0; w < weeks; w++) {
+      final dayCells = <Widget>[
+        for (var d = 0; d < 7; d++)
+          Expanded(
+            child: Container(
+              margin: const EdgeInsets.all(2),
+              padding: const EdgeInsets.all(4),
+              constraints: const BoxConstraints(minHeight: 52),
+              decoration: BoxDecoration(
+                color: (byOffset[w * 7 + d] ?? const []).isEmpty
+                    ? null
+                    : theme.colorScheme.primaryContainer,
+                border: Border.all(color: theme.dividerColor),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _weekdayName(d),
+                    style: theme.textTheme.labelSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  for (final n in byOffset[w * 7 + d] ?? const [])
+                    Text(
+                      n,
+                      style: theme.textTheme.labelSmall,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
+            ),
+          ),
+      ];
+      weekRows.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 52,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Week ${w + 1}',
+                    style: theme.textTheme.labelSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              Expanded(child: Row(children: dayCells)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: weekRows,
+        ),
+      ),
+    );
+  }
+
   /// Builds day-grouped schedule sections from the draft entries.
   List<Widget> _buildScheduleGroups(
     BuildContext context,
@@ -627,8 +720,11 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
                 child: Text('No workouts scheduled yet'),
               ),
             )
-          else
+          else ...[
+            const SizedBox(height: 8),
+            _buildScheduleCalendar(context, workouts),
             ..._buildScheduleGroups(context, workouts, isOwner),
+          ],
         ],
       ),
     );
