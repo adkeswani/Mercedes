@@ -137,6 +137,17 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
     return items;
   }
 
+  /// Enrolls the current user into one of their own assignable programs so
+  /// they appear on their own roster and can self-assign workouts/programs.
+  Future<void> _enrollSelf() async {
+    final uid = ref.read(authStateProvider).value?.uid;
+    if (uid == null) return;
+    final profile =
+        await ref.read(userProfileRepositoryProvider).getUserProfile(uid);
+    if (profile == null || !mounted) return;
+    await _enrollAthlete(profile);
+  }
+
   Future<void> _enrollAthlete(UserProfile profile) async {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;
@@ -326,6 +337,16 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
             ],
           ),
 
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _enrollSelf,
+              icon: const Icon(Icons.person_add_alt),
+              label: const Text('Add myself to a program'),
+            ),
+          ),
+
           if (_searchError != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
@@ -410,12 +431,14 @@ class _AthleteRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profileRepo = ref.watch(userProfileRepositoryProvider);
+    final isSelf = ref.watch(authStateProvider).value?.uid == athleteId;
 
     return FutureBuilder(
       future: profileRepo.getUserProfile(athleteId),
       builder: (context, snapshot) {
         final profile = snapshot.data;
-        final displayName = profile?.displayName ?? athleteId;
+        final baseName = profile?.displayName ?? athleteId;
+        final displayName = isSelf ? '$baseName (You)' : baseName;
         final username = profile?.username;
 
         return Card(
