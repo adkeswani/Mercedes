@@ -408,23 +408,22 @@ class WorkoutInstanceRepository {
   /// [cancelProgramAssignment] this is a hard delete, so no audit trail
   /// remains.
   ///
-  /// Defense-in-depth: only deletes instances assigned by [ownerId] or owned
-  /// by them as the athlete. Returns the number of instances deleted.
+  /// Defense-in-depth: filters by [ownerId] so the query is provably limited
+  /// to instances the caller assigned (matching the read rule). Returns the
+  /// number of instances deleted.
   Future<int> deleteIncompleteProgramAssignment({
     required String programAssignmentId,
     required String ownerId,
   }) async {
     final snapshot = await _collection
         .where('programAssignmentId', isEqualTo: programAssignmentId)
+        .where('assignedBy', isEqualTo: ownerId)
         .get();
 
-    final targets = snapshot.docs.where((d) {
-      final data = d.data();
-      final ownsIt = data['assignedBy'] == ownerId ||
-          data['athleteId'] == ownerId;
-      return ownsIt &&
-          data['status'] != WorkoutInstanceStatus.completed.name;
-    }).toList();
+    final targets = snapshot.docs
+        .where((d) =>
+            d.data()['status'] != WorkoutInstanceStatus.completed.name)
+        .toList();
     final batch = _firestore.batch();
     for (final doc in targets) {
       batch.delete(doc.reference);
@@ -450,6 +449,8 @@ class WorkoutInstanceRepository {
     }
     await _collection.doc(instanceId).delete();
   }
+
+  /// Cancels all future scheduled instances in a recurrence group.
   ///
   /// Finds all instances with the given [recurrenceRootId] (or the root
   /// itself) that are still scheduled, and cancels them.
