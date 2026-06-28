@@ -244,10 +244,10 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
     }
   }
 
-  /// Shows a week/weekday picker, returning the chosen day offset (or null).
+  /// Shows a day picker (Day 1 = program start date), returning the chosen
+  /// zero-based day offset (or null). Day N maps to offset N - 1.
   Future<int?> _pickDayOffset({int initial = 0}) {
-    var week = initial ~/ 7;
-    var weekday = initial % 7;
+    var offset = initial;
     return showDialog<int>(
       context: context,
       builder: (ctx) {
@@ -258,28 +258,15 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
               content: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  const Text('Day '),
                   DropdownButton<int>(
-                    value: week,
+                    value: offset,
                     items: [
-                      for (var w = 0; w < 26; w++)
-                        DropdownMenuItem(value: w, child: Text('Week ${w + 1}')),
+                      for (var d = 0; d < 182; d++)
+                        DropdownMenuItem(value: d, child: Text('${d + 1}')),
                     ],
                     onChanged: (v) {
-                      if (v != null) setLocal(() => week = v);
-                    },
-                  ),
-                  const SizedBox(width: 12),
-                  DropdownButton<int>(
-                    value: weekday,
-                    items: [
-                      for (var d = 0; d < 7; d++)
-                        DropdownMenuItem(
-                          value: d,
-                          child: Text(_weekdayName(d)),
-                        ),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) setLocal(() => weekday = v);
+                      if (v != null) setLocal(() => offset = v);
                     },
                   ),
                 ],
@@ -290,7 +277,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
-                  onPressed: () => Navigator.of(ctx).pop(week * 7 + weekday),
+                  onPressed: () => Navigator.of(ctx).pop(offset),
                   child: const Text('OK'),
                 ),
               ],
@@ -343,7 +330,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    _weekdayName(d),
+                    'Day ${w * 7 + d + 1}',
                     style: theme.textTheme.labelSmall
                         ?.copyWith(fontWeight: FontWeight.bold),
                   ),
@@ -370,7 +357,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
                 child: Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    'Week ${w + 1}',
+                    'Days ${w * 7 + 1}-${w * 7 + 7}',
                     style: theme.textTheme.labelSmall
                         ?.copyWith(fontWeight: FontWeight.bold),
                   ),
@@ -419,7 +406,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 16, bottom: 4),
             child: Text(
-              _dayLabel(item.entry.dayOffset),
+              dayLabel(item.entry.dayOffset),
               style: Theme.of(context)
                   .textTheme
                   .titleSmall
@@ -861,13 +848,9 @@ class _WorkoutCard extends ConsumerWidget {
   }
 }
 
-/// Short weekday name for a 0-based index where 0 = Monday.
-String _weekdayName(int day) =>
-    const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][day % 7];
-
-/// Human-readable label for a program day offset (0-based, day 0 = Mon).
-String _dayLabel(int offset) =>
-    'Week ${offset ~/ 7 + 1} · ${_weekdayName(offset % 7)}';
+/// Human-readable label for a program day offset (0-based). Day 1 is the
+/// program start date, so offset N renders as "Day N+1".
+String dayLabel(int offset) => 'Day ${offset + 1}';
 
 /// Dialog for generating a recurring set of day offsets for a workout.
 class _RecurrenceGeneratorDialog extends StatefulWidget {
@@ -973,7 +956,7 @@ class _RecurrenceGeneratorDialogState
                 children: [
                   for (var d = 0; d < 7; d++)
                     FilterChip(
-                      label: Text(_weekdayName(d)),
+                      label: Text('D${d + 1}'),
                       selected: _weekdays.contains(d),
                       onSelected: (sel) => setState(() {
                         if (sel) {
