@@ -400,16 +400,18 @@ class WorkoutInstanceRepository {
     return snapshot.docs.length;
   }
 
-  /// Permanently deletes every instance belonging to a program assignment.
+  /// Permanently deletes the still-incomplete instances of a program
+  /// assignment (everything except completed workouts, so an athlete's
+  /// completion history is preserved).
   ///
-  /// Used to fully undo an assignment that was made by mistake. Unlike
-  /// [cancelProgramAssignment] this is a hard delete of all instances
-  /// regardless of status, so no audit trail remains.
+  /// Used to undo an assignment that was made by mistake. Unlike
+  /// [cancelProgramAssignment] this is a hard delete, so no audit trail
+  /// remains.
   ///
   /// Defense-in-depth: verifies [ownerId] assigned the instances. Throws
   /// [StateError] if any instance was assigned by a different user. Returns
   /// the number of instances deleted.
-  Future<int> deleteProgramAssignment({
+  Future<int> deleteIncompleteProgramAssignment({
     required String programAssignmentId,
     required String ownerId,
   }) async {
@@ -426,12 +428,34 @@ class WorkoutInstanceRepository {
       }
     }
 
+    final targets = snapshot.docs
+        .where((d) =>
+            d.data()['status'] != WorkoutInstanceStatus.completed.name)
+        .toList();
     final batch = _firestore.batch();
-    for (final doc in snapshot.docs) {
+    for (final doc in targets) {
       batch.delete(doc.reference);
     }
-    if (snapshot.docs.isNotEmpty) await batch.commit();
-    return snapshot.docs.length;
+    if (targets.isNotEmpty) await batch.commit();
+    return targets.length;
+  }
+
+  /// Permanently deletes a single workout instance.
+  ///
+  /// Defense-in-depth: verifies [ownerId] assigned the instance. Throws
+  /// [StateError] otherwise or if the instance does not exist.
+  Future<void> deleteInstance({
+    required String instanceId,
+    required String ownerId,
+  }) async {
+    final instance = await getById(instanceId);
+    if (instance == null) {
+      throw StateError('Instance $instanceId not found');
+    }
+    if (instance.assignedBy != ownerId) {
+      throw StateError('User $ownerId did not assign instance $instanceId');
+    }
+    await _collection.doc(instanceId).delete();
   }
   ///
   /// Finds all instances with the given [recurrenceRootId] (or the root

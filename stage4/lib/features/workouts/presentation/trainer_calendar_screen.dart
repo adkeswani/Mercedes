@@ -427,8 +427,8 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                                     await _reschedule(context, i);
                                   } else if (value == 'cancel') {
                                     await _cancel(context, i);
-                                  } else if (value == 'delete-program') {
-                                    await _deleteProgram(context, i);
+                                  } else if (value == 'delete') {
+                                    await _delete(context, i);
                                   }
                                 },
                                 itemBuilder: (_) => [
@@ -444,11 +444,10 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                                     value: 'cancel',
                                     child: Text('Cancel'),
                                   ),
-                                  if (i.programAssignmentId != null)
-                                    const PopupMenuItem(
-                                      value: 'delete-program',
-                                      child: Text('Delete entire program'),
-                                    ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text('Delete\u2026'),
+                                  ),
                                 ],
                               )
                             : IconButton(
@@ -538,41 +537,70 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     }
   }
 
-  Future<void> _deleteProgram(BuildContext context, WorkoutInstance instance) async {
+  Future<void> _delete(BuildContext context, WorkoutInstance instance) async {
     final uid = ref.read(authStateProvider).value?.uid;
+    if (uid == null) return;
     final assignmentId = instance.programAssignmentId;
-    if (uid == null || assignmentId == null) return;
+    var deleteIncomplete = false;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete entire program?'),
-        content: const Text(
-          'This permanently deletes every workout from this assignment, '
-          'including completed ones. This cannot be undone.',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Delete workout'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RadioListTile<bool>(
+                contentPadding: EdgeInsets.zero,
+                value: false,
+                groupValue: deleteIncomplete,
+                title: const Text('Just this workout'),
+                onChanged: (v) => setLocal(() => deleteIncomplete = v!),
+              ),
+              if (assignmentId != null)
+                RadioListTile<bool>(
+                  contentPadding: EdgeInsets.zero,
+                  value: true,
+                  groupValue: deleteIncomplete,
+                  title: const Text('All incomplete in this program'),
+                  subtitle: const Text('Completed workouts are kept'),
+                  onChanged: (v) => setLocal(() => deleteIncomplete = v!),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
       ),
     );
     if (confirmed != true) return;
     try {
-      final count =
-          await ref.read(workoutInstanceRepositoryProvider).deleteProgramAssignment(
-                programAssignmentId: assignmentId,
-                ownerId: uid,
-              );
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Deleted $count workout(s)')),
+      final repo = ref.read(workoutInstanceRepositoryProvider);
+      if (deleteIncomplete && assignmentId != null) {
+        final count = await repo.deleteIncompleteProgramAssignment(
+          programAssignmentId: assignmentId,
+          ownerId: uid,
         );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Deleted $count workout(s)')),
+          );
+        }
+      } else {
+        await repo.deleteInstance(instanceId: instance.id, ownerId: uid);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Workout deleted')),
+          );
+        }
       }
     } catch (e) {
       if (context.mounted) {

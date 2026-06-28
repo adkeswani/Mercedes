@@ -909,8 +909,8 @@ void main() {
         }
       });
 
-      test('deleteProgramAssignment removes all instances including completed',
-          () async {
+      test('deleteIncompleteProgramAssignment removes incomplete but keeps '
+          'completed', () async {
         await createProgram('prog1');
         await enrollAthlete('prog1', 'athlete1');
         await createWorkoutTemplate('wt1', 'push');
@@ -935,28 +935,29 @@ void main() {
           startDate: '2026-06-01',
           assignedBy: 'coach1',
         );
-        // Mark one instance completed to confirm hard delete spares nothing.
+        // Mark one instance completed; it must survive the delete.
         final docs = await fakeFirestore
             .collection('workoutInstances')
             .where('programAssignmentId', isEqualTo: result.assignmentId)
             .get();
         await docs.docs.first.reference.update({'status': 'completed'});
 
-        final deleted = await repo.deleteProgramAssignment(
+        final deleted = await repo.deleteIncompleteProgramAssignment(
           programAssignmentId: result.assignmentId,
           ownerId: 'coach1',
         );
-        expect(deleted, 2);
+        expect(deleted, 1);
 
         final remaining = await fakeFirestore
             .collection('workoutInstances')
             .where('programAssignmentId', isEqualTo: result.assignmentId)
             .get();
-        expect(remaining.docs, isEmpty);
+        expect(remaining.docs.length, 1);
+        expect(remaining.docs.first.data()['status'], 'completed');
       });
 
-      test('deleteProgramAssignment throws for non-owner and deletes nothing',
-          () async {
+      test('deleteIncompleteProgramAssignment throws for non-owner and deletes '
+          'nothing', () async {
         await createProgram('prog1');
         await enrollAthlete('prog1', 'athlete1');
         await createWorkoutTemplate('wt1', 'push');
@@ -977,7 +978,7 @@ void main() {
         );
 
         expect(
-          () => repo.deleteProgramAssignment(
+          () => repo.deleteIncompleteProgramAssignment(
             programAssignmentId: result.assignmentId,
             ownerId: 'intruder',
           ),
@@ -988,6 +989,27 @@ void main() {
             .where('programAssignmentId', isEqualTo: result.assignmentId)
             .get();
         expect(remaining.docs.length, 1);
+      });
+
+      test('deleteInstance removes a single instance', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout(scheduledDate: '2026-06-05');
+
+        await repo.deleteInstance(instanceId: id, ownerId: 'coach1');
+
+        expect(await repo.getById(id), isNull);
+      });
+
+      test('deleteInstance throws when caller did not assign it', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout(scheduledDate: '2026-06-05');
+
+        expect(
+          () => repo.deleteInstance(instanceId: id, ownerId: 'intruder'),
+          throwsStateError,
+        );
       });
     });
 
