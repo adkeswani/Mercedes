@@ -258,10 +258,67 @@ class _ScheduleAssignmentScreenState
 
   static const _dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+  /// Builds dropdown items for the program picker, grouping programs under
+  /// non-selectable folder headers (folders alphabetical, programs by name),
+  /// with an "Ungrouped" section last when folders exist.
+  List<DropdownMenuItem<String>> _groupedProgramItems(
+    BuildContext context,
+    List<Program> programs,
+    List<ProgramFolder> folders,
+  ) {
+    final folderById = {for (final f in folders) f.id: f};
+    final grouped = <String?, List<Program>>{};
+    for (final p in programs) {
+      final key = folderById.containsKey(p.folderId) ? p.folderId : null;
+      grouped.putIfAbsent(key, () => []).add(p);
+    }
+    for (final list in grouped.values) {
+      list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    }
+
+    final headerStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.bold,
+          color: Theme.of(context).colorScheme.primary,
+        );
+
+    final sortedFolders = [...folders]
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    final items = <DropdownMenuItem<String>>[];
+    for (final folder in sortedFolders) {
+      final progs = grouped[folder.id];
+      if (progs == null || progs.isEmpty) continue;
+      items.add(DropdownMenuItem<String>(
+        value: '__hdr_${folder.id}',
+        enabled: false,
+        child: Text(folder.name, style: headerStyle),
+      ));
+      for (final p in progs) {
+        items.add(DropdownMenuItem<String>(value: p.id, child: Text(p.name)));
+      }
+    }
+
+    final ungrouped = grouped[null] ?? const [];
+    if (ungrouped.isNotEmpty) {
+      if (items.isNotEmpty) {
+        items.add(DropdownMenuItem<String>(
+          value: '__hdr_ungrouped',
+          enabled: false,
+          child: Text('Ungrouped', style: headerStyle),
+        ));
+      }
+      for (final p in ungrouped) {
+        items.add(DropdownMenuItem<String>(value: p.id, child: Text(p.name)));
+      }
+    }
+    return items;
+  }
+
   @override
   Widget build(BuildContext context) {
     final workoutsAsync = ref.watch(workoutTemplatesProvider);
     final allPrograms = ref.watch(programsProvider).valueOrNull ?? const [];
+    final folders = ref.watch(programFoldersProvider).valueOrNull ?? const [];
     final ownerEnrollments =
         ref.watch(ownerEnrollmentsProvider).valueOrNull ?? const [];
 
@@ -378,12 +435,7 @@ class _ScheduleAssignmentScreenState
                     : null,
                 decoration:
                     const InputDecoration(labelText: 'Select program'),
-                items: pickerPrograms.map((p) {
-                  return DropdownMenuItem(
-                    value: p.id,
-                    child: Text(p.name),
-                  );
-                }).toList(),
+                items: _groupedProgramItems(context, pickerPrograms, folders),
                 onChanged: (value) {
                   setState(() => _selectedProgramId = value);
                 },

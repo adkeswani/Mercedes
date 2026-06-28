@@ -90,6 +90,53 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
     return programs.where((p) => p.isAssignable).toList();
   }
 
+  /// Builds the enroll dialog's children, grouping programs under
+  /// non-selectable folder headers (folders alphabetical, programs by name),
+  /// with an "Ungrouped" section last when folders exist.
+  List<Widget> _groupedEnrollOptions(BuildContext ctx, List<Program> programs) {
+    final folders = ref.read(programFoldersProvider).valueOrNull ?? const [];
+    final folderById = {for (final f in folders) f.id: f};
+    final grouped = <String?, List<Program>>{};
+    for (final p in programs) {
+      final key = folderById.containsKey(p.folderId) ? p.folderId : null;
+      grouped.putIfAbsent(key, () => []).add(p);
+    }
+    for (final list in grouped.values) {
+      list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    }
+
+    final headerStyle = Theme.of(ctx).textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.bold,
+          color: Theme.of(ctx).colorScheme.primary,
+        );
+    Widget header(String text) => Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
+          child: Text(text, style: headerStyle),
+        );
+    SimpleDialogOption option(Program p) => SimpleDialogOption(
+          onPressed: () => Navigator.of(ctx).pop(p),
+          child: Text(p.name),
+        );
+
+    final sortedFolders = [...folders]
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    final items = <Widget>[];
+    for (final folder in sortedFolders) {
+      final progs = grouped[folder.id];
+      if (progs == null || progs.isEmpty) continue;
+      items.add(header(folder.name));
+      items.addAll(progs.map(option));
+    }
+
+    final ungrouped = grouped[null] ?? const [];
+    if (ungrouped.isNotEmpty) {
+      if (items.isNotEmpty) items.add(header('Ungrouped'));
+      items.addAll(ungrouped.map(option));
+    }
+    return items;
+  }
+
   Future<void> _enrollAthlete(UserProfile profile) async {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;
@@ -110,13 +157,7 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
       context: context,
       builder: (ctx) => SimpleDialog(
         title: Text('Enroll ${profile.displayName} in...'),
-        children: [
-          for (final p in programs)
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(ctx).pop(p),
-              child: Text(p.name),
-            ),
-        ],
+        children: _groupedEnrollOptions(ctx, programs),
       ),
     );
     if (program == null) return;
