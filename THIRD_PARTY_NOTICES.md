@@ -22,6 +22,8 @@ This repository uses and/or depends on third-party tools and packages with their
 - `cloud_firestore` — BSD-3-Clause
 - `flutter_riverpod` — MIT
 - `go_router` — BSD-3-Clause
+- `url_launcher` — BSD-3-Clause
+- `youtube_player_iframe` — BSD-3-Clause
 - `flutter_lints` — BSD-3-Clause
 - `fake_cloud_firestore` (dev) — BSD-3-Clause
 

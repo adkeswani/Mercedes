@@ -101,7 +101,8 @@ class _WorkoutCompletionScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_isEditing ? 'Workout updated!' : 'Workout completed! 💪'),
+            content:
+                Text(_isEditing ? 'Workout updated!' : 'Workout completed! 💪'),
           ),
         );
         context.pop();
@@ -174,30 +175,46 @@ class _WorkoutCompletionScreenState
             ..._exercises.map((exercise) {
               final summary = _prescriptionSummary(exercise);
               return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        exercise.exerciseName ?? exercise.exerciseId,
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      if (summary.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          summary,
-                          style: Theme.of(context).textTheme.bodySmall,
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () =>
+                      context.push('/exercises/${exercise.exerciseId}'),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                exercise.exerciseName ?? exercise.exerciseId,
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                            ),
+                            Icon(
+                              Icons.chevron_right,
+                              size: 20,
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                          ],
                         ),
+                        if (summary.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            summary,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        if (_isAthlete)
+                          ExerciseNoteWidget(
+                            exerciseTemplateId: exercise.exerciseId,
+                            exerciseName:
+                                exercise.exerciseName ?? exercise.exerciseId,
+                          ),
                       ],
-                      const SizedBox(height: 8),
-                      if (_isAthlete)
-                        ExerciseNoteWidget(
-                        exerciseTemplateId: exercise.exerciseId,
-                        exerciseName:
-                            exercise.exerciseName ?? exercise.exerciseId,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               );
@@ -322,13 +339,11 @@ class _WorkoutCompletionScreenState
                             style: Theme.of(context).textTheme.bodyMedium),
                         Text(
                           '${instance.rpe ?? '-'}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyLarge
-                              ?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: _rpeColor(instance.rpe ?? 5),
-                              ),
+                          style:
+                              Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: _rpeColor(instance.rpe ?? 5),
+                                  ),
                         ),
                       ],
                     ),

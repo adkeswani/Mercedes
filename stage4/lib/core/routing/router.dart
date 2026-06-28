@@ -6,6 +6,7 @@ import 'package:stage4/features/auth/presentation/app_entry_providers.dart';
 import 'package:stage4/features/auth/presentation/home_screen.dart';
 import 'package:stage4/features/auth/presentation/login_screen.dart';
 import 'package:stage4/features/auth/presentation/onboarding_screen.dart';
+import 'package:stage4/features/exercises/presentation/exercise_detail_screen.dart';
 import 'package:stage4/features/exercises/presentation/exercise_form_screen.dart';
 import 'package:stage4/features/exercises/presentation/exercise_list_screen.dart';
 import 'package:stage4/features/programs/presentation/program_builder_screen.dart';
@@ -74,6 +75,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/exercises/:id',
+        builder: (context, state) => ExerciseDetailScreen(
+          exerciseId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/exercises/:id/edit',
         builder: (context, state) => ExerciseFormScreen(
           exerciseId: state.pathParameters['id'],
         ),
@@ -118,8 +125,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           preselectedAthleteId: state.uri.queryParameters['athleteId'],
           preselectedDate:
               DateTime.tryParse(state.uri.queryParameters['date'] ?? ''),
-          startInProgramMode:
-              state.uri.queryParameters['mode'] == 'program',
+          startInProgramMode: state.uri.queryParameters['mode'] == 'program',
         ),
       ),
       GoRoute(
