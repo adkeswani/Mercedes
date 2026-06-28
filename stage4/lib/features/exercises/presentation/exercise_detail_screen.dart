@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import 'package:stage4/features/auth/presentation/auth_providers.dart';
 import 'package:stage4/features/exercises/domain/exercise_template.dart';
+import 'package:stage4/features/exercises/domain/youtube_url.dart';
 import 'package:stage4/features/exercises/presentation/exercise_providers.dart';
+import 'package:stage4/features/exercises/presentation/youtube_embed.dart';
 
 /// Read-only detail view for an exercise template.
 ///
@@ -98,53 +99,24 @@ class _ExerciseDetailBody extends StatelessWidget {
 
 /// Renders an embedded YouTube player for supported URLs, or an "Open link"
 /// fallback for any other URL.
-class _ExerciseVideo extends StatefulWidget {
+class _ExerciseVideo extends StatelessWidget {
   const _ExerciseVideo({required this.url});
 
   final String url;
 
-  @override
-  State<_ExerciseVideo> createState() => _ExerciseVideoState();
-}
-
-class _ExerciseVideoState extends State<_ExerciseVideo> {
-  YoutubePlayerController? _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    final videoId = YoutubePlayerController.convertUrlToId(widget.url);
-    if (videoId != null) {
-      _controller = YoutubePlayerController.fromVideoId(
-        videoId: videoId,
-        autoPlay: false,
-        params: const YoutubePlayerParams(showFullscreenButton: true),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.close();
-    super.dispose();
-  }
-
   Future<void> _openExternally() async {
-    final uri = Uri.tryParse(widget.url);
+    final uri = Uri.tryParse(url);
     if (uri == null) return;
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   @override
   Widget build(BuildContext context) {
-    final controller = _controller;
-    if (controller != null) {
+    final videoId = extractYoutubeId(url);
+    if (videoId != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: YoutubePlayer(
-          controller: controller,
-          aspectRatio: 16 / 9,
-        ),
+        child: buildYoutubeEmbed(videoId),
       );
     }
 
@@ -154,7 +126,7 @@ class _ExerciseVideoState extends State<_ExerciseVideo> {
         leading: const Icon(Icons.open_in_new),
         title: const Text('Open video link'),
         subtitle: Text(
-          widget.url,
+          url,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
