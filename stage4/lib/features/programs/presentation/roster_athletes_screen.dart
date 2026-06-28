@@ -297,6 +297,9 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
   @override
   Widget build(BuildContext context) {
     final enrollmentsAsync = ref.watch(ownerEnrollmentsProvider);
+    final myUid = ref.watch(authStateProvider).value?.uid;
+    final alreadyOnRoster =
+        enrollmentsAsync.valueOrNull?.any((e) => e.athleteId == myUid) ?? false;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Roster')),
@@ -338,14 +341,15 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
           ),
 
           const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: _enrollSelf,
-              icon: const Icon(Icons.person_add_alt),
-              label: const Text('Add myself to a program'),
+          if (myUid != null && !alreadyOnRoster)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _enrollSelf,
+                icon: const Icon(Icons.person_add_alt),
+                label: const Text('Add myself to roster'),
+              ),
             ),
-          ),
 
           if (_searchError != null)
             Padding(
@@ -362,8 +366,7 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
               child: ListTile(
                 leading: _searchResult!.photoUrl != null
                     ? CircleAvatar(
-                        backgroundImage:
-                            NetworkImage(_searchResult!.photoUrl!),
+                        backgroundImage: NetworkImage(_searchResult!.photoUrl!),
                       )
                     : const CircleAvatar(child: Icon(Icons.person)),
                 title: Text(_searchResult!.displayName),
