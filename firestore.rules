@@ -175,7 +175,8 @@ service cloud.firestore {
                                              'workoutTemplateVersion',
                                              'workoutType', 'updatedAt'])));
       allow delete: if isSignedIn()
-                      && resource.data.assignedBy == request.auth.uid;
+                      && (resource.data.athleteId == request.auth.uid
+                          || resource.data.assignedBy == request.auth.uid);
     }
   }
 }
