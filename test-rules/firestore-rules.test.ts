@@ -16,6 +16,7 @@ const OWNER = 'owner-uid';
 const ATHLETE = 'athlete-uid';
 const STRANGER = 'stranger-uid';
 const PROGRAM_ID = 'program-1';
+const FOLDER_ID = 'folder-1';
 const ENROLLMENT_ID = `${PROGRAM_ID}_${ATHLETE}`;
 
 let testEnv;
@@ -339,6 +340,82 @@ describe('programs', () => {
     await assertFails(
       db.collection('programs').doc(PROGRAM_ID)
         .collection('programVersions').doc('1').get()
+    );
+  });
+});
+
+// ─── Program Folders ───
+
+describe('programFolders', () => {
+  async function seedFolder() {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('programFolders').doc(FOLDER_ID).set({
+        ownerId: OWNER,
+        name: 'Strength',
+        createdBy: OWNER,
+      });
+    });
+  }
+
+  it('allows owner to create folder with own ownerId', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('programFolders').doc('f-new').set({
+        ownerId: OWNER, name: 'New Folder',
+      })
+    );
+  });
+
+  it('denies creating folder with someone else as owner', async () => {
+    const db = testEnv.authenticatedContext(STRANGER).firestore();
+    await assertFails(
+      db.collection('programFolders').doc('f-fake').set({
+        ownerId: OWNER, name: 'Fake',
+      })
+    );
+  });
+
+  it('allows owner to read own folder', async () => {
+    await seedFolder();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(db.collection('programFolders').doc(FOLDER_ID).get());
+  });
+
+  it('denies stranger from reading folder', async () => {
+    await seedFolder();
+    const db = testEnv.authenticatedContext(STRANGER).firestore();
+    await assertFails(db.collection('programFolders').doc(FOLDER_ID).get());
+  });
+
+  it('allows owner to rename own folder', async () => {
+    await seedFolder();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('programFolders').doc(FOLDER_ID).update({ name: 'Power' })
+    );
+  });
+
+  it('denies non-owner from updating folder', async () => {
+    await seedFolder();
+    const db = testEnv.authenticatedContext(STRANGER).firestore();
+    await assertFails(
+      db.collection('programFolders').doc(FOLDER_ID).update({ name: 'Hacked' })
+    );
+  });
+
+  it('allows owner to delete own folder', async () => {
+    await seedFolder();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('programFolders').doc(FOLDER_ID).delete()
+    );
+  });
+
+  it('denies non-owner from deleting folder', async () => {
+    await seedFolder();
+    const db = testEnv.authenticatedContext(STRANGER).firestore();
+    await assertFails(
+      db.collection('programFolders').doc(FOLDER_ID).delete()
     );
   });
 });

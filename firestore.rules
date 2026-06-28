@@ -108,6 +108,21 @@ service cloud.firestore {
       }
     }
 
+    // ── Program Folders ──
+    // Owner-scoped organizational folders for programs.
+    // Read: owner only.
+    // Create: self (ownerId must match auth uid).
+    // Update/delete: owner only.
+
+    match /programFolders/{folderId} {
+      allow read: if isSignedIn()
+                    && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn()
+                      && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn()
+                              && resource.data.ownerId == request.auth.uid;
+    }
+
     // ── Enrollments ──
     // Read: program owner or the enrolled athlete.
     //   resource == null allows a get() of a non-existent enrollment to

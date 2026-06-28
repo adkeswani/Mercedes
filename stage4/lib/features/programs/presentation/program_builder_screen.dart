@@ -369,6 +369,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
     final folders = foldersAsync.valueOrNull ?? [];
     final value = folders.any((f) => f.id == _folderId) ? _folderId : null;
     return DropdownButtonFormField<String?>(
+      key: ValueKey('folder-picker-$value'),
       initialValue: value,
       decoration: const InputDecoration(labelText: 'Folder'),
       items: [
