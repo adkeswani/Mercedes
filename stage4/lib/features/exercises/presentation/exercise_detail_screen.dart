@@ -114,9 +114,14 @@ class _ExerciseVideo extends StatelessWidget {
   Widget build(BuildContext context) {
     final videoId = extractYoutubeId(url);
     if (videoId != null) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: buildYoutubeEmbed(videoId),
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: buildYoutubeEmbed(videoId),
+          ),
+        ),
       );
     }
 
