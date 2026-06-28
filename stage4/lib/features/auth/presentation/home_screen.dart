@@ -116,12 +116,6 @@ class HomeScreen extends ConsumerWidget {
             subtitle: 'Manage your athletes and open their calendars',
             onTap: () => context.push('/roster'),
           ),
-          _FeatureCard(
-            icon: Icons.calendar_month,
-            title: 'Athlete Calendar',
-            subtitle: "View and schedule an athlete's workouts",
-            onTap: () => context.push('/trainer-calendar'),
-          ),
         ],
       ),
     );

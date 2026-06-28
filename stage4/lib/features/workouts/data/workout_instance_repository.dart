@@ -408,9 +408,8 @@ class WorkoutInstanceRepository {
   /// [cancelProgramAssignment] this is a hard delete, so no audit trail
   /// remains.
   ///
-  /// Defense-in-depth: verifies [ownerId] assigned the instances. Throws
-  /// [StateError] if any instance was assigned by a different user. Returns
-  /// the number of instances deleted.
+  /// Defense-in-depth: only deletes instances assigned by [ownerId] or owned
+  /// by them as the athlete. Returns the number of instances deleted.
   Future<int> deleteIncompleteProgramAssignment({
     required String programAssignmentId,
     required String ownerId,
@@ -419,19 +418,13 @@ class WorkoutInstanceRepository {
         .where('programAssignmentId', isEqualTo: programAssignmentId)
         .get();
 
-    for (final doc in snapshot.docs) {
-      if (doc.data()['assignedBy'] != ownerId) {
-        throw StateError(
-          'User $ownerId did not assign program assignment '
-          '$programAssignmentId',
-        );
-      }
-    }
-
-    final targets = snapshot.docs
-        .where((d) =>
-            d.data()['status'] != WorkoutInstanceStatus.completed.name)
-        .toList();
+    final targets = snapshot.docs.where((d) {
+      final data = d.data();
+      final ownsIt = data['assignedBy'] == ownerId ||
+          data['athleteId'] == ownerId;
+      return ownsIt &&
+          data['status'] != WorkoutInstanceStatus.completed.name;
+    }).toList();
     final batch = _firestore.batch();
     for (final doc in targets) {
       batch.delete(doc.reference);
@@ -442,8 +435,8 @@ class WorkoutInstanceRepository {
 
   /// Permanently deletes a single workout instance.
   ///
-  /// Defense-in-depth: verifies [ownerId] assigned the instance. Throws
-  /// [StateError] otherwise or if the instance does not exist.
+  /// Defense-in-depth: verifies [ownerId] assigned the instance or owns it as
+  /// the athlete. Throws [StateError] otherwise or if it does not exist.
   Future<void> deleteInstance({
     required String instanceId,
     required String ownerId,
@@ -452,7 +445,7 @@ class WorkoutInstanceRepository {
     if (instance == null) {
       throw StateError('Instance $instanceId not found');
     }
-    if (instance.assignedBy != ownerId) {
+    if (instance.assignedBy != ownerId && instance.athleteId != ownerId) {
       throw StateError('User $ownerId did not assign instance $instanceId');
     }
     await _collection.doc(instanceId).delete();

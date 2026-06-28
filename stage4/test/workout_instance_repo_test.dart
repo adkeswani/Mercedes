@@ -956,8 +956,8 @@ void main() {
         expect(remaining.docs.first.data()['status'], 'completed');
       });
 
-      test('deleteIncompleteProgramAssignment throws for non-owner and deletes '
-          'nothing', () async {
+      test('deleteIncompleteProgramAssignment skips instances not owned by '
+          'caller', () async {
         await createProgram('prog1');
         await enrollAthlete('prog1', 'athlete1');
         await createWorkoutTemplate('wt1', 'push');
@@ -977,18 +977,27 @@ void main() {
           assignedBy: 'coach1',
         );
 
-        expect(
-          () => repo.deleteIncompleteProgramAssignment(
-            programAssignmentId: result.assignmentId,
-            ownerId: 'intruder',
-          ),
-          throwsStateError,
+        final deleted = await repo.deleteIncompleteProgramAssignment(
+          programAssignmentId: result.assignmentId,
+          ownerId: 'intruder',
         );
+        expect(deleted, 0);
         final remaining = await fakeFirestore
             .collection('workoutInstances')
             .where('programAssignmentId', isEqualTo: result.assignmentId)
             .get();
         expect(remaining.docs.length, 1);
+      });
+
+      test('deleteInstance lets the athlete delete their own instance',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout(scheduledDate: '2026-06-05');
+
+        await repo.deleteInstance(instanceId: id, ownerId: 'athlete1');
+
+        expect(await repo.getById(id), isNull);
       });
 
       test('deleteInstance removes a single instance', () async {
