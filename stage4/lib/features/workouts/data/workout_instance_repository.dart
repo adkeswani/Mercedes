@@ -400,7 +400,39 @@ class WorkoutInstanceRepository {
     return snapshot.docs.length;
   }
 
-  /// Cancels all future scheduled instances in a recurrence group.
+  /// Permanently deletes every instance belonging to a program assignment.
+  ///
+  /// Used to fully undo an assignment that was made by mistake. Unlike
+  /// [cancelProgramAssignment] this is a hard delete of all instances
+  /// regardless of status, so no audit trail remains.
+  ///
+  /// Defense-in-depth: verifies [ownerId] assigned the instances. Throws
+  /// [StateError] if any instance was assigned by a different user. Returns
+  /// the number of instances deleted.
+  Future<int> deleteProgramAssignment({
+    required String programAssignmentId,
+    required String ownerId,
+  }) async {
+    final snapshot = await _collection
+        .where('programAssignmentId', isEqualTo: programAssignmentId)
+        .get();
+
+    for (final doc in snapshot.docs) {
+      if (doc.data()['assignedBy'] != ownerId) {
+        throw StateError(
+          'User $ownerId did not assign program assignment '
+          '$programAssignmentId',
+        );
+      }
+    }
+
+    final batch = _firestore.batch();
+    for (final doc in snapshot.docs) {
+      batch.delete(doc.reference);
+    }
+    if (snapshot.docs.isNotEmpty) await batch.commit();
+    return snapshot.docs.length;
+  }
   ///
   /// Finds all instances with the given [recurrenceRootId] (or the root
   /// itself) that are still scheduled, and cancels them.

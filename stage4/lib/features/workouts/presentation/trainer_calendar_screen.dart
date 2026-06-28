@@ -427,21 +427,28 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                                     await _reschedule(context, i);
                                   } else if (value == 'cancel') {
                                     await _cancel(context, i);
+                                  } else if (value == 'delete-program') {
+                                    await _deleteProgram(context, i);
                                   }
                                 },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(
+                                itemBuilder: (_) => [
+                                  const PopupMenuItem(
                                     value: 'open',
                                     child: Text('Open / Complete'),
                                   ),
-                                  PopupMenuItem(
+                                  const PopupMenuItem(
                                     value: 'reschedule',
                                     child: Text('Reschedule'),
                                   ),
-                                  PopupMenuItem(
+                                  const PopupMenuItem(
                                     value: 'cancel',
                                     child: Text('Cancel'),
                                   ),
+                                  if (i.programAssignmentId != null)
+                                    const PopupMenuItem(
+                                      value: 'delete-program',
+                                      child: Text('Delete entire program'),
+                                    ),
                                 ],
                               )
                             : IconButton(
@@ -526,6 +533,51 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to cancel: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteProgram(BuildContext context, WorkoutInstance instance) async {
+    final uid = ref.read(authStateProvider).value?.uid;
+    final assignmentId = instance.programAssignmentId;
+    if (uid == null || assignmentId == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete entire program?'),
+        content: const Text(
+          'This permanently deletes every workout from this assignment, '
+          'including completed ones. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final count =
+          await ref.read(workoutInstanceRepositoryProvider).deleteProgramAssignment(
+                programAssignmentId: assignmentId,
+                ownerId: uid,
+              );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Deleted $count workout(s)')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete: $e')),
         );
       }
     }

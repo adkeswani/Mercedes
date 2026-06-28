@@ -908,6 +908,87 @@ void main() {
           expect(doc.data()['status'], 'cancelled');
         }
       });
+
+      test('deleteProgramAssignment removes all instances including completed',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await createWorkoutTemplate('wt1', 'push');
+        await publishVersion('prog1', [
+          {
+            'workoutTemplateId': 'wt1',
+            'workoutTemplateVersion': 1,
+            'dayOffset': 0,
+            'sortOrder': 0,
+          },
+          {
+            'workoutTemplateId': 'wt1',
+            'workoutTemplateVersion': 1,
+            'dayOffset': 7,
+            'sortOrder': 1,
+          },
+        ]);
+
+        final result = await repo.assignProgram(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          startDate: '2026-06-01',
+          assignedBy: 'coach1',
+        );
+        // Mark one instance completed to confirm hard delete spares nothing.
+        final docs = await fakeFirestore
+            .collection('workoutInstances')
+            .where('programAssignmentId', isEqualTo: result.assignmentId)
+            .get();
+        await docs.docs.first.reference.update({'status': 'completed'});
+
+        final deleted = await repo.deleteProgramAssignment(
+          programAssignmentId: result.assignmentId,
+          ownerId: 'coach1',
+        );
+        expect(deleted, 2);
+
+        final remaining = await fakeFirestore
+            .collection('workoutInstances')
+            .where('programAssignmentId', isEqualTo: result.assignmentId)
+            .get();
+        expect(remaining.docs, isEmpty);
+      });
+
+      test('deleteProgramAssignment throws for non-owner and deletes nothing',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await createWorkoutTemplate('wt1', 'push');
+        await publishVersion('prog1', [
+          {
+            'workoutTemplateId': 'wt1',
+            'workoutTemplateVersion': 1,
+            'dayOffset': 0,
+            'sortOrder': 0,
+          },
+        ]);
+
+        final result = await repo.assignProgram(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          startDate: '2026-06-01',
+          assignedBy: 'coach1',
+        );
+
+        expect(
+          () => repo.deleteProgramAssignment(
+            programAssignmentId: result.assignmentId,
+            ownerId: 'intruder',
+          ),
+          throwsStateError,
+        );
+        final remaining = await fakeFirestore
+            .collection('workoutInstances')
+            .where('programAssignmentId', isEqualTo: result.assignmentId)
+            .get();
+        expect(remaining.docs.length, 1);
+      });
     });
 
     group('watchAthleteCalendar', () {
