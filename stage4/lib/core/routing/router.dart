@@ -130,9 +130,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
-        path: '/programs/:id/overview',
-        builder: (context, state) => AthleteProgramOverviewScreen(
+        path: '/programs/:id/athlete/:athleteId',
+        builder: (context, state) => AthleteScheduleScreen(
           programId: state.pathParameters['id']!,
+          athleteId: state.pathParameters['athleteId']!,
         ),
       ),
       GoRoute(
