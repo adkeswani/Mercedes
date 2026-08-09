@@ -27,6 +27,21 @@ service cloud.firestore {
                 == 'active';
     }
 
+    function hasValidProgramOwner(data) {
+      return data.programOwnerId
+             == get(/databases/$(database)/documents/programs/$(data.programId))
+                 .data.ownerId;
+    }
+
+    function preservesProgramOwner() {
+      return (!('programOwnerId' in resource.data)
+              && (!('programOwnerId' in request.resource.data)
+                 || hasValidProgramOwner(request.resource.data)))
+             || (('programOwnerId' in resource.data)
+                && request.resource.data.programOwnerId
+                   == resource.data.programOwnerId);
+    }
+
     // ── Users ──
 
     match /users/{userId} {
@@ -146,13 +161,7 @@ service cloud.firestore {
     }
 
     // ── Workout Instances ──
-    // Read: athlete (own instances) or the coach who assigned them.
-    //   Owner access uses the assignedBy field (a plain field match) rather
-    //   than isProgramOwner(): a get()-based condition cannot be evaluated
-    //   for list/query operations, so the trainer calendar query (filtered
-    //   by assignedBy) would otherwise be rejected. assignedBy is the program
-    //   owner at assignment time (create rule enforces isProgramOwner), so
-    //   this is equivalent and also robust if the program doc is removed.
+    // Read: athlete, assigning user (legacy), or immutable program owner.
     // Create: program owner assigns workouts, or an actively enrolled athlete
     //   assigns a workout to themselves.
     // Update: athlete can complete/edit own; owner can edit scheduling
@@ -162,15 +171,18 @@ service cloud.firestore {
     match /workoutInstances/{instanceId} {
       allow read: if isSignedIn()
                     && (resource.data.athleteId == request.auth.uid
-                        || resource.data.assignedBy == request.auth.uid);
+                        || resource.data.assignedBy == request.auth.uid
+                        || resource.data.programOwnerId == request.auth.uid);
       allow create: if isSignedIn()
                       && request.resource.data.assignedBy == request.auth.uid
+                      && hasValidProgramOwner(request.resource.data)
                       && (isProgramOwner(request.resource.data.programId)
                           || (request.resource.data.athleteId
                                 == request.auth.uid
                               && isEnrolledActive(
                                    request.resource.data.programId)));
       allow update: if isSignedIn()
+                      && preservesProgramOwner()
                       && (resource.data.athleteId == request.auth.uid
                           || (isProgramOwner(resource.data.programId)
                               && request.resource.data.diff(resource.data)

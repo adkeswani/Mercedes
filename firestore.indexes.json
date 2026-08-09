@@ -98,6 +98,15 @@
       "collectionGroup": "workoutInstances",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "programOwnerId", "order": "ASCENDING" },
+        { "fieldPath": "athleteId", "order": "ASCENDING" },
+        { "fieldPath": "scheduledDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "workoutInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "programAssignmentId", "order": "ASCENDING" },
         { "fieldPath": "assignedBy", "order": "ASCENDING" }
       ]

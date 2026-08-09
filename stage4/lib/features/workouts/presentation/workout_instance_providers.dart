@@ -50,6 +50,19 @@ final programAthleteCalendarProvider =
   );
 });
 
+/// Lazily migrates legacy instances for one active athlete/program pair.
+final programOwnerBackfillProvider =
+    FutureProvider.family<int, ProgramAthleteKey>((ref, key) {
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) return Future.value(0);
+  final repo = ref.watch(workoutInstanceRepositoryProvider);
+  return repo.backfillProgramOwnerId(
+    programId: key.programId,
+    athleteId: key.athleteId,
+    actorId: user.uid,
+  );
+});
+
 /// Streams every instance the current user (owner) has assigned to a given
 /// athlete across all programs, within a date range.
 ///

@@ -583,6 +583,7 @@ describe('workoutInstances', () => {
     await assertSucceeds(
       db.collection('workoutInstances').doc('inst-new').set({
         programId: PROGRAM_ID,
+        programOwnerId: OWNER,
         athleteId: ATHLETE,
         assignedBy: OWNER,
         status: 'scheduled',
@@ -596,6 +597,7 @@ describe('workoutInstances', () => {
     await assertSucceeds(
       db.collection('workoutInstances').doc('inst-self-enrolled').set({
         programId: PROGRAM_ID,
+        programOwnerId: OWNER,
         athleteId: ATHLETE,
         assignedBy: ATHLETE,
         status: 'scheduled',
@@ -617,6 +619,7 @@ describe('workoutInstances', () => {
     await assertFails(
       db.collection('workoutInstances').doc('inst-unenrolled').set({
         programId: PROGRAM_ID,
+        programOwnerId: OWNER,
         athleteId: ATHLETE,
         assignedBy: ATHLETE,
         status: 'scheduled',
@@ -630,6 +633,7 @@ describe('workoutInstances', () => {
     await assertFails(
       db.collection('workoutInstances').doc('inst-other-athlete').set({
         programId: PROGRAM_ID,
+        programOwnerId: OWNER,
         athleteId: STRANGER,
         assignedBy: ATHLETE,
         status: 'scheduled',
@@ -648,6 +652,7 @@ describe('workoutInstances', () => {
     await assertSucceeds(
       db.collection('workoutInstances').doc('inst-self').set({
         programId: 'personal-1',
+        programOwnerId: ATHLETE,
         athleteId: ATHLETE,
         assignedBy: ATHLETE,
         status: 'scheduled',
@@ -668,6 +673,62 @@ describe('workoutInstances', () => {
     const db = testEnv.authenticatedContext(OWNER).firestore();
     await assertSucceeds(
       db.collection('workoutInstances').doc(INSTANCE_ID).get()
+    );
+  });
+
+  it('allows program owner to read an athlete self-assigned instance', async () => {
+    await seedProgramWithEnrollment();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc('self-new').set({
+        programId: PROGRAM_ID,
+        programOwnerId: OWNER,
+        athleteId: ATHLETE,
+        assignedBy: ATHLETE,
+        status: 'scheduled',
+        scheduledDate: '2026-06-16',
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('workoutInstances').doc('self-new').get()
+    );
+  });
+
+  it('allows owner to query self-assigned workouts by programOwnerId', async () => {
+    await seedProgramWithEnrollment();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc('self-new').set({
+        programId: PROGRAM_ID,
+        programOwnerId: OWNER,
+        athleteId: ATHLETE,
+        assignedBy: ATHLETE,
+        status: 'scheduled',
+        scheduledDate: '2026-06-16',
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('workoutInstances')
+        .where('programOwnerId', '==', OWNER)
+        .where('athleteId', '==', ATHLETE)
+        .where('scheduledDate', '>=', '2026-06-01')
+        .where('scheduledDate', '<=', '2026-06-30')
+        .orderBy('scheduledDate')
+        .get()
+    );
+  });
+
+  it('denies creating an instance with the wrong programOwnerId', async () => {
+    await seedProgramWithEnrollment();
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertFails(
+      db.collection('workoutInstances').doc('wrong-owner').set({
+        programId: PROGRAM_ID,
+        programOwnerId: STRANGER,
+        athleteId: ATHLETE,
+        assignedBy: ATHLETE,
+        status: 'scheduled',
+      })
     );
   });
 
@@ -719,6 +780,45 @@ describe('workoutInstances', () => {
     await assertSucceeds(
       db.collection('workoutInstances').doc(INSTANCE_ID).update({
         status: 'completed', rpe: 7, durationMinutes: 60,
+      })
+    );
+  });
+
+  it('allows athlete to backfill the verified owner on a legacy instance', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertSucceeds(
+      db.collection('workoutInstances').doc(INSTANCE_ID).update({
+        programOwnerId: OWNER,
+      })
+    );
+  });
+
+  it('denies athlete from backfilling an incorrect program owner', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertFails(
+      db.collection('workoutInstances').doc(INSTANCE_ID).update({
+        programOwnerId: STRANGER,
+      })
+    );
+  });
+
+  it('denies changing programOwnerId after it is set', async () => {
+    await seedProgramWithEnrollment();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc('new-owner').set({
+        programId: PROGRAM_ID,
+        programOwnerId: OWNER,
+        athleteId: ATHLETE,
+        assignedBy: ATHLETE,
+        status: 'scheduled',
+      });
+    });
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertFails(
+      db.collection('workoutInstances').doc('new-owner').update({
+        programOwnerId: STRANGER,
       })
     );
   });

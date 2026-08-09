@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:stage4/core/enums.dart';
@@ -24,9 +26,9 @@ class WorkoutInstanceRepository {
   /// an active enrollee may assign to themselves. For personal programs,
   /// caller must be both owner and athlete.
   ///
-  /// Returns the published program version when this is enrolled-athlete
-  /// self-assignment; owner assignment returns null.
-  Future<int?> _verifyCanAssign({
+  /// Returns the verified program owner and the published program version when
+  /// this is enrolled-athlete self-assignment.
+  Future<({String ownerId, int? selfProgramVersion})> _verifyCanAssign({
     required String programId,
     required String athleteId,
     required String assignedBy,
@@ -40,12 +42,15 @@ class WorkoutInstanceRepository {
     final ownerId = data['ownerId'] as String?;
     final type = data['type'] as String?;
     final currentVersion = (data['currentVersion'] as int?) ?? 0;
+    if (ownerId == null || ownerId.isEmpty) {
+      throw StateError('Program $programId has no owner');
+    }
 
     if (type == 'personal') {
       if (ownerId != assignedBy || athleteId != assignedBy) {
         throw StateError('Personal programs only allow self-assignment');
       }
-      return null;
+      return (ownerId: ownerId, selfProgramVersion: null);
     }
 
     if (ownerId != assignedBy && athleteId != assignedBy) {
@@ -64,11 +69,13 @@ class WorkoutInstanceRepository {
       );
     }
 
-    if (ownerId == assignedBy) return null;
+    if (ownerId == assignedBy) {
+      return (ownerId: ownerId, selfProgramVersion: null);
+    }
     if (currentVersion < 1) {
       throw StateError('Program $programId has no published version');
     }
-    return currentVersion;
+    return (ownerId: ownerId, selfProgramVersion: currentVersion);
   }
 
   Future<void> _verifyWorkoutInProgram({
@@ -113,15 +120,15 @@ class WorkoutInstanceRepository {
     required WorkoutType workoutType,
     required String assignedBy,
   }) async {
-    final selfProgramVersion = await _verifyCanAssign(
+    final authorization = await _verifyCanAssign(
       programId: programId,
       athleteId: athleteId,
       assignedBy: assignedBy,
     );
-    if (selfProgramVersion != null) {
+    if (authorization.selfProgramVersion != null) {
       await _verifyWorkoutInProgram(
         programId: programId,
-        programVersion: selfProgramVersion,
+        programVersion: authorization.selfProgramVersion!,
         workoutTemplateId: workoutTemplateId,
         workoutTemplateVersion: workoutTemplateVersion,
       );
@@ -129,7 +136,8 @@ class WorkoutInstanceRepository {
     final docRef = _collection.doc();
     await docRef.set({
       'programId': programId,
-      'programVersion': selfProgramVersion ?? 0,
+      'programOwnerId': authorization.ownerId,
+      'programVersion': authorization.selfProgramVersion ?? 0,
       'programAssignmentId': null,
       'athleteId': athleteId,
       'workoutTemplateId': workoutTemplateId,
@@ -181,15 +189,15 @@ class WorkoutInstanceRepository {
   }) async {
     recurrence.validate();
 
-    final selfProgramVersion = await _verifyCanAssign(
+    final authorization = await _verifyCanAssign(
       programId: programId,
       athleteId: athleteId,
       assignedBy: assignedBy,
     );
-    if (selfProgramVersion != null) {
+    if (authorization.selfProgramVersion != null) {
       await _verifyWorkoutInProgram(
         programId: programId,
-        programVersion: selfProgramVersion,
+        programVersion: authorization.selfProgramVersion!,
         workoutTemplateId: workoutTemplateId,
         workoutTemplateVersion: workoutTemplateVersion,
       );
@@ -212,7 +220,8 @@ class WorkoutInstanceRepository {
     // Create root instance (first date)
     batch.set(rootRef, {
       'programId': programId,
-      'programVersion': selfProgramVersion ?? 0,
+      'programOwnerId': authorization.ownerId,
+      'programVersion': authorization.selfProgramVersion ?? 0,
       'programAssignmentId': null,
       'athleteId': athleteId,
       'workoutTemplateId': workoutTemplateId,
@@ -246,7 +255,8 @@ class WorkoutInstanceRepository {
       final childRef = _collection.doc();
       batch.set(childRef, {
         'programId': programId,
-        'programVersion': selfProgramVersion ?? 0,
+        'programOwnerId': authorization.ownerId,
+        'programVersion': authorization.selfProgramVersion ?? 0,
         'programAssignmentId': null,
         'athleteId': athleteId,
         'workoutTemplateId': workoutTemplateId,
@@ -387,6 +397,7 @@ class WorkoutInstanceRepository {
       final docRef = _collection.doc();
       batch.set(docRef, {
         'programId': programId,
+        'programOwnerId': ownerId,
         'programVersion': currentVersion,
         'programAssignmentId': assignmentId,
         'athleteId': athleteId,
@@ -468,8 +479,8 @@ class WorkoutInstanceRepository {
         .get();
 
     final targets = snapshot.docs
-        .where((d) =>
-            d.data()['status'] != WorkoutInstanceStatus.completed.name)
+        .where(
+            (d) => d.data()['status'] != WorkoutInstanceStatus.completed.name)
         .toList();
     final batch = _firestore.batch();
     for (final doc in targets) {
@@ -626,9 +637,8 @@ class WorkoutInstanceRepository {
         .where('scheduledDate', isLessThanOrEqualTo: endDate)
         .orderBy('scheduledDate')
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => _fromMap(doc.data(), doc.id))
-            .toList());
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => _fromMap(doc.data(), doc.id)).toList());
   }
 
   /// Streams workout instances for a specific program-athlete pair.
@@ -660,20 +670,19 @@ class WorkoutInstanceRepository {
             snapshot.docs.map((doc) => _fromMap(doc.data(), doc.id)).toList());
   }
 
-  /// Streams all instances the [ownerId] has assigned to [athleteId] across
-  /// all of the owner's programs, within a date range.
+  /// Streams every instance in [ownerId]'s programs for [athleteId].
   ///
-  /// Used by the per-athlete trainer calendar so a coach can see every
-  /// workout they've scheduled for an athlete, regardless of program.
-  /// Requires a composite index on (assignedBy, athleteId, scheduledDate).
+  /// New documents are queried by immutable `programOwnerId`, which includes
+  /// trainer- and athlete-assigned workouts. A legacy `assignedBy` query is
+  /// merged so pre-migration trainer assignments remain visible.
   Stream<List<WorkoutInstance>> watchAthleteCalendar({
     required String ownerId,
     required String athleteId,
     required String startDate,
     required String endDate,
   }) {
-    return _collection
-        .where('assignedBy', isEqualTo: ownerId)
+    Stream<List<WorkoutInstance>> watchField(String field) => _collection
+        .where(field, isEqualTo: ownerId)
         .where('athleteId', isEqualTo: athleteId)
         .where('scheduledDate', isGreaterThanOrEqualTo: startDate)
         .where('scheduledDate', isLessThanOrEqualTo: endDate)
@@ -681,6 +690,93 @@ class WorkoutInstanceRepository {
         .snapshots()
         .map((snapshot) =>
             snapshot.docs.map((doc) => _fromMap(doc.data(), doc.id)).toList());
+
+    late StreamController<List<WorkoutInstance>> controller;
+    StreamSubscription<List<WorkoutInstance>>? ownerSubscription;
+    StreamSubscription<List<WorkoutInstance>>? legacySubscription;
+    var ownerInstances = <WorkoutInstance>[];
+    var legacyInstances = <WorkoutInstance>[];
+    var ownerLoaded = false;
+    var legacyLoaded = false;
+
+    void emit() {
+      if (!ownerLoaded || !legacyLoaded) return;
+      final byId = <String, WorkoutInstance>{
+        for (final instance in legacyInstances) instance.id: instance,
+        for (final instance in ownerInstances) instance.id: instance,
+      };
+      final combined = byId.values.toList()
+        ..sort((a, b) => a.scheduledDate.compareTo(b.scheduledDate));
+      controller.add(combined);
+    }
+
+    controller = StreamController<List<WorkoutInstance>>(
+      onListen: () {
+        ownerSubscription = watchField('programOwnerId').listen(
+          (instances) {
+            ownerInstances = instances;
+            ownerLoaded = true;
+            emit();
+          },
+          onError: controller.addError,
+        );
+        legacySubscription = watchField('assignedBy').listen(
+          (instances) {
+            legacyInstances = instances;
+            legacyLoaded = true;
+            emit();
+          },
+          onError: controller.addError,
+        );
+      },
+      onCancel: () async {
+        await ownerSubscription?.cancel();
+        await legacySubscription?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
+  /// Adds `programOwnerId` to legacy instances for an active program.
+  ///
+  /// Defense-in-depth: [actorId] must be the athlete, and every updated
+  /// instance is verified to belong to that athlete and program.
+  Future<int> backfillProgramOwnerId({
+    required String programId,
+    required String athleteId,
+    required String actorId,
+  }) async {
+    if (actorId != athleteId) {
+      throw StateError('Only the athlete can migrate their workout instances');
+    }
+    final programDoc =
+        await _firestore.collection('programs').doc(programId).get();
+    final programOwnerId = programDoc.data()?['ownerId'] as String?;
+    if (programOwnerId == null || programOwnerId.isEmpty) {
+      throw StateError('Program $programId has no owner');
+    }
+
+    final snapshot = await _collection
+        .where('programId', isEqualTo: programId)
+        .where('athleteId', isEqualTo: athleteId)
+        .get();
+    final targets = snapshot.docs.where((doc) {
+      final data = doc.data();
+      if (data['athleteId'] != actorId || data['programId'] != programId) {
+        throw StateError('Workout instance ownership mismatch');
+      }
+      return data['programOwnerId'] == null;
+    }).toList();
+
+    for (var start = 0; start < targets.length; start += 450) {
+      final batch = _firestore.batch();
+      final end = (start + 450).clamp(0, targets.length);
+      for (final doc in targets.sublist(start, end)) {
+        batch.update(doc.reference, {'programOwnerId': programOwnerId});
+      }
+      await batch.commit();
+    }
+    return targets.length;
   }
 
   /// Moves a scheduled instance to [newDate].
@@ -750,21 +846,19 @@ class WorkoutInstanceRepository {
     return WorkoutInstance(
       id: id,
       programId: data['programId'] as String? ?? '',
+      programOwnerId: data['programOwnerId'] as String?,
       programVersion: (data['programVersion'] as int?) ?? 0,
       programAssignmentId: data['programAssignmentId'] as String?,
       athleteId: data['athleteId'] as String? ?? '',
       workoutTemplateId: data['workoutTemplateId'] as String? ?? '',
-      workoutTemplateVersion:
-          (data['workoutTemplateVersion'] as int?) ?? 1,
+      workoutTemplateVersion: (data['workoutTemplateVersion'] as int?) ?? 1,
       scheduledDate: data['scheduledDate'] as String? ?? '',
       assignedBy: data['assignedBy'] as String? ?? '',
       assignedAt: _toDateTime(data['assignedAt']),
       status: _parseStatus(data['status'] as String?),
-      completedAt: data['completedAt'] != null
-          ? _toDateTime(data['completedAt'])
-          : null,
-      missedAt:
-          data['missedAt'] != null ? _toDateTime(data['missedAt']) : null,
+      completedAt:
+          data['completedAt'] != null ? _toDateTime(data['completedAt']) : null,
+      missedAt: data['missedAt'] != null ? _toDateTime(data['missedAt']) : null,
       rpe: data['rpe'] as int?,
       durationMinutes: data['durationMinutes'] as int?,
       loadPoints: (data['loadPoints'] as num?)?.toDouble(),
@@ -825,9 +919,8 @@ class WorkoutInstanceRepository {
   Recurrence _recurrenceFromMap(Map<String, dynamic> data) {
     return Recurrence(
       pattern: _parseRecurrencePattern(data['pattern'] as String?),
-      daysOfWeek: (data['daysOfWeek'] as List<dynamic>?)
-          ?.map((d) => d as int)
-          .toList(),
+      daysOfWeek:
+          (data['daysOfWeek'] as List<dynamic>?)?.map((d) => d as int).toList(),
       intervalDays: data['intervalDays'] as int?,
       endDate: data['endDate'] as String? ?? '',
     );

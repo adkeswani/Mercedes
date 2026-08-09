@@ -164,19 +164,44 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('My Schedule')),
       body: programsAsync.when(
-        data: (programs) => Column(
-          children: [
-            _buildMonthNav(context),
-            const Divider(height: 1),
-            Expanded(
-              child: _buildCalendarBody(
-                context,
-                programs,
-                athleteView: true,
+        data: (programs) {
+          Object? migrationError;
+          for (final program in programs) {
+            final migration = ref.watch(
+              programOwnerBackfillProvider(
+                ProgramAthleteKey(
+                  programId: program.id,
+                  athleteId: uid,
+                ),
               ),
-            ),
-          ],
-        ),
+            );
+            migrationError ??= migration.error;
+          }
+          return Column(
+            children: [
+              if (migrationError != null)
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(
+                    'Some older workouts could not be updated: '
+                    '$migrationError',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              _buildMonthNav(context),
+              const Divider(height: 1),
+              Expanded(
+                child: _buildCalendarBody(
+                  context,
+                  programs,
+                  athleteView: true,
+                ),
+              ),
+            ],
+          );
+        },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
       ),
@@ -534,9 +559,8 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                           '${i.workoutType.name} · ${i.status.name}',
                         ),
                         trailing: i.isScheduled &&
-                                (!widget.selfService ||
-                                    i.assignedBy ==
-                                        ref.read(authStateProvider).value?.uid)
+                                i.assignedBy ==
+                                    ref.read(authStateProvider).value?.uid
                             ? PopupMenuButton<String>(
                                 onSelected: (value) async {
                                   Navigator.of(sheetContext).pop();

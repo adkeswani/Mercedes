@@ -25,6 +25,7 @@ void main() {
       expect(instance.loadModelVersion, 1);
       expect(instance.isRecurrenceRoot, isFalse);
       expect(instance.actuals, isEmpty);
+      expect(instance.programOwnerId, isNull);
     });
 
     test('completed instance with RPE and duration', () {

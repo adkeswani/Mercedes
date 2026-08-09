@@ -6,7 +6,6 @@ import 'package:stage4/core/enums.dart';
 /// load metrics, recurrence, and per-exercise actuals. Completed
 /// instances are immutable historical records.
 class WorkoutInstance {
-
   WorkoutInstance({
     required this.id,
     required this.programId,
@@ -22,6 +21,7 @@ class WorkoutInstance {
     required this.updatedAt,
     this.programVersion = 0,
     this.programAssignmentId,
+    this.programOwnerId,
     this.completedAt,
     this.missedAt,
     this.rpe,
@@ -41,6 +41,11 @@ class WorkoutInstance {
 
   final String id;
   final String programId;
+
+  /// Owner of the program at assignment time.
+  ///
+  /// Null only for legacy instances created before this field was introduced.
+  final String? programOwnerId;
 
   /// The published program version this instance was materialized from.
   ///
@@ -179,8 +184,7 @@ class WorkoutInstance {
 
     // Override audit: if override is set, who and when are required
     if (loadPointsOverride != null) {
-      if (loadPointsOverriddenBy == null ||
-          loadPointsOverriddenBy!.isEmpty) {
+      if (loadPointsOverriddenBy == null || loadPointsOverriddenBy!.isEmpty) {
         throw ArgumentError(
           'loadPointsOverriddenBy is required when override is set',
         );
@@ -205,7 +209,6 @@ class WorkoutInstance {
 /// Captures what the athlete actually performed vs. the prescription,
 /// including timer data for rest and work duration.
 class ExerciseActual {
-
   ExerciseActual({
     required this.exerciseId,
     required this.mode,
@@ -247,10 +250,10 @@ class ExerciseActual {
 /// All recurrences are bounded (end date required). Instances are
 /// materialized upfront via batch write — no open-ended recurrence.
 class Recurrence {
-
   Recurrence({
     required this.pattern,
-    required this.endDate, this.daysOfWeek,
+    required this.endDate,
+    this.daysOfWeek,
     this.intervalDays,
   });
   final RecurrencePattern pattern;
@@ -422,7 +425,5 @@ List<int> expandRecurrenceOffsets({
   );
 
   final anchor = DateTime.parse(_offsetAnchorDate);
-  return dates
-      .map((d) => DateTime.parse(d).difference(anchor).inDays)
-      .toList();
+  return dates.map((d) => DateTime.parse(d).difference(anchor).inDays).toList();
 }

@@ -97,6 +97,7 @@ void main() {
             await fakeFirestore.collection('workoutInstances').doc(id).get();
         expect(doc.exists, isTrue);
         expect(doc.data()!['programId'], 'prog1');
+        expect(doc.data()!['programOwnerId'], 'coach1');
         expect(doc.data()!['athleteId'], 'athlete1');
         expect(doc.data()!['workoutTemplateId'], 'wt1');
         expect(doc.data()!['workoutTemplateVersion'], 1);
@@ -161,6 +162,7 @@ void main() {
         final doc =
             await fakeFirestore.collection('workoutInstances').doc(id).get();
         expect(doc.data()!['assignedBy'], 'athlete1');
+        expect(doc.data()!['programOwnerId'], 'coach1');
         expect(doc.data()!['programVersion'], 1);
       });
 
@@ -861,6 +863,8 @@ void main() {
         expect(byTemplate['wt1']!['workoutType'], 'push');
         expect(byTemplate['wt2']!['workoutType'], 'pull');
         expect(byTemplate['wt1']!['programVersion'], 1);
+        expect(byTemplate['wt1']!['programOwnerId'], 'coach1');
+        expect(byTemplate['wt2']!['programOwnerId'], 'coach1');
         expect(byTemplate['wt1']!['status'], 'scheduled');
       });
 
@@ -1118,12 +1122,17 @@ void main() {
     });
 
     group('watchAthleteCalendar', () {
-      test('returns owner-assigned instances for the athlete in range',
+      test('returns trainer- and athlete-assigned instances for owned programs',
           () async {
         await createProgram('prog1');
         await enrollAthlete('prog1', 'athlete1');
+        await publishProgramEntries('prog1');
         await assignWorkout(scheduledDate: '2026-06-05');
         await assignWorkout(scheduledDate: '2026-06-20');
+        await assignWorkout(
+          assignedBy: 'athlete1',
+          scheduledDate: '2026-06-25',
+        );
         // Out of range and other-athlete instances should be excluded.
         await assignWorkout(scheduledDate: '2026-07-05');
 
@@ -1136,10 +1145,77 @@ void main() {
             )
             .first;
 
-        expect(instances.length, 2);
+        expect(instances.length, 3);
         expect(
           instances.map((i) => i.scheduledDate).toList(),
-          ['2026-06-05', '2026-06-20'],
+          ['2026-06-05', '2026-06-20', '2026-06-25'],
+        );
+      });
+
+      test('includes legacy trainer assignments without programOwnerId',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await fakeFirestore.collection('workoutInstances').doc('legacy').set({
+          'programId': 'prog1',
+          'athleteId': 'athlete1',
+          'workoutTemplateId': 'wt1',
+          'workoutTemplateVersion': 1,
+          'scheduledDate': '2026-06-10',
+          'workoutType': 'pull',
+          'assignedBy': 'coach1',
+          'assignedAt': DateTime(2026, 6, 1),
+          'status': 'scheduled',
+        });
+
+        final instances = await repo
+            .watchAthleteCalendar(
+              ownerId: 'coach1',
+              athleteId: 'athlete1',
+              startDate: '2026-06-01',
+              endDate: '2026-06-30',
+            )
+            .first;
+
+        expect(instances.map((i) => i.id), contains('legacy'));
+      });
+    });
+
+    group('backfillProgramOwnerId', () {
+      test('adds verified owner to athlete legacy instances', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await fakeFirestore.collection('workoutInstances').doc('legacy').set({
+          'programId': 'prog1',
+          'athleteId': 'athlete1',
+          'assignedBy': 'athlete1',
+          'status': 'scheduled',
+        });
+
+        final count = await repo.backfillProgramOwnerId(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          actorId: 'athlete1',
+        );
+
+        expect(count, 1);
+        final doc = await fakeFirestore
+            .collection('workoutInstances')
+            .doc('legacy')
+            .get();
+        expect(doc.data()!['programOwnerId'], 'coach1');
+      });
+
+      test('rejects migration by anyone other than the athlete', () async {
+        await createProgram('prog1');
+
+        expect(
+          () => repo.backfillProgramOwnerId(
+            programId: 'prog1',
+            athleteId: 'athlete1',
+            actorId: 'coach1',
+          ),
+          throwsStateError,
         );
       });
     });
