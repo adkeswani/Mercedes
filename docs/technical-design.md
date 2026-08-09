@@ -781,7 +781,7 @@ An in-app feedback form accessible from the profile/settings screen. Fields:
 
 - **Type:** bug report / feature request / general feedback (required)
 - **Body:** free text (required)
-- **Screenshot:** optional external image URL
+- **Screenshot:** deferred until screenshot storage and review lifecycle exist
 - **App context:** automatically captured (screen name, app version, OS, device model)
 
 ### Firestore Model
@@ -791,9 +791,8 @@ feedback/{feedbackId}
   userId: string
   type: string ("bug" | "feature" | "general")
   body: string
-  screenshotUrl: string?
   appVersion: string
-  platform: string ("android" | "ios")
+  platform: string ("android" | "ios" | "web" | "macos" | "windows" | "linux")
   deviceModel: string
   screenName: string
   status: string ("new" | "reviewed" | "resolved" | "wont_fix")

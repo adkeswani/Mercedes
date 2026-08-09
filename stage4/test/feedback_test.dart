@@ -99,7 +99,7 @@ void main() {
     });
 
     test('validate throws on invalid platform', () {
-      final feedback = _makeFeedback(platform: 'web');
+      final feedback = _makeFeedback(platform: 'unsupported');
       expect(() => feedback.validate(), throwsArgumentError);
     });
 
@@ -137,6 +137,18 @@ void main() {
     test('validate succeeds for valid ios feedback', () {
       final feedback = _makeFeedback(platform: 'ios');
       expect(() => feedback.validate(), returnsNormally);
+    });
+
+    test('validate succeeds for valid web feedback', () {
+      final feedback = _makeFeedback(platform: 'web');
+      expect(() => feedback.validate(), returnsNormally);
+    });
+
+    test('validate rejects feedback over the maximum length', () {
+      final feedback = _makeFeedback(
+        body: 'x' * (Feedback.maxBodyLength + 1),
+      );
+      expect(() => feedback.validate(), throwsArgumentError);
     });
 
     test('all feedback types can be created', () {

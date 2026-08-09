@@ -5,7 +5,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { setLogLevel } from 'firebase/firestore';
+import { serverTimestamp, setLogLevel } from 'firebase/firestore';
 
 setLogLevel('error');
 
@@ -95,6 +95,74 @@ describe('users', () => {
   it('denies writing another user profile', async () => {
     const db = testEnv.authenticatedContext(STRANGER).firestore();
     await assertFails(db.collection('users').doc(OWNER).set({ name: 'Hacked' }));
+  });
+});
+
+// ─── Feedback (authenticated create, client write-only) ───
+
+describe('feedback', () => {
+  function validFeedback(userId = OWNER) {
+    return {
+      userId,
+      type: 'bug',
+      body: 'The calendar did not advance.',
+      appVersion: '0.1.0',
+      platform: 'web',
+      deviceModel: 'web-browser',
+      screenName: 'HomeScreen',
+      status: 'new',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+  }
+
+  it('allows an authenticated user to submit feedback for self', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('feedback').doc('feedback-1').set(validFeedback())
+    );
+  });
+
+  it('denies anonymous feedback', async () => {
+    const db = testEnv.unauthenticatedContext().firestore();
+    await assertFails(
+      db.collection('feedback').doc('feedback-1').set(validFeedback())
+    );
+  });
+
+  it('denies submitting feedback for another user', async () => {
+    const db = testEnv.authenticatedContext(STRANGER).firestore();
+    await assertFails(
+      db.collection('feedback').doc('feedback-1').set(validFeedback(OWNER))
+    );
+  });
+
+  it('denies client reads, updates, and deletes', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('feedback').doc('feedback-1')
+        .set({ ...validFeedback(), createdAt: new Date(), updatedAt: new Date() });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const ref = db.collection('feedback').doc('feedback-1');
+    await assertFails(ref.get());
+    await assertFails(ref.update({ status: 'reviewed' }));
+    await assertFails(ref.delete());
+  });
+
+  it('denies malformed feedback', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      db.collection('feedback').doc('feedback-1').set({
+        ...validFeedback(),
+        type: 'other',
+      })
+    );
+    await assertFails(
+      db.collection('feedback').doc('feedback-2').set({
+        ...validFeedback(),
+        extraField: 'unexpected',
+      })
+    );
   });
 });
 

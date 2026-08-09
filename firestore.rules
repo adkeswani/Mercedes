@@ -65,6 +65,42 @@ service cloud.firestore {
                       && request.resource.data.uid == request.auth.uid;
     }
 
+    // ── Feedback ──
+    // Authenticated users may submit feedback for themselves. Feedback is
+    // intentionally unreadable and immutable through client SDKs; it is
+    // reviewed outside the app through privileged Firebase tooling.
+
+    match /feedback/{feedbackId} {
+      allow create: if isSignedIn()
+                      && request.resource.data.keys().hasOnly([
+                           'userId', 'type', 'body', 'appVersion', 'platform',
+                           'deviceModel', 'screenName', 'status', 'createdAt',
+                           'updatedAt'
+                         ])
+                      && request.resource.data.userId == request.auth.uid
+                      && request.resource.data.type
+                           in ['bug', 'feature', 'general']
+                      && request.resource.data.body is string
+                      && request.resource.data.body.size() > 0
+                      && request.resource.data.body.size() <= 5000
+                      && request.resource.data.appVersion is string
+                      && request.resource.data.appVersion.size() > 0
+                      && request.resource.data.appVersion.size() <= 50
+                      && request.resource.data.platform
+                           in ['android', 'ios', 'web', 'macos', 'windows',
+                               'linux']
+                      && request.resource.data.deviceModel is string
+                      && request.resource.data.deviceModel.size() > 0
+                      && request.resource.data.deviceModel.size() <= 200
+                      && request.resource.data.screenName is string
+                      && request.resource.data.screenName.size() > 0
+                      && request.resource.data.screenName.size() <= 200
+                      && request.resource.data.status == 'new'
+                      && request.resource.data.createdAt == request.time
+                      && request.resource.data.updatedAt == request.time;
+      allow read, update, delete: if false;
+    }
+
     // ── Exercise Templates ──
     // Shared library: any signed-in user can read (exercises referenced across programs)
     // Create/update/delete: creator only

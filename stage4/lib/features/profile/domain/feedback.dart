@@ -5,16 +5,32 @@ import 'package:stage4/core/enums.dart';
 /// Feedback documents are write-only for users (they can create but
 /// not read others' feedback). Admin reviews feedback via a dashboard.
 class Feedback {
-
   Feedback({
     required this.id,
     required this.userId,
     required this.type,
     required this.body,
-    required this.appVersion, required this.platform, required this.deviceModel, required this.screenName, required this.createdAt, required this.updatedAt, this.screenshotUrl,
+    required this.appVersion,
+    required this.platform,
+    required this.deviceModel,
+    required this.screenName,
+    required this.createdAt,
+    required this.updatedAt,
+    this.screenshotUrl,
     this.status = FeedbackStatus.newItem,
     this.adminNotes,
   });
+
+  static const maxBodyLength = 5000;
+  static const supportedPlatforms = {
+    'android',
+    'ios',
+    'web',
+    'macos',
+    'windows',
+    'linux',
+  };
+
   final String id;
   final String userId;
   final FeedbackType type;
@@ -46,6 +62,11 @@ class Feedback {
     if (body.isEmpty) {
       throw ArgumentError('body cannot be empty');
     }
+    if (body.length > maxBodyLength) {
+      throw ArgumentError(
+        'body cannot exceed $maxBodyLength characters',
+      );
+    }
     if (appVersion.isEmpty) {
       throw ArgumentError('appVersion cannot be empty');
     }
@@ -59,9 +80,8 @@ class Feedback {
       throw ArgumentError('screenName cannot be empty');
     }
 
-    // Platform must be android or ios
-    if (platform != 'android' && platform != 'ios') {
-      throw ArgumentError('platform must be "android" or "ios"');
+    if (!supportedPlatforms.contains(platform)) {
+      throw ArgumentError('platform is not supported');
     }
 
     if (createdAt.isAfter(updatedAt)) {

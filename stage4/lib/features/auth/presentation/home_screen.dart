@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import 'package:stage4/core/enums.dart';
 import 'package:stage4/features/auth/presentation/auth_providers.dart';
+import 'package:stage4/features/profile/presentation/feedback_dialog.dart';
+import 'package:stage4/features/profile/presentation/feedback_providers.dart';
 import 'package:stage4/features/programs/domain/enrollment.dart';
 import 'package:stage4/features/programs/presentation/enrollment_providers.dart';
 import 'package:stage4/features/programs/presentation/program_providers.dart';
@@ -31,6 +33,44 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Mercedes'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.feedback_outlined),
+            tooltip: 'Send feedback',
+            onPressed: () async {
+              final user = ref.read(authStateProvider).value;
+              final repository = ref.read(feedbackRepositoryProvider);
+              if (user == null || repository == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Sign in to send feedback.'),
+                  ),
+                );
+                return;
+              }
+
+              final submitted = await showDialog<bool>(
+                context: context,
+                builder: (context) => FeedbackDialog(
+                  onSubmit: (type, body) async {
+                    await repository.submit(
+                      actorId: user.uid,
+                      type: type,
+                      body: body,
+                      appVersion: feedbackAppVersion,
+                      platform: currentFeedbackPlatform(),
+                      deviceModel: currentFeedbackDeviceModel(),
+                      screenName: 'HomeScreen',
+                    );
+                  },
+                ),
+              );
+              if (submitted == true && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Feedback sent. Thank you!')),
+                );
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sign out',
