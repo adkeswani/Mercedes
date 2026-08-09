@@ -1,134 +1,97 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import 'package:stage4/core/enums.dart';
-import 'package:stage4/features/auth/presentation/app_entry_providers.dart';
-import 'package:stage4/features/workouts/domain/workout_instance.dart';
-import 'package:stage4/features/workouts/presentation/workout_instance_providers.dart';
+import 'package:stage4/features/programs/domain/program.dart';
+import 'package:stage4/features/programs/presentation/program_providers.dart';
 
-/// Screen showing an athlete's workout history within a specific program.
-///
-/// Accessible by tapping an athlete in the inline roster or roster screen.
-/// Shows all workout instances (scheduled, completed, missed, cancelled)
-/// for the program-athlete pair.
-class AthleteScheduleScreen extends ConsumerWidget {
-  const AthleteScheduleScreen({
+/// Read-only overview of a program available to an enrolled athlete.
+class AthleteProgramOverviewScreen extends ConsumerWidget {
+  const AthleteProgramOverviewScreen({
     super.key,
     required this.programId,
-    required this.athleteId,
   });
 
   final String programId;
-  final String athleteId;
+
+  Future<({Program? program, List<ProgramScheduleEntry> entries})> _load(
+    WidgetRef ref,
+  ) async {
+    final repo = ref.read(programRepositoryProvider);
+    final program = await repo.getById(programId);
+    final entries = await repo.getLatestEntries(programId);
+    return (program: program, entries: entries);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheduleAsync = ref.watch(
-      programAthleteScheduleProvider(
-        ProgramAthleteKey(programId: programId, athleteId: athleteId),
-      ),
-    );
-
-    // Resolve athlete name
-    final profileRepo = ref.watch(userProfileRepositoryProvider);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: FutureBuilder(
-          future: profileRepo.getUserProfile(athleteId),
-          builder: (context, snapshot) {
-            final name = snapshot.data?.displayName ?? 'Athlete';
-            return Text("$name's Schedule");
-          },
-        ),
-      ),
-      body: scheduleAsync.when(
-        data: (instances) {
-          if (instances.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.event_busy,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No workouts assigned yet',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.builder(
-            itemCount: instances.length,
-            itemBuilder: (context, index) {
-              final instance = instances[index];
-              return _InstanceTile(instance: instance);
-            },
+    return FutureBuilder(
+      future: _load(ref),
+      builder: (context, snapshot) {
+        final data = snapshot.data;
+        final program = data?.program;
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
           );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-      ),
-    );
-  }
-}
+        }
+        if (snapshot.hasError || program == null) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Program')),
+            body: Center(
+              child: Text(
+                snapshot.hasError
+                    ? 'Unable to load program: ${snapshot.error}'
+                    : 'Program unavailable',
+              ),
+            ),
+          );
+        }
 
-class _InstanceTile extends StatelessWidget {
-  const _InstanceTile({required this.instance});
+        final entries = [...data!.entries]..sort((a, b) {
+            final byDay = a.dayOffset.compareTo(b.dayOffset);
+            return byDay != 0 ? byDay : a.sortOrder.compareTo(b.sortOrder);
+          });
 
-  final WorkoutInstance instance;
-
-  Color _statusColor(BuildContext context) {
-    switch (instance.status) {
-      case WorkoutInstanceStatus.scheduled:
-        return Theme.of(context).colorScheme.primary;
-      case WorkoutInstanceStatus.completed:
-        return Colors.green;
-      case WorkoutInstanceStatus.missed:
-        return Colors.orange;
-      case WorkoutInstanceStatus.cancelled:
-        return Colors.grey;
-    }
-  }
-
-  IconData _statusIcon() {
-    switch (instance.status) {
-      case WorkoutInstanceStatus.scheduled:
-        return Icons.schedule;
-      case WorkoutInstanceStatus.completed:
-        return Icons.check_circle;
-      case WorkoutInstanceStatus.missed:
-        return Icons.warning_amber;
-      case WorkoutInstanceStatus.cancelled:
-        return Icons.cancel_outlined;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _statusColor(context);
-
-    return ListTile(
-      leading: Icon(_statusIcon(), color: color),
-      title: Text(instance.scheduledDate),
-      subtitle: Text(
-        '${instance.workoutType.name} · ${instance.status.name}'
-        '${instance.rpe != null ? ' · RPE ${instance.rpe}' : ''}'
-        '${instance.durationMinutes != null ? ' · ${instance.durationMinutes}min' : ''}',
-      ),
-      trailing: (instance.isScheduled || instance.isCompleted)
-          ? const Icon(Icons.chevron_right)
-          : null,
-      onTap: (instance.isScheduled || instance.isCompleted)
-          ? () => context.push('/workouts/complete/${instance.id}')
-          : null,
+        return Scaffold(
+          appBar: AppBar(title: Text(program.name)),
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (program.description?.isNotEmpty ?? false) ...[
+                Text(
+                  program.description!,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+                const SizedBox(height: 24),
+              ],
+              Text(
+                'Published schedule',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              if (entries.isEmpty)
+                const Card(
+                  child: ListTile(
+                    leading: Icon(Icons.event_busy),
+                    title: Text('No workouts published'),
+                  ),
+                )
+              else
+                ...entries.map(
+                  (entry) => Card(
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        child: Text('${entry.dayOffset + 1}'),
+                      ),
+                      title: Text(entry.workoutName ?? 'Workout'),
+                      subtitle: Text('Day ${entry.dayOffset + 1}'),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

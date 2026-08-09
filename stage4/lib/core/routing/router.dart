@@ -9,10 +9,10 @@ import 'package:stage4/features/auth/presentation/onboarding_screen.dart';
 import 'package:stage4/features/exercises/presentation/exercise_detail_screen.dart';
 import 'package:stage4/features/exercises/presentation/exercise_form_screen.dart';
 import 'package:stage4/features/exercises/presentation/exercise_list_screen.dart';
+import 'package:stage4/features/programs/presentation/athlete_schedule_screen.dart';
 import 'package:stage4/features/programs/presentation/program_builder_screen.dart';
 import 'package:stage4/features/programs/presentation/program_list_screen.dart';
 import 'package:stage4/features/programs/presentation/roster_athletes_screen.dart';
-import 'package:stage4/features/workouts/presentation/calendar_screen.dart';
 import 'package:stage4/features/workouts/presentation/schedule_assignment_screen.dart';
 import 'package:stage4/features/workouts/presentation/trainer_calendar_screen.dart';
 import 'package:stage4/features/workouts/presentation/workout_builder_screen.dart';
@@ -130,16 +130,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
-        path: '/programs/:id/athlete/:athleteId',
-        builder: (context, state) => TrainerCalendarScreen(
+        path: '/programs/:id/overview',
+        builder: (context, state) => AthleteProgramOverviewScreen(
           programId: state.pathParameters['id']!,
-          athleteId: state.pathParameters['athleteId']!,
-          selfService: state.uri.queryParameters['selfService'] == 'true',
         ),
       ),
       GoRoute(
         path: '/schedule',
-        builder: (context, state) => const CalendarScreen(),
+        builder: (context, state) => const TrainerCalendarScreen(
+          selfService: true,
+        ),
       ),
       GoRoute(
         path: '/trainer-calendar',

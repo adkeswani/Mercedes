@@ -320,9 +320,11 @@ class _ScheduleAssignmentScreenState
   @override
   Widget build(BuildContext context) {
     final AsyncValue<List<ProgramWorkoutOption>> workoutOptionsAsync;
-    if (widget.selfService && widget.programId != null) {
+    if (widget.selfService && _selectedProgramId != null) {
       workoutOptionsAsync =
-          ref.watch(programWorkoutOptionsProvider(widget.programId!));
+          ref.watch(programWorkoutOptionsProvider(_selectedProgramId!));
+    } else if (widget.selfService) {
+      workoutOptionsAsync = const AsyncValue.data(<ProgramWorkoutOption>[]);
     } else {
       workoutOptionsAsync = ref.watch(workoutTemplatesProvider).whenData(
             (workouts) => workouts
@@ -339,6 +341,9 @@ class _ScheduleAssignmentScreenState
     final folders = ref.watch(programFoldersProvider).valueOrNull ?? const [];
     final ownerEnrollments =
         ref.watch(ownerEnrollmentsProvider).valueOrNull ?? const [];
+    final enrolledPrograms = widget.selfService
+        ? ref.watch(myEnrolledProgramsProvider).valueOrNull ?? const []
+        : const <Program>[];
 
     final fixedProgram = widget.programId != null;
     final showProgramPicker = !fixedProgram;
@@ -358,15 +363,18 @@ class _ScheduleAssignmentScreenState
             p.currentVersion > 0 &&
             (p.isAssignable || (isSelf && p.isPersonal)))
         .toList();
-    final workoutModePrograms =
-        allPrograms.where((p) => enrolledProgramIds.contains(p.id)).toList();
-    final pickerPrograms = _type == _AssignmentType.program
-        ? programModePrograms
-        : workoutModePrograms;
+    final workoutModePrograms = widget.selfService
+        ? enrolledPrograms
+        : allPrograms.where((p) => enrolledProgramIds.contains(p.id)).toList();
+    final pickerPrograms = widget.selfService
+        ? enrolledPrograms
+        : _type == _AssignmentType.program
+            ? programModePrograms
+            : workoutModePrograms;
 
     Program? findProgram(String? id) {
       if (id == null) return null;
-      for (final p in allPrograms) {
+      for (final p in [...allPrograms, ...enrolledPrograms]) {
         if (p.id == id) return p;
       }
       return null;
@@ -450,10 +458,12 @@ class _ScheduleAssignmentScreenState
             const SizedBox(height: 8),
             if (pickerPrograms.isEmpty)
               Text(
-                _type == _AssignmentType.program
-                    ? 'No assignable published programs available'
-                    : 'This athlete is not enrolled in any of your programs '
-                        'yet. Assign a program first.',
+                widget.selfService
+                    ? 'You are not actively enrolled in any programs'
+                    : _type == _AssignmentType.program
+                        ? 'No assignable published programs available'
+                        : 'This athlete is not enrolled in any of your programs '
+                            'yet. Assign a program first.',
               )
             else
               DropdownButtonFormField<String>(
@@ -464,9 +474,18 @@ class _ScheduleAssignmentScreenState
                         ? _selectedProgramId
                         : null,
                 decoration: const InputDecoration(labelText: 'Select program'),
-                items: _groupedProgramItems(context, pickerPrograms, folders),
+                items: _groupedProgramItems(
+                  context,
+                  pickerPrograms,
+                  widget.selfService ? const [] : folders,
+                ),
                 onChanged: (value) {
-                  setState(() => _selectedProgramId = value);
+                  setState(() {
+                    _selectedProgramId = value;
+                    _selectedWorkoutId = null;
+                    _selectedWorkoutVersion = null;
+                    _selectedWorkoutType = null;
+                  });
                 },
               ),
             const SizedBox(height: 24),
@@ -497,44 +516,47 @@ class _ScheduleAssignmentScreenState
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
-            workoutOptionsAsync.when(
-              data: (options) {
-                final published =
-                    options.where((option) => option.version > 0).toList();
-                if (published.isEmpty) {
-                  return Text(
-                    widget.selfService
-                        ? 'No workouts are available in this program'
-                        : 'No published workouts available',
+            if (widget.selfService && _selectedProgramId == null)
+              const Text('Select a program first')
+            else
+              workoutOptionsAsync.when(
+                data: (options) {
+                  final published =
+                      options.where((option) => option.version > 0).toList();
+                  if (published.isEmpty) {
+                    return Text(
+                      widget.selfService
+                          ? 'No workouts are available in this program'
+                          : 'No published workouts available',
+                    );
+                  }
+                  return DropdownButtonFormField<String>(
+                    value: _selectedWorkoutId,
+                    decoration:
+                        const InputDecoration(labelText: 'Select workout'),
+                    items: published.map((option) {
+                      final workout = option.template;
+                      return DropdownMenuItem(
+                        value: workout.id,
+                        child: Text('${workout.name} (v${option.version})'),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      final option = published.firstWhere(
+                        (option) => option.template.id == value,
+                      );
+                      final workout = option.template;
+                      setState(() {
+                        _selectedWorkoutId = value;
+                        _selectedWorkoutVersion = option.version;
+                        _selectedWorkoutType = workout.workoutType;
+                      });
+                    },
                   );
-                }
-                return DropdownButtonFormField<String>(
-                  value: _selectedWorkoutId,
-                  decoration:
-                      const InputDecoration(labelText: 'Select workout'),
-                  items: published.map((option) {
-                    final workout = option.template;
-                    return DropdownMenuItem(
-                      value: workout.id,
-                      child: Text('${workout.name} (v${option.version})'),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    final option = published.firstWhere(
-                      (option) => option.template.id == value,
-                    );
-                    final workout = option.template;
-                    setState(() {
-                      _selectedWorkoutId = value;
-                      _selectedWorkoutVersion = option.version;
-                      _selectedWorkoutType = workout.workoutType;
-                    });
-                  },
-                );
-              },
-              loading: () => const CircularProgressIndicator(),
-              error: (e, _) => Text('Error: $e'),
-            ),
+                },
+                loading: () => const CircularProgressIndicator(),
+                error: (e, _) => Text('Error: $e'),
+              ),
             const SizedBox(height: 24),
           ],
 

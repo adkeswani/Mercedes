@@ -152,8 +152,42 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     );
   }
 
+  Widget _buildSelfCalendar(BuildContext context) {
+    final uid = ref.watch(authStateProvider).value?.uid;
+    final programsAsync = ref.watch(myEnrolledProgramsProvider);
+    if (uid == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    _selectedAthleteId = uid;
+    return Scaffold(
+      appBar: AppBar(title: const Text('My Schedule')),
+      body: programsAsync.when(
+        data: (programs) => Column(
+          children: [
+            _buildMonthNav(context),
+            const Divider(height: 1),
+            Expanded(
+              child: _buildCalendarBody(
+                context,
+                programs,
+                athleteView: true,
+              ),
+            ),
+          ],
+        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Error: $e')),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.selfService && widget.programId == null) {
+      return _buildSelfCalendar(context);
+    }
     if (widget.programId != null) {
       return _buildFixedProgramCalendar(context);
     }
@@ -245,6 +279,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     BuildContext context,
     List<Program> programs, {
     String? programId,
+    bool athleteView = false,
   }) {
     final athleteId = _selectedAthleteId;
     if (athleteId == null) return const SizedBox.shrink();
@@ -256,9 +291,8 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
       startDate: _formatIsoDate(firstOfMonth),
       endDate: _formatIsoDate(DateTime(_month.year, _month.month, daysInMonth)),
     );
-    final instancesAsync = programId == null
-        ? ref.watch(athleteCalendarProvider(range))
-        : ref.watch(
+    final instancesAsync = programId != null
+        ? ref.watch(
             programAthleteCalendarProvider(
               ProgramAthleteCalendarKey(
                 programId: programId,
@@ -267,7 +301,17 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                 endDate: range.endDate,
               ),
             ),
-          );
+          )
+        : athleteView
+            ? ref.watch(
+                athleteScheduleProvider(
+                  DateRange(
+                    startDate: range.startDate,
+                    endDate: range.endDate,
+                  ),
+                ),
+              )
+            : ref.watch(athleteCalendarProvider(range));
 
     return instancesAsync.when(
       data: (instances) {
@@ -563,10 +607,11 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     if (athleteId == null) return;
     final iso = _formatIsoDate(date);
     final programId = widget.programId;
-    if (widget.selfService && programId != null) {
+    if (widget.selfService) {
+      final programQuery = programId == null ? '' : '&programId=$programId';
       context.push(
         '/assign?athleteId=$athleteId&date=$iso'
-        '&programId=$programId&selfService=true',
+        '$programQuery&selfService=true',
       );
     } else {
       context.push('/assign?athleteId=$athleteId&date=$iso');

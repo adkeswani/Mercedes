@@ -305,13 +305,7 @@ class _EnrolledProgramCard extends ConsumerWidget {
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              final uid = ref.read(authStateProvider).value?.uid;
-              if (uid != null) {
-                context.push(
-                  '/programs/${enrollment.programId}/athlete/$uid'
-                  '?selfService=true',
-                );
-              }
+              context.push('/programs/${enrollment.programId}/overview');
             },
           ),
         );

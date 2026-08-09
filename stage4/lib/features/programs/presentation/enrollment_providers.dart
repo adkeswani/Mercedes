@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stage4/features/auth/presentation/auth_providers.dart';
 import 'package:stage4/features/programs/data/enrollment_repository.dart';
 import 'package:stage4/features/programs/domain/enrollment.dart';
+import 'package:stage4/features/programs/domain/program.dart';
+import 'package:stage4/features/programs/presentation/program_providers.dart';
 
 /// Singleton repository for enrollments.
 final enrollmentRepositoryProvider = Provider<EnrollmentRepository>((ref) {
@@ -39,4 +41,15 @@ final myEnrollmentsProvider = StreamProvider<List<Enrollment>>((ref) {
   if (user == null) return const Stream.empty();
   final repo = ref.watch(enrollmentRepositoryProvider);
   return repo.watchMyEnrollments(user.uid);
+});
+
+/// Resolves the current athlete's active enrollments to readable programs.
+final myEnrolledProgramsProvider = FutureProvider<List<Program>>((ref) async {
+  final enrollments = await ref.watch(myEnrollmentsProvider.future);
+  final repo = ref.watch(programRepositoryProvider);
+  final programs = await Future.wait(
+    enrollments.map((enrollment) => repo.getById(enrollment.programId)),
+  );
+  return programs.whereType<Program>().toList()
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 });
