@@ -9,6 +9,15 @@ import 'package:stage4/features/programs/presentation/enrollment_providers.dart'
 import 'package:stage4/features/programs/presentation/program_providers.dart';
 import 'package:stage4/features/workouts/domain/workout_instance.dart';
 import 'package:stage4/features/workouts/presentation/workout_instance_providers.dart';
+import 'package:stage4/features/workouts/presentation/workout_providers.dart';
+
+String workoutProgramLabel(String workoutName, String programName) =>
+    '$workoutName - $programName';
+
+String workoutStatusLabel(WorkoutInstanceStatus status) {
+  final name = status.name;
+  return '${name[0].toUpperCase()}${name.substring(1)}';
+}
 
 /// Home screen shown after authentication and onboarding.
 class HomeScreen extends ConsumerWidget {
@@ -188,7 +197,7 @@ class _TodaysWorkoutsSection extends ConsumerWidget {
 }
 
 /// A single today's-workout row that links to the completion/detail screen.
-class _TodaysWorkoutTile extends StatelessWidget {
+class _TodaysWorkoutTile extends ConsumerWidget {
   const _TodaysWorkoutTile({required this.instance});
 
   final WorkoutInstance instance;
@@ -219,8 +228,21 @@ class _TodaysWorkoutTile extends StatelessWidget {
     }
   }
 
+  Future<List<String>> _loadNames(WidgetRef ref) {
+    final workoutRepo = ref.watch(workoutTemplateRepositoryProvider);
+    final programRepo = ref.watch(programRepositoryProvider);
+    return Future.wait([
+      workoutRepo
+          .getById(instance.workoutTemplateId)
+          .then((workout) => workout?.name ?? 'Workout'),
+      programRepo
+          .getById(instance.programId)
+          .then((program) => program?.name ?? 'Program'),
+    ]);
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final color = _statusColor(context);
     final canOpen = instance.isScheduled || instance.isCompleted;
 
@@ -228,11 +250,14 @@ class _TodaysWorkoutTile extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: ListTile(
         leading: Icon(_statusIcon(), color: color),
-        title: Text(instance.workoutTemplateId),
-        subtitle: Text(
-          '${instance.workoutType.name} · ${instance.status.name}'
-          '${instance.rpe != null ? ' · RPE ${instance.rpe}' : ''}',
+        title: FutureBuilder<List<String>>(
+          future: _loadNames(ref),
+          builder: (context, snapshot) {
+            final names = snapshot.data ?? const ['Workout', 'Program'];
+            return Text(workoutProgramLabel(names[0], names[1]));
+          },
         ),
+        subtitle: Text(workoutStatusLabel(instance.status)),
         trailing: instance.isScheduled
             ? FilledButton(
                 onPressed: () =>
