@@ -590,13 +590,47 @@ describe('workoutInstances', () => {
     );
   });
 
-  it('denies athlete from creating workout instance for others program', async () => {
+  it('allows an enrolled athlete to assign a workout to themselves', async () => {
+    await seedProgramWithEnrollment();
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertSucceeds(
+      db.collection('workoutInstances').doc('inst-self-enrolled').set({
+        programId: PROGRAM_ID,
+        athleteId: ATHLETE,
+        assignedBy: ATHLETE,
+        status: 'scheduled',
+      })
+    );
+  });
+
+  it('denies an unenrolled athlete from assigning a workout to themselves', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('programs').doc(PROGRAM_ID).set({
+        ownerId: OWNER,
+        name: 'Test Program',
+        type: 'assignable',
+        status: 'published',
+        currentVersion: 1,
+      });
+    });
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertFails(
+      db.collection('workoutInstances').doc('inst-unenrolled').set({
+        programId: PROGRAM_ID,
+        athleteId: ATHLETE,
+        assignedBy: ATHLETE,
+        status: 'scheduled',
+      })
+    );
+  });
+
+  it('denies an enrolled athlete from assigning to another athlete', async () => {
     await seedProgramWithEnrollment();
     const db = testEnv.authenticatedContext(ATHLETE).firestore();
     await assertFails(
-      db.collection('workoutInstances').doc('inst-fake').set({
+      db.collection('workoutInstances').doc('inst-other-athlete').set({
         programId: PROGRAM_ID,
-        athleteId: ATHLETE,
+        athleteId: STRANGER,
         assignedBy: ATHLETE,
         status: 'scheduled',
       })

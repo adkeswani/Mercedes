@@ -153,7 +153,8 @@ service cloud.firestore {
     //   by assignedBy) would otherwise be rejected. assignedBy is the program
     //   owner at assignment time (create rule enforces isProgramOwner), so
     //   this is equivalent and also robust if the program doc is removed.
-    // Create: program owner assigns workouts
+    // Create: program owner assigns workouts, or an actively enrolled athlete
+    //   assigns a workout to themselves.
     // Update: athlete can complete/edit own; owner can edit scheduling
     //   fields only (reschedule, swap workout, cancel) — never completion
     //   data (rpe, duration, notes, actuals, load), which is athlete-only.
@@ -163,8 +164,12 @@ service cloud.firestore {
                     && (resource.data.athleteId == request.auth.uid
                         || resource.data.assignedBy == request.auth.uid);
       allow create: if isSignedIn()
-                      && isProgramOwner(request.resource.data.programId)
-                      && request.resource.data.assignedBy == request.auth.uid;
+                      && request.resource.data.assignedBy == request.auth.uid
+                      && (isProgramOwner(request.resource.data.programId)
+                          || (request.resource.data.athleteId
+                                == request.auth.uid
+                              && isEnrolledActive(
+                                   request.resource.data.programId)));
       allow update: if isSignedIn()
                       && (resource.data.athleteId == request.auth.uid
                           || (isProgramOwner(resource.data.programId)

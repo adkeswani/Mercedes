@@ -177,9 +177,8 @@ class _TodaysWorkoutsSection extends ConsumerWidget {
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: instances
-              .map((i) => _TodaysWorkoutTile(instance: i))
-              .toList(),
+          children:
+              instances.map((i) => _TodaysWorkoutTile(instance: i)).toList(),
         );
       },
       loading: () => const SizedBox.shrink(),
@@ -309,7 +308,8 @@ class _EnrolledProgramCard extends ConsumerWidget {
               final uid = ref.read(authStateProvider).value?.uid;
               if (uid != null) {
                 context.push(
-                  '/programs/${enrollment.programId}/athlete/$uid',
+                  '/programs/${enrollment.programId}/athlete/$uid'
+                  '?selfService=true',
                 );
               }
             },

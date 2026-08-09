@@ -27,9 +27,9 @@ final athleteScheduleProvider =
 
 /// Streams workout instances for a specific program-athlete pair.
 ///
-/// Used by program owners to view an athlete's schedule.
-final programAthleteScheduleProvider = StreamProvider.family<
-    List<WorkoutInstance>, ProgramAthleteKey>((ref, key) {
+/// Used by program owners and enrolled athletes to view a program schedule.
+final programAthleteScheduleProvider =
+    StreamProvider.family<List<WorkoutInstance>, ProgramAthleteKey>((ref, key) {
   final repo = ref.watch(workoutInstanceRepositoryProvider);
   return repo.watchProgramSchedule(
     programId: key.programId,
@@ -37,12 +37,26 @@ final programAthleteScheduleProvider = StreamProvider.family<
   );
 });
 
+/// Streams one athlete's instances for one program within a date range.
+final programAthleteCalendarProvider =
+    StreamProvider.family<List<WorkoutInstance>, ProgramAthleteCalendarKey>(
+        (ref, key) {
+  final repo = ref.watch(workoutInstanceRepositoryProvider);
+  return repo.watchProgramSchedule(
+    programId: key.programId,
+    athleteId: key.athleteId,
+    startDate: key.startDate,
+    endDate: key.endDate,
+  );
+});
+
 /// Streams every instance the current user (owner) has assigned to a given
 /// athlete across all programs, within a date range.
 ///
 /// Powers the per-athlete trainer calendar.
-final athleteCalendarProvider = StreamProvider.family<List<WorkoutInstance>,
-    AthleteCalendarKey>((ref, key) {
+final athleteCalendarProvider =
+    StreamProvider.family<List<WorkoutInstance>, AthleteCalendarKey>(
+        (ref, key) {
   final user = ref.watch(authStateProvider).value;
   if (user == null) return const Stream.empty();
   final repo = ref.watch(workoutInstanceRepositoryProvider);
@@ -87,6 +101,31 @@ class ProgramAthleteKey {
 
   @override
   int get hashCode => Object.hash(programId, athleteId);
+}
+
+class ProgramAthleteCalendarKey {
+  const ProgramAthleteCalendarKey({
+    required this.programId,
+    required this.athleteId,
+    required this.startDate,
+    required this.endDate,
+  });
+
+  final String programId;
+  final String athleteId;
+  final String startDate;
+  final String endDate;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ProgramAthleteCalendarKey &&
+      programId == other.programId &&
+      athleteId == other.athleteId &&
+      startDate == other.startDate &&
+      endDate == other.endDate;
+
+  @override
+  int get hashCode => Object.hash(programId, athleteId, startDate, endDate);
 }
 
 /// Key for per-athlete trainer calendar queries (owner-scoped).

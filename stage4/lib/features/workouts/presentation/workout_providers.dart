@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:stage4/core/enums.dart';
 import 'package:stage4/features/auth/presentation/auth_providers.dart';
+import 'package:stage4/features/programs/presentation/program_providers.dart';
 import 'package:stage4/features/workouts/data/workout_template_repository.dart';
 import 'package:stage4/features/workouts/domain/workout_template.dart';
 
@@ -12,13 +12,57 @@ final workoutTemplateRepositoryProvider =
 });
 
 /// Streams all non-deleted workout templates for the current user.
-final workoutTemplatesProvider =
-    StreamProvider<List<WorkoutTemplate>>((ref) {
+final workoutTemplatesProvider = StreamProvider<List<WorkoutTemplate>>((ref) {
   final user = ref.watch(authStateProvider).value;
   if (user == null) return const Stream.empty();
   final repo = ref.watch(workoutTemplateRepositoryProvider);
   return repo.watchAll(user.uid);
 });
+
+/// A workout exposed through the latest published version of a program.
+class ProgramWorkoutOption {
+  const ProgramWorkoutOption({
+    required this.template,
+    required this.version,
+  });
+
+  final WorkoutTemplate template;
+  final int version;
+}
+
+/// Loads the distinct workouts available through a program's latest version.
+///
+/// Unlike [workoutTemplatesProvider], this is not creator-scoped: enrolled
+/// athletes can read referenced shared templates and schedule them for
+/// themselves.
+final programWorkoutOptionsProvider =
+    FutureProvider.family<List<ProgramWorkoutOption>, String>(
+  (ref, programId) async {
+    final programRepo = ref.watch(programRepositoryProvider);
+    final workoutRepo = ref.watch(workoutTemplateRepositoryProvider);
+    final entries = await programRepo.getLatestEntries(programId);
+    final seen = <String>{};
+    final options = <ProgramWorkoutOption>[];
+
+    for (final entry in entries) {
+      if (!seen.add(entry.workoutTemplateId)) continue;
+      final template = await workoutRepo.getById(entry.workoutTemplateId);
+      if (template == null) continue;
+      options.add(
+        ProgramWorkoutOption(
+          template: template,
+          version: entry.workoutTemplateVersion,
+        ),
+      );
+    }
+    options.sort(
+      (a, b) => a.template.name.toLowerCase().compareTo(
+            b.template.name.toLowerCase(),
+          ),
+    );
+    return options;
+  },
+);
 
 /// Local draft state for the workout builder.
 ///
@@ -75,7 +119,8 @@ class WorkoutDraftNotifier extends StateNotifier<List<ExercisePrescription>> {
 }
 
 /// Provider for the workout builder draft state.
-final workoutDraftProvider = StateNotifierProvider<WorkoutDraftNotifier,
-    List<ExercisePrescription>>((ref) {
+final workoutDraftProvider =
+    StateNotifierProvider<WorkoutDraftNotifier, List<ExercisePrescription>>(
+        (ref) {
   return WorkoutDraftNotifier();
 });

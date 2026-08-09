@@ -19,11 +19,18 @@ import 'package:stage4/features/workouts/presentation/workout_instance_providers
 /// rescheduled, or cancelled) and actions to assign a program or a single
 /// workout to that day.
 class TrainerCalendarScreen extends ConsumerStatefulWidget {
-  const TrainerCalendarScreen({super.key, this.athleteId});
+  const TrainerCalendarScreen({
+    super.key,
+    this.athleteId,
+    this.programId,
+    this.selfService = false,
+  });
 
   /// When provided, the calendar opens focused on this athlete instead of
   /// defaulting to the first enrolled athlete.
   final String? athleteId;
+  final String? programId;
+  final bool selfService;
 
   @override
   ConsumerState<TrainerCalendarScreen> createState() =>
@@ -69,8 +76,18 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
 
   String _monthLabel(DateTime date) {
     const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return '${months[date.month - 1]} ${date.year}';
   }
@@ -97,8 +114,50 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     }
   }
 
+  Widget _buildFixedProgramCalendar(BuildContext context) {
+    final athleteId = _selectedAthleteId;
+    if (athleteId == null) {
+      return const Scaffold(
+        body: Center(child: Text('No athlete selected')),
+      );
+    }
+    final programRepo = ref.watch(programRepositoryProvider);
+    return FutureBuilder<Program?>(
+      future: programRepo.getById(widget.programId!),
+      builder: (context, snapshot) {
+        final program = snapshot.data;
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(program?.name ?? 'Program Calendar'),
+          ),
+          body: snapshot.connectionState != ConnectionState.done
+              ? const Center(child: CircularProgressIndicator())
+              : program == null
+                  ? const Center(child: Text('Program unavailable'))
+                  : Column(
+                      children: [
+                        _buildMonthNav(context),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: _buildCalendarBody(
+                            context,
+                            [program],
+                            programId: program.id,
+                          ),
+                        ),
+                      ],
+                    ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.programId != null) {
+      return _buildFixedProgramCalendar(context);
+    }
+
     final enrollmentsAsync = ref.watch(ownerEnrollmentsProvider);
     final programs = ref.watch(programsProvider).valueOrNull ?? [];
 
@@ -121,6 +180,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
               ),
             );
           }
+
           if (_selectedAthleteId == null ||
               !athleteIds.contains(_selectedAthleteId)) {
             _selectedAthleteId = athleteIds.first;
@@ -181,7 +241,11 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     );
   }
 
-  Widget _buildCalendarBody(BuildContext context, List<Program> programs) {
+  Widget _buildCalendarBody(
+    BuildContext context,
+    List<Program> programs, {
+    String? programId,
+  }) {
     final athleteId = _selectedAthleteId;
     if (athleteId == null) return const SizedBox.shrink();
 
@@ -192,7 +256,18 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
       startDate: _formatIsoDate(firstOfMonth),
       endDate: _formatIsoDate(DateTime(_month.year, _month.month, daysInMonth)),
     );
-    final instancesAsync = ref.watch(athleteCalendarProvider(range));
+    final instancesAsync = programId == null
+        ? ref.watch(athleteCalendarProvider(range))
+        : ref.watch(
+            programAthleteCalendarProvider(
+              ProgramAthleteCalendarKey(
+                programId: programId,
+                athleteId: athleteId,
+                startDate: range.startDate,
+                endDate: range.endDate,
+              ),
+            ),
+          );
 
     return instancesAsync.when(
       data: (instances) {
@@ -204,8 +279,8 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
           children: [
             Expanded(
               child: SingleChildScrollView(
-                child: _buildGrid(context, firstOfMonth, daysInMonth, byDate,
-                    programs),
+                child: _buildGrid(
+                    context, firstOfMonth, daysInMonth, byDate, programs),
               ),
             ),
             _buildLegend(context, instances, programs),
@@ -298,9 +373,8 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
           border: Border.all(
             color: Theme.of(context).colorScheme.outlineVariant,
           ),
-          color: isToday
-              ? Theme.of(context).colorScheme.primaryContainer
-              : null,
+          color:
+              isToday ? Theme.of(context).colorScheme.primaryContainer : null,
           borderRadius: BorderRadius.circular(4),
         ),
         padding: const EdgeInsets.all(2),
@@ -415,7 +489,10 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                         subtitle: Text(
                           '${i.workoutType.name} · ${i.status.name}',
                         ),
-                        trailing: i.isScheduled
+                        trailing: i.isScheduled &&
+                                (!widget.selfService ||
+                                    i.assignedBy ==
+                                        ref.read(authStateProvider).value?.uid)
                             ? PopupMenuButton<String>(
                                 onSelected: (value) async {
                                   Navigator.of(sheetContext).pop();
@@ -462,7 +539,11 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.add),
-                  title: const Text('Assign workout or program'),
+                  title: Text(
+                    widget.selfService
+                        ? 'Schedule workout'
+                        : 'Assign workout or program',
+                  ),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     _assignOnDay(context, date);
@@ -481,10 +562,19 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     final athleteId = _selectedAthleteId;
     if (athleteId == null) return;
     final iso = _formatIsoDate(date);
-    context.push('/assign?athleteId=$athleteId&date=$iso');
+    final programId = widget.programId;
+    if (widget.selfService && programId != null) {
+      context.push(
+        '/assign?athleteId=$athleteId&date=$iso'
+        '&programId=$programId&selfService=true',
+      );
+    } else {
+      context.push('/assign?athleteId=$athleteId&date=$iso');
+    }
   }
 
-  Future<void> _reschedule(BuildContext context, WorkoutInstance instance) async {
+  Future<void> _reschedule(
+      BuildContext context, WorkoutInstance instance) async {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;
     final current = DateTime.tryParse(instance.scheduledDate) ?? DateTime.now();

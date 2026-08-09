@@ -35,12 +35,14 @@ class ScheduleAssignmentScreen extends ConsumerStatefulWidget {
     this.preselectedAthleteId,
     this.preselectedDate,
     this.startInProgramMode = false,
+    this.selfService = false,
   });
 
   final String? programId;
   final String? preselectedAthleteId;
   final DateTime? preselectedDate;
   final bool startInProgramMode;
+  final bool selfService;
 
   @override
   ConsumerState<ScheduleAssignmentScreen> createState() =>
@@ -71,9 +73,11 @@ class _ScheduleAssignmentScreenState
     super.initState();
     _selectedAthleteId = widget.preselectedAthleteId;
     _selectedProgramId = widget.programId;
-    _type = widget.startInProgramMode
-        ? _AssignmentType.program
-        : _AssignmentType.workout;
+    _type = widget.selfService
+        ? _AssignmentType.workout
+        : widget.startInProgramMode
+            ? _AssignmentType.program
+            : _AssignmentType.workout;
     _selectedDate =
         widget.preselectedDate ?? DateTime.now().add(const Duration(days: 1));
     _endDate = _selectedDate.add(const Duration(days: 28));
@@ -315,7 +319,22 @@ class _ScheduleAssignmentScreenState
 
   @override
   Widget build(BuildContext context) {
-    final workoutsAsync = ref.watch(workoutTemplatesProvider);
+    final AsyncValue<List<ProgramWorkoutOption>> workoutOptionsAsync;
+    if (widget.selfService && widget.programId != null) {
+      workoutOptionsAsync =
+          ref.watch(programWorkoutOptionsProvider(widget.programId!));
+    } else {
+      workoutOptionsAsync = ref.watch(workoutTemplatesProvider).whenData(
+            (workouts) => workouts
+                .map(
+                  (workout) => ProgramWorkoutOption(
+                    template: workout,
+                    version: workout.currentVersion,
+                  ),
+                )
+                .toList(),
+          );
+    }
     final allPrograms = ref.watch(programsProvider).valueOrNull ?? const [];
     final folders = ref.watch(programFoldersProvider).valueOrNull ?? const [];
     final ownerEnrollments =
@@ -357,39 +376,43 @@ class _ScheduleAssignmentScreenState
     final programPublished = (program?.currentVersion ?? 0) > 0;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Assign')),
+      appBar: AppBar(
+        title: Text(widget.selfService ? 'Schedule Workout' : 'Assign'),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           // Assignment type toggle
-          Text(
-            'What to assign',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          SegmentedButton<_AssignmentType>(
-            segments: const [
-              ButtonSegment(
-                value: _AssignmentType.workout,
-                label: Text('Workout'),
-                icon: Icon(Icons.fitness_center),
-              ),
-              ButtonSegment(
-                value: _AssignmentType.program,
-                label: Text('Program'),
-                icon: Icon(Icons.calendar_month),
-              ),
-            ],
-            selected: {_type},
-            onSelectionChanged: (selection) {
-              setState(() {
-                _type = selection.first;
-                // The valid program set differs between modes; clear the
-                // in-screen selection so a stale program can't be assigned.
-                if (showProgramPicker) _selectedProgramId = null;
-              });
-            },
-          ),
+          if (!widget.selfService) ...[
+            Text(
+              'What to assign',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            SegmentedButton<_AssignmentType>(
+              segments: const [
+                ButtonSegment(
+                  value: _AssignmentType.workout,
+                  label: Text('Workout'),
+                  icon: Icon(Icons.fitness_center),
+                ),
+                ButtonSegment(
+                  value: _AssignmentType.program,
+                  label: Text('Program'),
+                  icon: Icon(Icons.calendar_month),
+                ),
+              ],
+              selected: {_type},
+              onSelectionChanged: (selection) {
+                setState(() {
+                  _type = selection.first;
+                  // The valid program set differs between modes; clear the
+                  // in-screen selection so a stale program can't be assigned.
+                  if (showProgramPicker) _selectedProgramId = null;
+                });
+              },
+            ),
+          ],
           if (_type == _AssignmentType.program &&
               _selectedProgramId != null &&
               !programPublished) ...[
@@ -474,28 +497,36 @@ class _ScheduleAssignmentScreenState
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
-            workoutsAsync.when(
-              data: (workouts) {
+            workoutOptionsAsync.when(
+              data: (options) {
                 final published =
-                    workouts.where((w) => w.currentVersion > 0).toList();
+                    options.where((option) => option.version > 0).toList();
                 if (published.isEmpty) {
-                  return const Text('No published workouts available');
+                  return Text(
+                    widget.selfService
+                        ? 'No workouts are available in this program'
+                        : 'No published workouts available',
+                  );
                 }
                 return DropdownButtonFormField<String>(
                   value: _selectedWorkoutId,
                   decoration:
                       const InputDecoration(labelText: 'Select workout'),
-                  items: published.map((w) {
+                  items: published.map((option) {
+                    final workout = option.template;
                     return DropdownMenuItem(
-                      value: w.id,
-                      child: Text('${w.name} (v${w.currentVersion})'),
+                      value: workout.id,
+                      child: Text('${workout.name} (v${option.version})'),
                     );
                   }).toList(),
                   onChanged: (value) {
-                    final workout = published.firstWhere((w) => w.id == value);
+                    final option = published.firstWhere(
+                      (option) => option.template.id == value,
+                    );
+                    final workout = option.template;
                     setState(() {
                       _selectedWorkoutId = value;
-                      _selectedWorkoutVersion = workout.currentVersion;
+                      _selectedWorkoutVersion = option.version;
                       _selectedWorkoutType = workout.workoutType;
                     });
                   },

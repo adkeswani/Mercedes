@@ -12,7 +12,6 @@ import 'package:stage4/features/exercises/presentation/exercise_list_screen.dart
 import 'package:stage4/features/programs/presentation/program_builder_screen.dart';
 import 'package:stage4/features/programs/presentation/program_list_screen.dart';
 import 'package:stage4/features/programs/presentation/roster_athletes_screen.dart';
-import 'package:stage4/features/programs/presentation/athlete_schedule_screen.dart';
 import 'package:stage4/features/workouts/presentation/calendar_screen.dart';
 import 'package:stage4/features/workouts/presentation/schedule_assignment_screen.dart';
 import 'package:stage4/features/workouts/presentation/trainer_calendar_screen.dart';
@@ -122,17 +121,20 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/assign',
         builder: (context, state) => ScheduleAssignmentScreen(
+          programId: state.uri.queryParameters['programId'],
           preselectedAthleteId: state.uri.queryParameters['athleteId'],
           preselectedDate:
               DateTime.tryParse(state.uri.queryParameters['date'] ?? ''),
           startInProgramMode: state.uri.queryParameters['mode'] == 'program',
+          selfService: state.uri.queryParameters['selfService'] == 'true',
         ),
       ),
       GoRoute(
         path: '/programs/:id/athlete/:athleteId',
-        builder: (context, state) => AthleteScheduleScreen(
+        builder: (context, state) => TrainerCalendarScreen(
           programId: state.pathParameters['id']!,
           athleteId: state.pathParameters['athleteId']!,
+          selfService: state.uri.queryParameters['selfService'] == 'true',
         ),
       ),
       GoRoute(

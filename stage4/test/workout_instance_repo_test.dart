@@ -42,6 +42,29 @@ void main() {
     });
   }
 
+  Future<void> publishProgramEntries(
+    String programId, {
+    String workoutTemplateId = 'wt1',
+    int workoutTemplateVersion = 1,
+  }) async {
+    await fakeFirestore
+        .collection('programs')
+        .doc(programId)
+        .collection('programVersions')
+        .doc('1')
+        .set({
+      'versionNumber': 1,
+      'entries': [
+        {
+          'workoutTemplateId': workoutTemplateId,
+          'workoutTemplateVersion': workoutTemplateVersion,
+          'dayOffset': 0,
+          'sortOrder': 0,
+        },
+      ],
+    });
+  }
+
   /// Helper: assigns a workout and returns the instance ID.
   Future<String> assignWorkout({
     String programId = 'prog1',
@@ -70,10 +93,8 @@ void main() {
         final id = await assignWorkout();
 
         expect(id, isNotEmpty);
-        final doc = await fakeFirestore
-            .collection('workoutInstances')
-            .doc(id)
-            .get();
+        final doc =
+            await fakeFirestore.collection('workoutInstances').doc(id).get();
         expect(doc.exists, isTrue);
         expect(doc.data()!['programId'], 'prog1');
         expect(doc.data()!['athleteId'], 'athlete1');
@@ -126,6 +147,41 @@ void main() {
         expect(id, isNotEmpty);
       });
 
+      test('allows active enrollee to assign a program workout to themselves',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await publishProgramEntries('prog1');
+
+        final id = await assignWorkout(
+          athleteId: 'athlete1',
+          assignedBy: 'athlete1',
+        );
+
+        final doc =
+            await fakeFirestore.collection('workoutInstances').doc(id).get();
+        expect(doc.data()!['assignedBy'], 'athlete1');
+        expect(doc.data()!['programVersion'], 1);
+      });
+
+      test('blocks enrollee from self-assigning a workout outside the program',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await publishProgramEntries(
+          'prog1',
+          workoutTemplateId: 'different-workout',
+        );
+
+        expect(
+          () => assignWorkout(
+            athleteId: 'athlete1',
+            assignedBy: 'athlete1',
+          ),
+          throwsStateError,
+        );
+      });
+
       test('blocks non-self assignment for personal programs', () async {
         await createProgram('prog1', ownerId: 'coach1', type: 'personal');
 
@@ -163,10 +219,8 @@ void main() {
           athleteNotes: 'Felt strong',
         );
 
-        final doc = await fakeFirestore
-            .collection('workoutInstances')
-            .doc(id)
-            .get();
+        final doc =
+            await fakeFirestore.collection('workoutInstances').doc(id).get();
         expect(doc.data()!['status'], 'completed');
         expect(doc.data()!['rpe'], 7);
         expect(doc.data()!['durationMinutes'], 55);
@@ -379,6 +433,26 @@ void main() {
         expect(instances.length, 1);
         expect(instances.first.programId, 'prog1');
       });
+
+      test('limits instances to the requested date range', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await assignWorkout(scheduledDate: '2026-06-01');
+        await assignWorkout(scheduledDate: '2026-06-15');
+        await assignWorkout(scheduledDate: '2026-07-01');
+
+        final instances = await repo
+            .watchProgramSchedule(
+              programId: 'prog1',
+              athleteId: 'athlete1',
+              startDate: '2026-06-10',
+              endDate: '2026-06-30',
+            )
+            .first;
+
+        expect(instances, hasLength(1));
+        expect(instances.single.scheduledDate, '2026-06-15');
+      });
     });
 
     group('getById', () {
@@ -479,9 +553,8 @@ void main() {
         // Mon 15, Wed 17, Mon 22, Wed 24 = 4
         expect(count, 4);
 
-        final snapshot = await fakeFirestore
-            .collection('workoutInstances')
-            .get();
+        final snapshot =
+            await fakeFirestore.collection('workoutInstances').get();
         expect(snapshot.docs.length, 4);
       });
 
@@ -506,23 +579,20 @@ void main() {
           recurrence: recurrence,
         );
 
-        final snapshot = await fakeFirestore
-            .collection('workoutInstances')
-            .get();
+        final snapshot =
+            await fakeFirestore.collection('workoutInstances').get();
         final docs = snapshot.docs;
         expect(docs.length, 4); // Jun 15, 22, 29, Jul 6
 
         // Find the root
-        final rootDocs = docs
-            .where((d) => d.data()['isRecurrenceRoot'] == true)
-            .toList();
+        final rootDocs =
+            docs.where((d) => d.data()['isRecurrenceRoot'] == true).toList();
         expect(rootDocs.length, 1);
         final rootId = rootDocs.first.id;
 
         // All children reference the root
-        final children = docs
-            .where((d) => d.data()['isRecurrenceRoot'] != true)
-            .toList();
+        final children =
+            docs.where((d) => d.data()['isRecurrenceRoot'] != true).toList();
         for (final child in children) {
           expect(child.data()['recurrenceRootId'], rootId);
         }
@@ -549,9 +619,8 @@ void main() {
           recurrence: recurrence,
         );
 
-        final snapshot = await fakeFirestore
-            .collection('workoutInstances')
-            .get();
+        final snapshot =
+            await fakeFirestore.collection('workoutInstances').get();
         for (final doc in snapshot.docs) {
           final rec = doc.data()['recurrence'] as Map<String, dynamic>;
           expect(rec['pattern'], 'biweekly');
@@ -607,6 +676,34 @@ void main() {
           throwsStateError,
         );
       });
+
+      test('allows active enrollee to schedule a recurring program workout',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await publishProgramEntries('prog1');
+        final recurrence = Recurrence(
+          pattern: RecurrencePattern.custom,
+          intervalDays: 7,
+          endDate: '2026-06-22',
+        );
+
+        final count = await repo.assignRecurringWorkouts(
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          workoutTemplateId: 'wt1',
+          workoutTemplateVersion: 1,
+          startDate: '2026-06-15',
+          workoutType: WorkoutType.pull,
+          assignedBy: 'athlete1',
+          recurrence: recurrence,
+        );
+
+        expect(count, 2);
+        final docs = await fakeFirestore.collection('workoutInstances').get();
+        expect(docs.docs, hasLength(2));
+        expect(docs.docs.every((d) => d.data()['programVersion'] == 1), isTrue);
+      });
     });
 
     group('cancelRecurrence', () {
@@ -632,9 +729,8 @@ void main() {
         );
 
         // Find the root
-        final snapshot = await fakeFirestore
-            .collection('workoutInstances')
-            .get();
+        final snapshot =
+            await fakeFirestore.collection('workoutInstances').get();
         final rootDoc = snapshot.docs
             .firstWhere((d) => d.data()['isRecurrenceRoot'] == true);
 
@@ -645,9 +741,7 @@ void main() {
         expect(cancelled, 4); // All 4 instances
 
         // Verify all are cancelled
-        final after = await fakeFirestore
-            .collection('workoutInstances')
-            .get();
+        final after = await fakeFirestore.collection('workoutInstances').get();
         for (final doc in after.docs) {
           expect(doc.data()['status'], 'cancelled');
         }
@@ -675,9 +769,8 @@ void main() {
         );
 
         // Complete the root instance
-        final snapshot = await fakeFirestore
-            .collection('workoutInstances')
-            .get();
+        final snapshot =
+            await fakeFirestore.collection('workoutInstances').get();
         final rootDoc = snapshot.docs
             .firstWhere((d) => d.data()['isRecurrenceRoot'] == true);
 
@@ -909,7 +1002,8 @@ void main() {
         }
       });
 
-      test('deleteIncompleteProgramAssignment removes incomplete but keeps '
+      test(
+          'deleteIncompleteProgramAssignment removes incomplete but keeps '
           'completed', () async {
         await createProgram('prog1');
         await enrollAthlete('prog1', 'athlete1');
@@ -956,7 +1050,8 @@ void main() {
         expect(remaining.docs.first.data()['status'], 'completed');
       });
 
-      test('deleteIncompleteProgramAssignment skips instances not owned by '
+      test(
+          'deleteIncompleteProgramAssignment skips instances not owned by '
           'caller', () async {
         await createProgram('prog1');
         await enrollAthlete('prog1', 'athlete1');
@@ -1061,10 +1156,8 @@ void main() {
           ownerId: 'coach1',
         );
 
-        final doc = await fakeFirestore
-            .collection('workoutInstances')
-            .doc(id)
-            .get();
+        final doc =
+            await fakeFirestore.collection('workoutInstances').doc(id).get();
         expect(doc.data()!['scheduledDate'], '2026-06-10');
       });
 
@@ -1107,10 +1200,8 @@ void main() {
 
         await repo.cancelInstance(instanceId: id, ownerId: 'coach1');
 
-        final doc = await fakeFirestore
-            .collection('workoutInstances')
-            .doc(id)
-            .get();
+        final doc =
+            await fakeFirestore.collection('workoutInstances').doc(id).get();
         expect(doc.data()!['status'], 'cancelled');
       });
 

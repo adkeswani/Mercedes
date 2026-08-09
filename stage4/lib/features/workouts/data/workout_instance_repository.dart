@@ -20,50 +20,81 @@ class WorkoutInstanceRepository {
 
   /// Verifies the caller can assign workouts in this program.
   ///
-  /// For assignable programs: caller must be the owner and athlete
-  /// must be actively enrolled. For personal programs: caller must
-  /// be both the owner and the athlete (self-assignment).
-  /// Throws [StateError] on any violation.
-  Future<void> _verifyCanAssign({
+  /// For assignable programs, the owner may assign to an active enrollee and
+  /// an active enrollee may assign to themselves. For personal programs,
+  /// caller must be both owner and athlete.
+  ///
+  /// Returns the published program version when this is enrolled-athlete
+  /// self-assignment; owner assignment returns null.
+  Future<int?> _verifyCanAssign({
     required String programId,
     required String athleteId,
     required String assignedBy,
   }) async {
-    final programDoc = await _firestore
-        .collection('programs')
-        .doc(programId)
-        .get();
+    final programDoc =
+        await _firestore.collection('programs').doc(programId).get();
     if (!programDoc.exists) {
       throw StateError('Program $programId not found');
     }
     final data = programDoc.data()!;
     final ownerId = data['ownerId'] as String?;
     final type = data['type'] as String?;
+    final currentVersion = (data['currentVersion'] as int?) ?? 0;
 
-    if (ownerId != assignedBy) {
+    if (type == 'personal') {
+      if (ownerId != assignedBy || athleteId != assignedBy) {
+        throw StateError('Personal programs only allow self-assignment');
+      }
+      return null;
+    }
+
+    if (ownerId != assignedBy && athleteId != assignedBy) {
       throw StateError(
-        'User $assignedBy is not the owner of program $programId',
+        'User $assignedBy cannot assign program $programId to $athleteId',
       );
     }
 
-    if (type == 'personal') {
-      if (athleteId != assignedBy) {
-        throw StateError(
-          'Personal programs only allow self-assignment',
-        );
-      }
-    } else {
-      // Assignable — athlete must be enrolled
-      final enrollmentDoc = await _firestore
-          .collection('enrollments')
-          .doc('${programId}_$athleteId')
-          .get();
-      if (!enrollmentDoc.exists ||
-          enrollmentDoc.data()?['status'] != 'active') {
-        throw StateError(
-          'Athlete $athleteId is not actively enrolled in program $programId',
-        );
-      }
+    final enrollmentDoc = await _firestore
+        .collection('enrollments')
+        .doc('${programId}_$athleteId')
+        .get();
+    if (!enrollmentDoc.exists || enrollmentDoc.data()?['status'] != 'active') {
+      throw StateError(
+        'Athlete $athleteId is not actively enrolled in program $programId',
+      );
+    }
+
+    if (ownerId == assignedBy) return null;
+    if (currentVersion < 1) {
+      throw StateError('Program $programId has no published version');
+    }
+    return currentVersion;
+  }
+
+  Future<void> _verifyWorkoutInProgram({
+    required String programId,
+    required int programVersion,
+    required String workoutTemplateId,
+    required int workoutTemplateVersion,
+  }) async {
+    final versionDoc = await _firestore
+        .collection('programs')
+        .doc(programId)
+        .collection('programVersions')
+        .doc(programVersion.toString())
+        .get();
+    final entries =
+        (versionDoc.data()?['entries'] as List<dynamic>?) ?? const [];
+    final available = entries.any((raw) {
+      final entry = raw as Map<String, dynamic>;
+      return entry['workoutTemplateId'] == workoutTemplateId &&
+          entry['workoutTemplateVersion'] == workoutTemplateVersion;
+    });
+    if (!available) {
+      throw StateError(
+        'Workout $workoutTemplateId version $workoutTemplateVersion '
+        'is not in program $programId version $programVersion',
+      );
     }
   }
 
@@ -82,15 +113,23 @@ class WorkoutInstanceRepository {
     required WorkoutType workoutType,
     required String assignedBy,
   }) async {
-    await _verifyCanAssign(
+    final selfProgramVersion = await _verifyCanAssign(
       programId: programId,
       athleteId: athleteId,
       assignedBy: assignedBy,
     );
+    if (selfProgramVersion != null) {
+      await _verifyWorkoutInProgram(
+        programId: programId,
+        programVersion: selfProgramVersion,
+        workoutTemplateId: workoutTemplateId,
+        workoutTemplateVersion: workoutTemplateVersion,
+      );
+    }
     final docRef = _collection.doc();
     await docRef.set({
       'programId': programId,
-      'programVersion': 0,
+      'programVersion': selfProgramVersion ?? 0,
       'programAssignmentId': null,
       'athleteId': athleteId,
       'workoutTemplateId': workoutTemplateId,
@@ -142,11 +181,19 @@ class WorkoutInstanceRepository {
   }) async {
     recurrence.validate();
 
-    await _verifyCanAssign(
+    final selfProgramVersion = await _verifyCanAssign(
       programId: programId,
       athleteId: athleteId,
       assignedBy: assignedBy,
     );
+    if (selfProgramVersion != null) {
+      await _verifyWorkoutInProgram(
+        programId: programId,
+        programVersion: selfProgramVersion,
+        workoutTemplateId: workoutTemplateId,
+        workoutTemplateVersion: workoutTemplateVersion,
+      );
+    }
 
     final dates = expandRecurrence(
       startDate: startDate,
@@ -165,7 +212,7 @@ class WorkoutInstanceRepository {
     // Create root instance (first date)
     batch.set(rootRef, {
       'programId': programId,
-      'programVersion': 0,
+      'programVersion': selfProgramVersion ?? 0,
       'programAssignmentId': null,
       'athleteId': athleteId,
       'workoutTemplateId': workoutTemplateId,
@@ -199,7 +246,7 @@ class WorkoutInstanceRepository {
       final childRef = _collection.doc();
       batch.set(childRef, {
         'programId': programId,
-        'programVersion': 0,
+        'programVersion': selfProgramVersion ?? 0,
         'programAssignmentId': null,
         'athleteId': athleteId,
         'workoutTemplateId': workoutTemplateId,
@@ -586,19 +633,31 @@ class WorkoutInstanceRepository {
 
   /// Streams workout instances for a specific program-athlete pair.
   ///
-  /// Used by the owner to view an athlete's schedule within a program.
+  /// Used by the owner or athlete to view a schedule within a program.
   Stream<List<WorkoutInstance>> watchProgramSchedule({
     required String programId,
     required String athleteId,
+    String? startDate,
+    String? endDate,
   }) {
-    return _collection
+    Query<Map<String, dynamic>> query = _collection
         .where('programId', isEqualTo: programId)
-        .where('athleteId', isEqualTo: athleteId)
-        .orderBy('scheduledDate', descending: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => _fromMap(doc.data(), doc.id))
-            .toList());
+        .where('athleteId', isEqualTo: athleteId);
+    if (startDate != null) {
+      query = query.where(
+        'scheduledDate',
+        isGreaterThanOrEqualTo: startDate,
+      );
+    }
+    if (endDate != null) {
+      query = query.where(
+        'scheduledDate',
+        isLessThanOrEqualTo: endDate,
+      );
+    }
+    return query.orderBy('scheduledDate', descending: true).snapshots().map(
+        (snapshot) =>
+            snapshot.docs.map((doc) => _fromMap(doc.data(), doc.id)).toList());
   }
 
   /// Streams all instances the [ownerId] has assigned to [athleteId] across
@@ -620,9 +679,8 @@ class WorkoutInstanceRepository {
         .where('scheduledDate', isLessThanOrEqualTo: endDate)
         .orderBy('scheduledDate')
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => _fromMap(doc.data(), doc.id))
-            .toList());
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => _fromMap(doc.data(), doc.id)).toList());
   }
 
   /// Moves a scheduled instance to [newDate].
