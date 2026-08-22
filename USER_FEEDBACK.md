@@ -135,3 +135,65 @@ Exercise Library
 - **Activity event stream:** Record completions, comments, difficulty, reactions, personal bests, assignments, and program lifecycle events. Build dashboard views and notifications from this stream.
 - **Explicit ownership and visibility:** Distinguish personal, trainer-shared, client-specific, and system content, with ownership and mutation permissions enforced for every write.
 - **Integration state machines:** Represent payment signup, account linking, invitations, and waivers with explicit states such as pending, matched, action required, and complete instead of relying on implicit email matching.
+
+## Raw domain model notes
+
+These notes capture initial thinking for later review. They are not yet resolved design decisions.
+
+- A trainer can start building at any layer. They can work top-down from a program, create workouts within it, and create exercises within those workouts.
+- Any exercise, workout, or program is copyable.
+- Assigning a workout or program should create a new instance rather than storing completions as separate objects.
+- It is not yet decided whether an exercise inside an assigned workout should reference the original exercise or use a snapshot, especially when the original exercise is later updated.
+- Tags apply to exercises, workouts, and programs.
+- Once a workout or program instance is assigned, the recipient owns it and has write permission, including the ability to convert it into a template.
+- The trainer who assigned a workout or program retains read and write permission on the assigned instance.
+- An athlete can have multiple programs; a separate add-on program concept is unnecessary.
+- Workout types and grading systems should remain flexible.
+- Initial climbing support will probably include V-scale and gym colors, with details to be specified later.
+- A trainer's library is visible to their clients, but each client sees only the library associated with a particular program. This allows trainers to sell programs without exposing their entire library.
+- Personal-best rules depend on the exercise type. For example, a longer duration is better for a duration exercise, while a greater distance is better for a distance exercise.
+- Staff support is deferred. When added, it should allow a trainer to share template ownership and client visibility with another trainer.
+- Template edits should be able to propagate to assigned instances while preserving the relationship between each template and its instances.
+- Propagation may require a backfill process and should update an athlete's instances only while the athlete remains associated with the trainer.
+- The interaction between propagation, ownership, trainer-client association, and access rules is recognized as complex and remains unresolved.
+- Desktop, mobile, and web should use one responsive application.
+- Mobile should expose restricted capabilities.
+- On the website, a user should be able to choose between the app-style view and the full-capability view.
+- The web app should support early use before native app-store distribution.
+- Athletes need private notes for specific exercises that persist across all instances of that exercise, such as preferred equipment settings.
+- Athletes and trainers need shared discussions attached to workout, program, or exercise instances.
+- A shared discussion should be visible to both the athlete and trainer.
+- Trainers and athletes should be able to react to shared comments.
+- Each note or discussion should be a thread containing multiple comments.
+- Athlete notes and shared comments may be separate domain objects backed by a common thread or message model.
+- Program phases are organizational separators rather than entities with progression or scheduling rules.
+- Trainers configure and freely rearrange workouts and phase separators within a program.
+
+## Domain model decisions and remaining gaps
+
+### Confirmed or working decisions
+
+- Template-derived content supports two relationship modes:
+  - **Subscription:** The derived object remains linked and receives eligible template changes.
+  - **Copy:** The derived object is independent and does not receive later template changes.
+- A subscription must unlink and retain its current state when the workout is completed.
+- A subscription must unlink and retain its current state when the athlete is no longer a client of the trainer.
+- Linked content therefore needs source-template identity, source version, relationship mode, and unlink metadata.
+- Library access depends on an active trainer-client relationship. An athlete loses access to the trainer's library when they are no longer a client.
+
+### Proposed defaults pending confirmation
+
+- Exercise content included in a published workout should use a snapshot of its display and execution fields while retaining the source exercise ID. This preserves historical behavior while allowing provenance and deliberate refreshes.
+- Trainer and athlete permissions should be field-specific:
+  - The athlete controls completion results, private exercise notes, and their own messages.
+  - The assigning trainer controls scheduling and eligible prescription updates while the trainer-client relationship is active.
+  - Neither party silently overwrites the other's authored data.
+  - Both parties can participate in shared discussion threads and reactions.
+- Subscription propagation should apply only to incomplete linked content. Athlete completion data and fields explicitly customized on an instance should not be overwritten.
+
+### Still unresolved
+
+- Which exercise fields are included in snapshots and which remain live references.
+- Which instance fields count as explicit overrides and are protected from subscription propagation.
+- Whether trainers can edit an athlete's completed results, annotate them separately, or only discuss them.
+- Whether library items already copied or instantiated remain usable after the trainer-client relationship ends; the current assumption is yes, while browsing and creating new subscriptions are disabled.
