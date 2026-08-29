@@ -2,6 +2,9 @@
 
 Use this file to record feedback, context, and follow-up actions.
 
+The approved implementation direction distilled from this feedback is in
+[`docs/domain-model-design.md`](docs/domain-model-design.md).
+
 ## Feedback entries
 
 ### 2026-08-14 - Trainer and athlete experience
@@ -174,26 +177,38 @@ These notes capture initial thinking for later review. They are not yet resolved
 ### Confirmed or working decisions
 
 - Template-derived content supports two relationship modes:
-  - **Subscription:** The derived object remains linked and receives eligible template changes.
+  - **Subscription:** The athlete's assigned program remains linked. Trainer updates propagate to future workouts in that program.
   - **Copy:** The derived object is independent and does not receive later template changes.
 - A subscription must unlink and retain its current state when the workout is completed.
 - A subscription must unlink and retain its current state when the athlete is no longer a client of the trainer.
 - Linked content therefore needs source-template identity, source version, relationship mode, and unlink metadata.
 - Library access depends on an active trainer-client relationship. An athlete loses access to the trainer's library when they are no longer a client.
+- Domain rules should not require trainers or athletes to understand complicated ownership, propagation, or lifecycle concepts.
+- Copying versus subscribing must be clear in the UX so users understand whether future trainer changes will apply. The UX should still prefer familiar language and safe defaults rather than exposing implementation details.
+- Structurally customizing subscribed program or workout content converts it into an independent copy and stops future template propagation.
+- The UX must explain and confirm this conversion before the first structural customization.
+- Personal notes, comment threads, reactions, scheduling state, and completion data do not change prescribed content and therefore do not convert a subscription into a copy.
+- The trainer may update an assigned workout only while it is incomplete and not in the past.
+- After a workout is completed or its scheduled date has passed, the workout content and results become historical. The trainer may then participate only through shared comment threads and reactions.
+- Exercise history must be preserved so past workouts continue to show the exercise as it existed when performed.
+- Use one stable logical exercise with immutable versions rather than creating an unrelated exercise whenever it changes. Workouts reference a specific exercise ID and version, while an explicit copy creates a new logical exercise with provenance.
+- Exercise execution fields create immutable versions. This includes name, instructions, media, exercise type, measurement configuration, and grading configuration. Organizational metadata such as tags and folders may remain live.
+- Athlete notes attached to a logical exercise persist across all versions and instances of that exercise.
+- When a trainer-client relationship ends, existing programs, workouts, and exercises remain usable by the athlete but unlink and stop receiving updates. The athlete can no longer browse or subscribe to the trainer's library.
+- The trainer UX should include a folder-style workspace showing template libraries and clients. Each client appears as a folder or workspace containing their subscribed programs and independently assigned workouts.
+- Exercises belong to the trainer's global exercise library rather than being duplicated into per-athlete exercise libraries.
+- Athletes access exercises through programs and workouts visible to them; they do not browse the trainer's complete exercise library independently.
+- Shared comments and durable notes are supported at the exercise, workout, and program levels:
+  - Notes may be created by trainers or athletes and remain attached to the logical exercise, workout, or program across all versions and instances.
+  - Comment threads are attached to a specific exercise, workout, or program instance.
+  - Athletes can create comment threads.
+  - Trainers and athletes can reply within threads and react to individual comments.
 
 ### Proposed defaults pending confirmation
 
-- Exercise content included in a published workout should use a snapshot of its display and execution fields while retaining the source exercise ID. This preserves historical behavior while allowing provenance and deliberate refreshes.
 - Trainer and athlete permissions should be field-specific:
   - The athlete controls completion results, private exercise notes, and their own messages.
-  - The assigning trainer controls scheduling and eligible prescription updates while the trainer-client relationship is active.
+  - The assigning trainer controls scheduling and eligible prescription updates only while the trainer-client relationship is active and the workout remains incomplete and current or future.
   - Neither party silently overwrites the other's authored data.
   - Both parties can participate in shared discussion threads and reactions.
-- Subscription propagation should apply only to incomplete linked content. Athlete completion data and fields explicitly customized on an instance should not be overwritten.
-
-### Still unresolved
-
-- Which exercise fields are included in snapshots and which remain live references.
-- Which instance fields count as explicit overrides and are protected from subscription propagation.
-- Whether trainers can edit an athlete's completed results, annotate them separately, or only discuss them.
-- Whether library items already copied or instantiated remain usable after the trainer-client relationship ends; the current assumption is yes, while browsing and creating new subscriptions are disabled.
+- Subscription propagation applies only while content remains linked and incomplete. Once structurally customized, it is a copy rather than a subscribed instance with field-level overrides.
