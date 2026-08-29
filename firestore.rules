@@ -27,10 +27,43 @@ service cloud.firestore {
                 == 'active';
     }
 
+    function relationshipId(trainerId, athleteId) {
+      return trainerId + '_' + athleteId;
+    }
+
+    function hasActiveTrainerClientRelationship(trainerId, athleteId) {
+      let id = relationshipId(trainerId, athleteId);
+      return isSignedIn()
+             && exists(/databases/$(database)/documents/trainerClientRelationships/$(id))
+             && get(/databases/$(database)/documents/trainerClientRelationships/$(id)).data.status
+                == 'active';
+    }
+
+    function templateOwner(data) {
+      return 'ownerId' in data ? data.ownerId : data.createdBy;
+    }
+
+    function preservesTemplateOwnership() {
+      return request.resource.data.createdBy == resource.data.createdBy
+             && request.resource.data.ownerId == templateOwner(resource.data);
+    }
+
+    function isProgramAssignable(programId) {
+      return get(/databases/$(database)/documents/programs/$(programId)).data.type
+             == 'assignable';
+    }
+
     function hasValidProgramOwner(data) {
       return data.programOwnerId
              == get(/databases/$(database)/documents/programs/$(data.programId))
                  .data.ownerId;
+    }
+
+    function hasActiveRelationshipForProgram(data) {
+      let ownerId =
+        get(/databases/$(database)/documents/programs/$(data.programId)).data.ownerId;
+      return ownerId == data.athleteId
+             || hasActiveTrainerClientRelationship(ownerId, data.athleteId);
     }
 
     function preservesProgramOwner() {
@@ -63,6 +96,67 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
                       && request.resource.data.uid == request.auth.uid;
+    }
+
+    // ── Trainer-client relationships ──
+    // A deterministic trainerId_athleteId document is the durable roster and
+    // authorization boundary. Only the trainer may change its lifecycle.
+
+    match /trainerClientRelationships/{id} {
+      allow read: if isSignedIn()
+                  && (resource.data.trainerId == request.auth.uid
+                      || resource.data.athleteId == request.auth.uid);
+      allow create: if isSignedIn()
+                    && id == relationshipId(
+                         request.resource.data.trainerId,
+                         request.resource.data.athleteId)
+                    && request.resource.data.keys().hasOnly([
+                         'trainerId', 'athleteId', 'status', 'startedAt',
+                         'endedAt', 'createdAt', 'createdBy', 'updatedAt',
+                         'updatedBy', 'deletedAt', 'deletedBy'
+                       ])
+                    && request.resource.data.trainerId == request.auth.uid
+                    && request.resource.data.athleteId != request.auth.uid
+                    && request.resource.data.status == 'active'
+                    && request.resource.data.startedAt == request.time
+                    && request.resource.data.endedAt == null
+                    && request.resource.data.createdAt == request.time
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedAt == request.time
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.deletedAt == null
+                    && request.resource.data.deletedBy == null;
+      allow update: if isSignedIn()
+                    && resource.data.trainerId == request.auth.uid
+                    && request.resource.data.trainerId
+                       == resource.data.trainerId
+                    && request.resource.data.athleteId
+                       == resource.data.athleteId
+                    && request.resource.data.createdAt
+                       == resource.data.createdAt
+                    && request.resource.data.createdBy
+                       == resource.data.createdBy
+                    && request.resource.data.deletedAt
+                       == resource.data.deletedAt
+                    && request.resource.data.deletedBy
+                       == resource.data.deletedBy
+                    && request.resource.data.updatedAt == request.time
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly([
+                           'status', 'startedAt', 'endedAt', 'updatedAt',
+                           'updatedBy'
+                         ])
+                    && ((resource.data.status == 'active'
+                         && request.resource.data.status == 'ended'
+                         && request.resource.data.startedAt
+                            == resource.data.startedAt
+                         && request.resource.data.endedAt == request.time)
+                        || (resource.data.status == 'ended'
+                            && request.resource.data.status == 'active'
+                            && request.resource.data.startedAt == request.time
+                            && request.resource.data.endedAt == null));
+      allow delete: if false;
     }
 
     // ── Feedback ──
@@ -102,33 +196,44 @@ service cloud.firestore {
     }
 
     // ── Exercise Templates ──
-    // Shared library: any signed-in user can read (exercises referenced across programs)
-    // Create/update/delete: creator only
+    // Reads remain signed-in during the Stage 4 compatibility window because
+    // assigned workouts still resolve live exercise documents.
+    // Create/update/delete: owner only.
 
     match /exerciseTemplates/{exerciseId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
+                      && request.resource.data.ownerId == request.auth.uid
                       && request.resource.data.createdBy == request.auth.uid;
-      allow update, delete: if isSignedIn()
-                              && resource.data.createdBy == request.auth.uid;
+      allow update: if isSignedIn()
+                    && templateOwner(resource.data) == request.auth.uid
+                    && preservesTemplateOwnership();
+      allow delete: if isSignedIn()
+                    && templateOwner(resource.data) == request.auth.uid;
     }
 
     // ── Workout Templates ──
-    // Read: any signed-in user (athletes need to read exercises for assigned workouts)
-    // Create/update/delete: creator only
+    // Reads remain signed-in during the Stage 4 compatibility window because
+    // assigned workouts still resolve live workout documents.
+    // Create/update/delete: owner only.
 
     match /workoutTemplates/{templateId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
+                      && request.resource.data.ownerId == request.auth.uid
                       && request.resource.data.createdBy == request.auth.uid;
-      allow update, delete: if isSignedIn()
-                              && resource.data.createdBy == request.auth.uid;
+      allow update: if isSignedIn()
+                    && templateOwner(resource.data) == request.auth.uid
+                    && preservesTemplateOwnership();
+      allow delete: if isSignedIn()
+                    && templateOwner(resource.data) == request.auth.uid;
 
       // Workout template versions (subcollection)
       match /workoutTemplateVersions/{versionNumber} {
         allow read: if isSignedIn();
         allow write: if isSignedIn()
-                       && get(/databases/$(database)/documents/workoutTemplates/$(templateId)).data.createdBy
+                       && templateOwner(
+                           get(/databases/$(database)/documents/workoutTemplates/$(templateId)).data)
                           == request.auth.uid;
       }
     }
@@ -191,9 +296,26 @@ service cloud.firestore {
                         || resource.data.addedBy == request.auth.uid);
       allow create: if isSignedIn()
                       && isProgramOwner(request.resource.data.programId)
+                      && isProgramAssignable(request.resource.data.programId)
+                      && (request.resource.data.athleteId == request.auth.uid
+                          || hasActiveTrainerClientRelationship(
+                               request.auth.uid,
+                               request.resource.data.athleteId))
                       && request.resource.data.addedBy == request.auth.uid;
       allow update: if isSignedIn()
-                      && isProgramOwner(resource.data.programId);
+                      && isProgramOwner(resource.data.programId)
+                      && isProgramAssignable(resource.data.programId)
+                      && request.resource.data.programId
+                         == resource.data.programId
+                      && request.resource.data.athleteId
+                         == resource.data.athleteId
+                      && request.resource.data.addedBy
+                         == resource.data.addedBy
+                      && (request.resource.data.status != 'active'
+                          || resource.data.athleteId == request.auth.uid
+                          || hasActiveTrainerClientRelationship(
+                               request.auth.uid,
+                               resource.data.athleteId));
     }
 
     // ── Workout Instances ──
@@ -212,6 +334,7 @@ service cloud.firestore {
       allow create: if isSignedIn()
                       && request.resource.data.assignedBy == request.auth.uid
                       && hasValidProgramOwner(request.resource.data)
+                      && hasActiveRelationshipForProgram(request.resource.data)
                       && (isProgramOwner(request.resource.data.programId)
                           || (request.resource.data.athleteId
                                 == request.auth.uid
@@ -221,6 +344,7 @@ service cloud.firestore {
                       && preservesProgramOwner()
                       && (resource.data.athleteId == request.auth.uid
                           || (isProgramOwner(resource.data.programId)
+                              && hasActiveRelationshipForProgram(resource.data)
                               && request.resource.data.diff(resource.data)
                                    .affectedKeys()
                                    .hasOnly(['status', 'scheduledDate',

@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "848903261685",
+    "project_id": "mercedes-app-11ce2",
+    "storage_bucket": "mercedes-app-11ce2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:848903261685:android:948b72534a97ec5c20e4bc",
+        "android_client_info": {
+          "package_name": "com.adkeswani.mercedes"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "848903261685-o44pu2nsiidv1akvjtgfp7v7ghoj2bn8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.adkeswani.mercedes",
+            "certificate_hash": "b6afd63c7f9d4fbd6e1b375a1d6c720698133b4a"
+          }
+        },
+        {
+          "client_id": "848903261685-u4mbqcubjtg0o1dsid1jn9mr09r2898h.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDMehCGZNUNLqW7-pMatS5BZ6Ap8gErRF4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "848903261685-u4mbqcubjtg0o1dsid1jn9mr09r2898h.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -18,6 +18,7 @@ const STRANGER = 'stranger-uid';
 const PROGRAM_ID = 'program-1';
 const FOLDER_ID = 'folder-1';
 const ENROLLMENT_ID = `${PROGRAM_ID}_${ATHLETE}`;
+const RELATIONSHIP_ID = `${OWNER}_${ATHLETE}`;
 
 let testEnv;
 
@@ -38,10 +39,36 @@ beforeEach(async () => {
   await testEnv.clearFirestore();
 });
 
-/** Seed a standard program + enrollment for cross-collection rule tests. */
+async function seedActiveRelationship() {
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore()
+      .collection('trainerClientRelationships')
+      .doc(RELATIONSHIP_ID)
+      .set({
+        trainerId: OWNER,
+        athleteId: ATHLETE,
+        status: 'active',
+        startedAt: new Date(),
+        endedAt: null,
+        createdAt: new Date(),
+        createdBy: OWNER,
+        updatedAt: new Date(),
+        updatedBy: OWNER,
+        deletedAt: null,
+        deletedBy: null,
+      });
+  });
+}
+
+/** Seed a standard relationship, program, and enrollment. */
 async function seedProgramWithEnrollment() {
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
+    await db.collection('trainerClientRelationships').doc(RELATIONSHIP_ID).set({
+      trainerId: OWNER,
+      athleteId: ATHLETE,
+      status: 'active',
+    });
     await db.collection('programs').doc(PROGRAM_ID).set({
       ownerId: OWNER,
       name: 'Test Program',
@@ -95,6 +122,132 @@ describe('users', () => {
   it('denies writing another user profile', async () => {
     const db = testEnv.authenticatedContext(STRANGER).firestore();
     await assertFails(db.collection('users').doc(OWNER).set({ name: 'Hacked' }));
+  });
+});
+
+// ─── Trainer-client relationships ───
+
+describe('trainerClientRelationships', () => {
+  function activeRelationship(trainerId = OWNER, athleteId = ATHLETE) {
+    return {
+      trainerId,
+      athleteId,
+      status: 'active',
+      startedAt: serverTimestamp(),
+      endedAt: null,
+      createdAt: serverTimestamp(),
+      createdBy: trainerId,
+      updatedAt: serverTimestamp(),
+      updatedBy: trainerId,
+      deletedAt: null,
+      deletedBy: null,
+    };
+  }
+
+  it('allows a trainer to create their relationship', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('trainerClientRelationships')
+        .doc(RELATIONSHIP_ID)
+        .set(activeRelationship())
+    );
+  });
+
+  it('denies athlete-created and self relationships', async () => {
+    const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertFails(
+      athleteDb.collection('trainerClientRelationships')
+        .doc(RELATIONSHIP_ID)
+        .set(activeRelationship())
+    );
+
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      ownerDb.collection('trainerClientRelationships')
+        .doc(`${OWNER}_${OWNER}`)
+        .set(activeRelationship(OWNER, OWNER))
+    );
+  });
+
+  it('allows only participants to read a relationship', async () => {
+    await seedActiveRelationship();
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+    const strangerDb = testEnv.authenticatedContext(STRANGER).firestore();
+    const ref = (db) => db.collection('trainerClientRelationships')
+      .doc(RELATIONSHIP_ID);
+
+    await assertSucceeds(ref(ownerDb).get());
+    await assertSucceeds(ref(athleteDb).get());
+    await assertFails(ref(strangerDb).get());
+  });
+
+  it('allows participants to query only their relationships', async () => {
+    await seedActiveRelationship();
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+    const strangerDb = testEnv.authenticatedContext(STRANGER).firestore();
+
+    await assertSucceeds(
+      ownerDb.collection('trainerClientRelationships')
+        .where('trainerId', '==', OWNER)
+        .where('status', '==', 'active')
+        .get()
+    );
+    await assertSucceeds(
+      athleteDb.collection('trainerClientRelationships')
+        .where('athleteId', '==', ATHLETE)
+        .where('status', '==', 'active')
+        .get()
+    );
+    await assertFails(
+      strangerDb.collection('trainerClientRelationships')
+        .where('trainerId', '==', OWNER)
+        .where('status', '==', 'active')
+        .get()
+    );
+  });
+
+  it('allows the trainer to end but not reassign a relationship', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await db.collection('trainerClientRelationships')
+      .doc(RELATIONSHIP_ID)
+      .set(activeRelationship());
+    const ref = db.collection('trainerClientRelationships').doc(RELATIONSHIP_ID);
+
+    await assertSucceeds(ref.update({
+      status: 'ended',
+      endedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    }));
+    await assertFails(ref.update({
+      athleteId: STRANGER,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    }));
+  });
+
+  it('denies athlete lifecycle updates and all hard deletes', async () => {
+    await seedActiveRelationship();
+    const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertFails(
+      athleteDb.collection('trainerClientRelationships')
+        .doc(RELATIONSHIP_ID)
+        .update({
+          status: 'ended',
+          endedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          updatedBy: ATHLETE,
+        })
+    );
+
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      ownerDb.collection('trainerClientRelationships')
+        .doc(RELATIONSHIP_ID)
+        .delete()
+    );
   });
 });
 
@@ -239,30 +392,38 @@ describe('usernames', () => {
 // ─── Exercise Templates ───
 
 describe('exerciseTemplates', () => {
-  it('allows any signed-in user to read', async () => {
+  async function seedExercise() {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await ctx.firestore().collection('exerciseTemplates').doc('e1').set({
-        name: 'Squat', createdBy: OWNER,
+        name: 'Squat', ownerId: OWNER, createdBy: OWNER,
       });
     });
-    const db = testEnv.authenticatedContext(STRANGER).firestore();
-    await assertSucceeds(db.collection('exerciseTemplates').doc('e1').get());
+  }
+
+  it('allows signed-in reads during the Stage 4 compatibility window', async () => {
+    await seedExercise();
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    const strangerDb = testEnv.authenticatedContext(STRANGER).firestore();
+    await assertSucceeds(ownerDb.collection('exerciseTemplates').doc('e1').get());
+    await assertSucceeds(
+      strangerDb.collection('exerciseTemplates').doc('e1').get()
+    );
   });
 
-  it('allows creating with own createdBy', async () => {
+  it('allows creating with own ownerId and createdBy', async () => {
     const db = testEnv.authenticatedContext(OWNER).firestore();
     await assertSucceeds(
       db.collection('exerciseTemplates').doc('e2').set({
-        name: 'Bench', createdBy: OWNER,
+        name: 'Bench', ownerId: OWNER, createdBy: OWNER,
       })
     );
   });
 
-  it('denies creating with someone else as createdBy', async () => {
+  it('denies creating with someone else as ownerId', async () => {
     const db = testEnv.authenticatedContext(STRANGER).firestore();
     await assertFails(
       db.collection('exerciseTemplates').doc('e3').set({
-        name: 'Fake', createdBy: OWNER,
+        name: 'Fake', ownerId: OWNER, createdBy: STRANGER,
       })
     );
   });
@@ -270,7 +431,7 @@ describe('exerciseTemplates', () => {
   it('denies update by non-creator', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await ctx.firestore().collection('exerciseTemplates').doc('e4').set({
-        name: 'Deadlift', createdBy: OWNER,
+        name: 'Deadlift', ownerId: OWNER, createdBy: OWNER,
       });
     });
     const db = testEnv.authenticatedContext(STRANGER).firestore();
@@ -278,15 +439,38 @@ describe('exerciseTemplates', () => {
       db.collection('exerciseTemplates').doc('e4').update({ name: 'Hacked' })
     );
   });
+
+  it('allows the owner to update without changing ownership', async () => {
+    await seedExercise();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const ref = db.collection('exerciseTemplates').doc('e1');
+    await assertSucceeds(ref.update({ name: 'Back Squat' }));
+    await assertFails(ref.update({ ownerId: STRANGER }));
+  });
+
+  it('allows the owner to update a legacy document and add ownerId', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('exerciseTemplates').doc('legacy').set({
+        name: 'Legacy Squat', createdBy: OWNER,
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('exerciseTemplates').doc('legacy').update({
+        name: 'Legacy Back Squat',
+        ownerId: OWNER,
+      })
+    );
+  });
 });
 
 // ─── Workout Templates ───
 
 describe('workoutTemplates', () => {
-  it('allows any signed-in user to read (athletes need exercises)', async () => {
+  it('allows signed-in reads during the Stage 4 compatibility window', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await ctx.firestore().collection('workoutTemplates').doc('w1').set({
-        name: 'Full Body', createdBy: OWNER,
+        name: 'Full Body', ownerId: OWNER, createdBy: OWNER,
       });
     });
     const db = testEnv.authenticatedContext(ATHLETE).firestore();
@@ -294,10 +478,11 @@ describe('workoutTemplates', () => {
   });
 
   it('allows reading workout template versions by any signed-in user', async () => {
+    await seedActiveRelationship();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       const db = ctx.firestore();
       await db.collection('workoutTemplates').doc('w1').set({
-        name: 'Full Body', createdBy: OWNER,
+        name: 'Full Body', ownerId: OWNER, createdBy: OWNER,
       });
       await db.collection('workoutTemplates').doc('w1')
         .collection('workoutTemplateVersions').doc('1').set({
@@ -314,7 +499,7 @@ describe('workoutTemplates', () => {
   it('denies update by non-creator', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await ctx.firestore().collection('workoutTemplates').doc('w2').set({
-        name: 'Upper', createdBy: OWNER,
+        name: 'Upper', ownerId: OWNER, createdBy: OWNER,
       });
     });
     const db = testEnv.authenticatedContext(STRANGER).firestore();
@@ -326,7 +511,7 @@ describe('workoutTemplates', () => {
   it('denies version write by non-creator', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await ctx.firestore().collection('workoutTemplates').doc('w3').set({
-        name: 'Lower', createdBy: OWNER,
+        name: 'Lower', ownerId: OWNER, createdBy: OWNER,
       });
     });
     const db = testEnv.authenticatedContext(STRANGER).firestore();
@@ -335,6 +520,18 @@ describe('workoutTemplates', () => {
         .collection('workoutTemplateVersions').doc('1')
         .set({ exercises: [] })
     );
+  });
+
+  it('allows the owner to update without changing ownership', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutTemplates').doc('w4').set({
+        name: 'Upper', ownerId: OWNER, createdBy: OWNER,
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const ref = db.collection('workoutTemplates').doc('w4');
+    await assertSucceeds(ref.update({ name: 'Upper Strength' }));
+    await assertFails(ref.update({ ownerId: STRANGER }));
   });
 });
 
@@ -492,6 +689,7 @@ describe('programFolders', () => {
 
 describe('enrollments', () => {
   it('allows program owner to create enrollment', async () => {
+    await seedActiveRelationship();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await ctx.firestore().collection('programs').doc(PROGRAM_ID).set({
         ownerId: OWNER, type: 'assignable',
@@ -502,6 +700,40 @@ describe('enrollments', () => {
       db.collection('enrollments').doc(ENROLLMENT_ID).set({
         programId: PROGRAM_ID,
         athleteId: ATHLETE,
+        addedBy: OWNER,
+        status: 'active',
+      })
+    );
+  });
+
+  it('denies enrollment without an active relationship', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('programs').doc(PROGRAM_ID).set({
+        ownerId: OWNER, type: 'assignable',
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      db.collection('enrollments').doc(ENROLLMENT_ID).set({
+        programId: PROGRAM_ID,
+        athleteId: ATHLETE,
+        addedBy: OWNER,
+        status: 'active',
+      })
+    );
+  });
+
+  it('denies enrollment in a personal program', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('programs').doc(PROGRAM_ID).set({
+        ownerId: OWNER, type: 'personal',
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      db.collection('enrollments').doc(`${PROGRAM_ID}_${OWNER}`).set({
+        programId: PROGRAM_ID,
+        athleteId: OWNER,
         addedBy: OWNER,
         status: 'active',
       })
@@ -609,6 +841,33 @@ describe('enrollments', () => {
     await assertFails(
       db.collection('enrollments').doc(ENROLLMENT_ID).update({
         status: 'removed',
+      })
+    );
+  });
+
+  it('denies changing enrollment ownership fields', async () => {
+    await seedProgramWithEnrollment();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const ref = db.collection('enrollments').doc(ENROLLMENT_ID);
+    await assertFails(ref.update({ athleteId: STRANGER }));
+    await assertFails(ref.update({ programId: 'another-program' }));
+    await assertFails(ref.update({ addedBy: STRANGER }));
+  });
+
+  it('denies reactivating an enrollment after the relationship ends', async () => {
+    await seedProgramWithEnrollment();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await db.collection('enrollments').doc(ENROLLMENT_ID).update({
+        status: 'removed',
+      });
+      await db.collection('trainerClientRelationships')
+        .doc(RELATIONSHIP_ID).update({ status: 'ended' });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      db.collection('enrollments').doc(ENROLLMENT_ID).update({
+        status: 'active',
       })
     );
   });
@@ -928,6 +1187,20 @@ describe('workoutInstances', () => {
       db.collection('workoutInstances').doc(INSTANCE_ID).update({
         workoutTemplateId: 'w2', workoutTemplateVersion: 2,
         workoutType: 'pull', updatedAt: new Date(),
+      })
+    );
+  });
+
+  it('denies trainer scheduling changes after relationship ends', async () => {
+    await seedInstance();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('trainerClientRelationships')
+        .doc(RELATIONSHIP_ID).update({ status: 'ended' });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      db.collection('workoutInstances').doc(INSTANCE_ID).update({
+        scheduledDate: '2026-06-20',
       })
     );
   });

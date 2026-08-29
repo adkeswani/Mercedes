@@ -471,6 +471,26 @@ materialized copies unless a safe subscription relationship can be proven.
 Each step must include domain tests, repository tests, Firestore security-rule
 tests, and any required backfill tests before the next step depends on it.
 
+### Stage 5 implementation status
+
+Sequence step 1 is implemented in `stage5/`.
+
+- Trainer-client relationships use deterministic
+  `{trainerId}_{athleteId}` document IDs, retain ended relationships for audit,
+  and may be reactivated by the trainer.
+- Active relationships now gate new enrollment and workout assignment.
+  Template reads temporarily retain Stage 4 signed-in behavior because existing
+  assigned workouts still resolve live template documents; relationship-scoped
+  library reads will become safe when scheduled workouts are materialized.
+- Exercise and workout template headers now persist an immutable `ownerId`.
+  Compatibility readers derive a missing owner from `createdBy`, and the next
+  owner mutation writes `ownerId` as an incremental backfill.
+- Owner library queries continue using `createdBy` during this compatibility
+  window so existing Stage 4 documents remain visible.
+- Exercise versioning, shared organization metadata, typed workout blocks,
+  program instances, and subscription behavior remain deferred to their
+  respective sequence steps.
+
 ## 12. Deferred Details
 
 The model intentionally leaves these extensible rather than blocking the first
