@@ -495,7 +495,8 @@ Sequence steps 1 and 2 are implemented in `stage5/`.
   version 1. The owner-only idempotent backfill materializes version 1 and
   removes execution fields from the header; editing a legacy document
   atomically preserves its original fields as version 1 and publishes version
-  2.
+  2. The web app invokes this backfill after authenticated startup so every
+  legacy owner is migrated with their own authorization context.
 - Workout prescriptions now persist `exerciseId` plus `exerciseVersion`.
   New prescriptions are immutable subdocuments so Firestore rules can validate
   each owner-scoped exercise-version pin; compatibility readers still support

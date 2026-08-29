@@ -10,6 +10,20 @@ final exerciseTemplateRepositoryProvider =
   return ExerciseTemplateRepository();
 });
 
+/// Idempotently materializes legacy exercises after their owner signs in.
+final exerciseVersionBackfillForUserProvider =
+    FutureProvider.family<int, String>((ref, userId) {
+  final repo = ref.watch(exerciseTemplateRepositoryProvider);
+  return repo.backfillOwnedLegacyExercises(userId);
+});
+
+/// Runs the owner-scoped backfill for the authenticated user.
+final exerciseVersionBackfillProvider = FutureProvider<int>((ref) async {
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) return 0;
+  return ref.watch(exerciseVersionBackfillForUserProvider(user.uid).future);
+});
+
 /// Streams all non-deleted exercise templates for the current user.
 final exerciseTemplatesProvider =
     StreamProvider<List<ExerciseTemplate>>((ref) {

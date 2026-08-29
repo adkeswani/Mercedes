@@ -20,6 +20,8 @@ Compatibility behavior:
 - Existing exercise documents resolve as synthetic version 1. Owners may run
   the idempotent repository backfill, while the first edit atomically preserves
   legacy content as version 1 and publishes the edit as version 2.
+- The web app runs that owner-verified backfill automatically after sign-in;
+  failures surface through the app entry error state rather than being ignored.
 - Existing workout prescriptions without `exerciseVersion` resolve as version
   1; all newly published prescriptions use immutable, rule-validated
   subdocuments with an explicit version pin.
