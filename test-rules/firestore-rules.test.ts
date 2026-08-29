@@ -157,10 +157,6 @@ describe('trainerClientRelationships', () => {
       async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       const db = ctx.firestore();
-      await db.collection('programs').doc(PROGRAM_ID).set({
-        ownerId: OWNER,
-        type: 'assignable',
-      });
       await db.collection('enrollments').doc(ENROLLMENT_ID).set({
         programId: PROGRAM_ID,
         athleteId: ATHLETE,
@@ -182,11 +178,9 @@ describe('trainerClientRelationships', () => {
         const relationship = db.collection('trainerClientRelationships')
           .doc(RELATIONSHIP_ID);
         const enrollment = db.collection('enrollments').doc(ENROLLMENT_ID);
-        const program = db.collection('programs').doc(PROGRAM_ID);
         const existing = await transaction.get(relationship);
         expect(existing.exists).toBe(false);
         expect((await transaction.get(enrollment)).exists).toBe(true);
-        expect((await transaction.get(program)).exists).toBe(true);
         transaction.set(relationship, activeRelationship());
       })
     );

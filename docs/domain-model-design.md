@@ -482,13 +482,14 @@ Sequence steps 1 through 3 are implemented in `stage5/`.
   Template reads temporarily retain Stage 4 signed-in behavior because existing
   assigned workouts still resolve live template documents; relationship-scoped
   library reads will become safe when scheduled workouts are materialized.
-- Authenticated startup safely infers a missing durable relationship from each
-  active legacy enrollment owned by the trainer. The owner-scoped migration is
-  idempotent, ignores personal self-enrollments, tolerates later program-type
-  changes, and preserves an existing ended relationship so an explicit roster
-  removal is never undone. The migration timestamp becomes `startedAt` because
-  legacy enrollment data cannot prove when the broader trainer-client
-  relationship originally began.
+- Loading the trainer roster safely infers a missing durable relationship from
+  each active legacy enrollment owned by that trainer. The owner-scoped
+  migration is idempotent, ignores personal self-enrollments, tolerates missing
+  or later-changed program headers, and preserves an existing ended relationship
+  so an explicit roster removal is never undone. It is deliberately scoped to
+  the roster so legacy-data errors cannot block authentication. The migration
+  timestamp becomes `startedAt` because legacy enrollment data cannot prove when
+  the broader trainer-client relationship originally began.
 - Exercise and workout template headers now persist an immutable `ownerId`.
   Compatibility readers derive a missing owner from `createdBy`, and the next
   owner mutation writes `ownerId` as an incremental backfill.

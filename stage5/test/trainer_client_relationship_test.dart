@@ -302,17 +302,20 @@ void main() {
         );
       });
 
-      test('rejects an enrollment whose program has another owner', () async {
-        await seedProgram('program1', ownerId: 'stranger');
+      test('migrates when the historical program is no longer available',
+          () async {
         await seedEnrollment('enrollment1');
 
         expect(
-          () => repository.backfillActiveEnrollmentRelationships(
+          await repository.backfillActiveEnrollmentRelationships(
             trainerId: 'trainer1',
             callerUserId: 'trainer1',
           ),
-          throwsStateError,
+          1,
         );
+        final relationship =
+            await repository.getRelationship('trainer1', 'athlete1');
+        expect(relationship!.isActive, isTrue);
       });
 
       test('migrates when an enrolled program later became personal', () async {

@@ -130,7 +130,6 @@ class TrainerClientRelationshipRepository {
           _collection.doc(relationshipId(trainerId, athleteId));
       final enrollmentRef =
           _firestore.collection('enrollments').doc(enrollment.id);
-      final programRef = _firestore.collection('programs').doc(programId);
 
       final created =
           await _firestore.runTransaction<bool>((transaction) async {
@@ -159,17 +158,6 @@ class TrainerClientRelationshipRepository {
             currentData['programId'] != programId) {
           throw StateError(
             'Enrollment ${enrollment.id} is not owned by $trainerId',
-          );
-        }
-
-        final program = await transaction.get(programRef);
-        if (!program.exists) {
-          throw StateError('Program $programId not found');
-        }
-        final programData = program.data()!;
-        if (programData['ownerId'] != trainerId) {
-          throw StateError(
-            'User $trainerId is not the owner of program $programId',
           );
         }
 

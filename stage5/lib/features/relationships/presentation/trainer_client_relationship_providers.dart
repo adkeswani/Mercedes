@@ -20,25 +20,16 @@ final trainerClientRelationshipBackfillForUserProvider =
   );
 });
 
-/// Runs the owner-scoped roster backfill for the authenticated trainer.
-final trainerClientRelationshipBackfillProvider =
-    FutureProvider<int>((ref) async {
-  final user = ref.watch(authStateProvider).value;
-  if (user == null) {
-    return 0;
-  }
-  return ref.watch(
-    trainerClientRelationshipBackfillForUserProvider(user.uid).future,
-  );
-});
-
 final trainerClientsProvider =
     StreamProvider<List<TrainerClientRelationship>>((ref) {
   final user = ref.watch(authStateProvider).value;
   if (user == null) return const Stream.empty();
-  return ref
-      .watch(trainerClientRelationshipRepositoryProvider)
-      .watchClients(user.uid);
+  final backfill = ref
+      .watch(trainerClientRelationshipBackfillForUserProvider(user.uid).future);
+  final repository = ref.watch(trainerClientRelationshipRepositoryProvider);
+  return Stream.fromFuture(backfill).asyncExpand(
+    (_) => repository.watchClients(user.uid),
+  );
 });
 
 final athleteTrainersProvider =

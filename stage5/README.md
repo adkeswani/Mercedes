@@ -26,10 +26,11 @@ Compatibility behavior:
   legacy content as version 1 and publishes the edit as version 2.
 - The web app runs that owner-verified backfill automatically after sign-in;
   failures surface through the app entry error state rather than being ignored.
-- Active legacy enrollments also materialize missing durable trainer-client
-  relationships at owner sign-in. The migration is idempotent, excludes personal
-  self-enrollments, tolerates later program-type changes, and never reactivates
-  an explicitly ended relationship.
+- Loading the roster materializes missing durable trainer-client relationships
+  from active legacy enrollments. The owner-scoped migration is idempotent,
+  excludes personal self-enrollments, tolerates missing or later-changed program
+  headers, and never reactivates an explicitly ended relationship. Migration
+  failures stay within the roster instead of blocking sign-in.
 - Existing workout prescriptions without `exerciseVersion` resolve as version
   1; all newly published prescriptions use immutable, rule-validated
   subdocuments with an explicit version pin.
