@@ -100,64 +100,56 @@ void main() {
   });
 
   group('ExerciseTemplate', () {
-    test('constructor and isDeleted', () {
-      final template = ExerciseTemplate(
+    ExerciseTemplate exercise({
+      String description = 'Standard pushup exercise',
+      String instructions = 'Keep body straight, lower chest to floor',
+      String? videoUrl,
+    }) {
+      return ExerciseTemplate(
         id: 'ex1',
         ownerId: 'admin',
-        name: 'Pushup',
-        description: 'Standard pushup exercise',
-        instructions: 'Keep body straight, lower chest to floor',
+        currentVersion: 1,
+        version: ExerciseVersion(
+          versionNumber: 1,
+          name: 'Pushup',
+          description: description,
+          instructions: instructions,
+          videoUrl: videoUrl,
+          exerciseType: ExerciseType.strength,
+          measurementConfiguration: const ExerciseMeasurementConfiguration(
+            primary: ExerciseMeasurementType.repetitions,
+          ),
+          publishedAt: DateTime(2024, 1, 1),
+          publishedBy: 'admin',
+        ),
         createdAt: DateTime(2024, 1, 1),
         createdBy: 'admin',
         updatedAt: DateTime(2024, 1, 2),
         updatedBy: 'admin',
       );
+    }
+
+    test('constructor and isDeleted', () {
+      final template = exercise();
       expect(template.id, 'ex1');
       expect(template.isDeleted, isFalse);
     });
 
     test('validate throws on empty description', () {
-      final template = ExerciseTemplate(
-        id: 'ex1',
-        ownerId: 'admin',
-        name: 'Pushup',
-        description: '',
-        instructions: 'Do it',
-        createdAt: DateTime(2024, 1, 1),
-        createdBy: 'admin',
-        updatedAt: DateTime(2024, 1, 2),
-        updatedBy: 'admin',
-      );
+      final template = exercise(description: '', instructions: 'Do it');
       expect(() => template.validate(), throwsArgumentError);
     });
 
     test('validate throws on empty instructions', () {
-      final template = ExerciseTemplate(
-        id: 'ex1',
-        ownerId: 'admin',
-        name: 'Pushup',
-        description: 'A pushup',
-        instructions: '',
-        createdAt: DateTime(2024, 1, 1),
-        createdBy: 'admin',
-        updatedAt: DateTime(2024, 1, 2),
-        updatedBy: 'admin',
-      );
+      final template = exercise(description: 'A pushup', instructions: '');
       expect(() => template.validate(), throwsArgumentError);
     });
 
     test('videoUrl is optional', () {
-      final template = ExerciseTemplate(
-        id: 'ex1',
-        ownerId: 'admin',
-        name: 'Pushup',
+      final template = exercise(
         description: 'Standard pushup',
-        videoUrl: 'https://example.com/video.mp4',
         instructions: 'Do pushups',
-        createdAt: DateTime(2024, 1, 1),
-        createdBy: 'admin',
-        updatedAt: DateTime(2024, 1, 2),
-        updatedBy: 'admin',
+        videoUrl: 'https://example.com/video.mp4',
       );
       expect(template.videoUrl, 'https://example.com/video.mp4');
     });

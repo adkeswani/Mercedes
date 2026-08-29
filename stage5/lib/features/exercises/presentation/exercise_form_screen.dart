@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
-import 'package:stage5/features/exercises/data/exercise_template_repository.dart';
 import 'package:stage5/features/exercises/domain/exercise_template.dart';
 import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
 

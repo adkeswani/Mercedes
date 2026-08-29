@@ -109,6 +109,54 @@ class WorkoutTemplateRepository {
     });
   }
 
+  Future<void> _verifyExerciseReferences(
+    List<ExercisePrescription> exercises,
+    String userId,
+  ) async {
+    final checked = <String>{};
+    for (final exercise in exercises) {
+      exercise.validate();
+      final key = '${exercise.exerciseId}:${exercise.exerciseVersion}';
+      if (!checked.add(key)) continue;
+
+      final header = await _firestore
+          .collection('exerciseTemplates')
+          .doc(exercise.exerciseId)
+          .get();
+      if (!header.exists || header.data() == null) {
+        throw StateError('Exercise ${exercise.exerciseId} not found');
+      }
+      final data = header.data()!;
+      final ownerId =
+          data['ownerId'] as String? ?? data['createdBy'] as String?;
+      if (ownerId != userId) {
+        throw StateError(
+          'User $userId is not the owner of exercise ${exercise.exerciseId}',
+        );
+      }
+
+      final currentVersion = data['currentVersion'] as int?;
+      if (currentVersion == null) {
+        if (exercise.exerciseVersion != 1) {
+          throw StateError(
+            'Legacy exercise ${exercise.exerciseId} only has version 1',
+          );
+        }
+        continue;
+      }
+      final version = await header.reference
+          .collection('exerciseVersions')
+          .doc(exercise.exerciseVersion.toString())
+          .get();
+      if (!version.exists) {
+        throw StateError(
+          'Exercise ${exercise.exerciseId} version '
+          '${exercise.exerciseVersion} not found',
+        );
+      }
+    }
+  }
+
   /// Publishes a new version of the workout template as a Firestore
   /// transaction.
   ///
@@ -124,7 +172,13 @@ class WorkoutTemplateRepository {
     required List<ExercisePrescription> exercises,
     required String userId,
   }) async {
+    WorkoutTemplateVersion(
+      versionNumber: 1,
+      publishedAt: DateTime.now(),
+      exercises: exercises,
+    ).validate();
     await _verifyOwnership(templateId, userId);
+    await _verifyExerciseReferences(exercises, userId);
     return _firestore.runTransaction<int>((txn) async {
       final headerRef = _collection.doc(templateId);
       final headerSnap = await txn.get(headerRef);
@@ -145,9 +199,18 @@ class WorkoutTemplateRepository {
       txn.set(versionRef, {
         'versionNumber': nextVersion,
         'publishedAt': Timestamp.fromDate(now),
-        'exercises': exercises.map(_prescriptionToMap).toList(),
+        'storageFormat': 'exercisePrescriptionSubcollection',
+        'prescriptionCount': exercises.length,
         'childWorkouts': <Map<String, dynamic>>[],
       });
+      for (final exercise in exercises) {
+        txn.set(
+          versionRef
+              .collection('exercisePrescriptions')
+              .doc(exercise.sortOrder.toString()),
+          _prescriptionToMap(exercise),
+        );
+      }
 
       txn.update(headerRef, {
         'currentVersion': nextVersion,
@@ -171,7 +234,8 @@ class WorkoutTemplateRepository {
         .doc(versionNumber.toString())
         .get();
     if (!doc.exists || doc.data() == null) return null;
-    return _versionFromMap(doc.data()!);
+    final exercises = await _exerciseMapsForVersion(doc.reference, doc.data()!);
+    return _versionFromMap(doc.data()!, exerciseMaps: exercises);
   }
 
   /// Streams all versions of a workout template, ordered by version number.
@@ -181,8 +245,13 @@ class WorkoutTemplateRepository {
         .collection('workoutTemplateVersions')
         .orderBy('versionNumber', descending: true)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => _versionFromMap(doc.data())).toList());
+        .asyncMap((snapshot) async {
+      return Future.wait(snapshot.docs.map((doc) async {
+        final exercises =
+            await _exerciseMapsForVersion(doc.reference, doc.data());
+        return _versionFromMap(doc.data(), exerciseMaps: exercises);
+      }));
+    });
   }
 
   /// Creates a duplicate of an existing workout template as a new draft.
@@ -272,8 +341,12 @@ class WorkoutTemplateRepository {
     );
   }
 
-  WorkoutTemplateVersion _versionFromMap(Map<String, dynamic> data) {
-    final exerciseList = (data['exercises'] as List<dynamic>?) ?? [];
+  WorkoutTemplateVersion _versionFromMap(
+    Map<String, dynamic> data, {
+    List<Map<String, dynamic>>? exerciseMaps,
+  }) {
+    final exerciseList =
+        exerciseMaps ?? (data['exercises'] as List<dynamic>?) ?? [];
     return WorkoutTemplateVersion(
       versionNumber: (data['versionNumber'] as int?) ?? 1,
       publishedAt: _toDateTime(data['publishedAt']),
@@ -283,10 +356,26 @@ class WorkoutTemplateRepository {
     );
   }
 
+  Future<List<Map<String, dynamic>>> _exerciseMapsForVersion(
+    DocumentReference<Map<String, dynamic>> versionRef,
+    Map<String, dynamic> data,
+  ) async {
+    if (data['storageFormat'] != 'exercisePrescriptionSubcollection') {
+      return ((data['exercises'] as List<dynamic>?) ?? [])
+          .cast<Map<String, dynamic>>();
+    }
+    final snapshot = await versionRef
+        .collection('exercisePrescriptions')
+        .orderBy('sortOrder')
+        .get();
+    return snapshot.docs.map((doc) => doc.data()).toList();
+  }
+
   ExercisePrescription _prescriptionFromMap(Map<String, dynamic> data) {
     final prescription = data['prescription'] as Map<String, dynamic>? ?? data;
     return ExercisePrescription(
       exerciseId: data['exerciseId'] as String? ?? '',
+      exerciseVersion: data['exerciseVersion'] as int? ?? 1,
       sortOrder: (data['sortOrder'] as int?) ?? 0,
       exerciseName: data['exerciseName'] as String?,
       mode: _parseExerciseMode(prescription['mode'] as String?),
@@ -302,6 +391,7 @@ class WorkoutTemplateRepository {
   Map<String, dynamic> _prescriptionToMap(ExercisePrescription p) {
     return {
       'exerciseId': p.exerciseId,
+      'exerciseVersion': p.exerciseVersion,
       'sortOrder': p.sortOrder,
       'exerciseName': p.exerciseName,
       'prescription': {

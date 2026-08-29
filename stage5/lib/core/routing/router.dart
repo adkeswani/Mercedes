@@ -76,6 +76,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/exercises/:id',
         builder: (context, state) => ExerciseDetailScreen(
           exerciseId: state.pathParameters['id']!,
+          versionNumber: int.tryParse(
+            state.uri.queryParameters['version'] ?? '',
+          ),
         ),
       ),
       GoRoute(

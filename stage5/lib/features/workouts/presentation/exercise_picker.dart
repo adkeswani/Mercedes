@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:stage5/features/exercises/domain/exercise_template.dart';
 import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
 
 /// Result returned from the exercise picker.
 class ExercisePickerResult {
-  const ExercisePickerResult({required this.id, required this.name});
+  const ExercisePickerResult({
+    required this.id,
+    required this.version,
+    required this.name,
+  });
   final String id;
+  final int version;
   final String name;
 }
 
@@ -80,6 +84,7 @@ class _ExercisePickerSheet extends ConsumerWidget {
                         onTap: () => Navigator.of(context).pop(
                           ExercisePickerResult(
                             id: exercise.id,
+                            version: exercise.currentVersion,
                             name: exercise.name,
                           ),
                         ),

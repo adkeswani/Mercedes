@@ -5,7 +5,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { serverTimestamp, setLogLevel } from 'firebase/firestore';
+import { deleteField, serverTimestamp, setLogLevel } from 'firebase/firestore';
 
 setLogLevel('error');
 
@@ -392,75 +392,233 @@ describe('usernames', () => {
 // ─── Exercise Templates ───
 
 describe('exerciseTemplates', () => {
-  async function seedExercise() {
+  async function seedVersionedExercise() {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await ctx.firestore().collection('exerciseTemplates').doc('e1').set({
-        name: 'Squat', ownerId: OWNER, createdBy: OWNER,
+      const db = ctx.firestore();
+      await db.collection('exerciseTemplates').doc('e1').set({
+        ownerId: OWNER, currentVersion: 1, createdBy: OWNER,
+        createdAt: new Date(), updatedAt: new Date(), updatedBy: OWNER,
+        deletedAt: null, deletedBy: null,
+      });
+      await db.collection('exerciseTemplates').doc('e1')
+        .collection('exerciseVersions').doc('1').set({
+          versionNumber: 1,
+          name: 'Squat',
+          description: 'Barbell squat',
+          instructions: 'Brace and squat',
+          videoUrl: null,
+          mediaUrls: [],
+          exerciseType: 'strength',
+          measurementConfiguration: {
+            primary: 'weight',
+            secondary: ['repetitions'],
+          },
+          gradingConfiguration: null,
+          publishedAt: new Date(),
+          publishedBy: OWNER,
+        });
+    });
+  }
+
+  async function seedLegacyExercise() {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('exerciseTemplates').doc('legacy').set({
+        name: 'Legacy Squat',
+        description: 'Legacy description',
+        instructions: 'Legacy instructions',
+        ownerId: OWNER,
+        createdBy: OWNER,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        updatedBy: OWNER,
+        deletedAt: null,
+        deletedBy: null,
       });
     });
   }
 
   it('allows signed-in reads during the Stage 4 compatibility window', async () => {
-    await seedExercise();
+    await seedVersionedExercise();
     const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
     const strangerDb = testEnv.authenticatedContext(STRANGER).firestore();
     await assertSucceeds(ownerDb.collection('exerciseTemplates').doc('e1').get());
     await assertSucceeds(
       strangerDb.collection('exerciseTemplates').doc('e1').get()
     );
-  });
-
-  it('allows creating with own ownerId and createdBy', async () => {
-    const db = testEnv.authenticatedContext(OWNER).firestore();
     await assertSucceeds(
-      db.collection('exerciseTemplates').doc('e2').set({
-        name: 'Bench', ownerId: OWNER, createdBy: OWNER,
-      })
+      strangerDb.collection('exerciseTemplates').doc('e1')
+        .collection('exerciseVersions').doc('1').get()
     );
   });
 
-  it('denies creating with someone else as ownerId', async () => {
+  it('allows atomically creating an owned header and version 1', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('exerciseTemplates').doc('e2');
+    const batch = db.batch();
+    batch.set(header, {
+      ownerId: OWNER,
+      currentVersion: 1,
+      createdBy: OWNER,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+      deletedAt: null,
+      deletedBy: null,
+    });
+    batch.set(header.collection('exerciseVersions').doc('1'), {
+      versionNumber: 1,
+      name: 'Bench',
+      description: 'Flat bench',
+      instructions: 'Press the bar',
+      videoUrl: null,
+      mediaUrls: [],
+      exerciseType: 'strength',
+      measurementConfiguration: {
+        primary: 'weight',
+        secondary: ['repetitions'],
+      },
+      gradingConfiguration: null,
+      publishedAt: serverTimestamp(),
+      publishedBy: OWNER,
+    });
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies creating without version 1 or with someone else as owner', async () => {
     const db = testEnv.authenticatedContext(STRANGER).firestore();
     await assertFails(
       db.collection('exerciseTemplates').doc('e3').set({
-        name: 'Fake', ownerId: OWNER, createdBy: STRANGER,
+        ownerId: OWNER,
+        currentVersion: 1,
+        createdBy: STRANGER,
+      })
+    );
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      ownerDb.collection('exerciseTemplates').doc('missing-version').set({
+        ownerId: OWNER,
+        currentVersion: 1,
+        createdBy: OWNER,
       })
     );
   });
 
-  it('denies update by non-creator', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await ctx.firestore().collection('exerciseTemplates').doc('e4').set({
-        name: 'Deadlift', ownerId: OWNER, createdBy: OWNER,
-      });
-    });
+  it('denies header and version mutations by a non-owner', async () => {
+    await seedVersionedExercise();
     const db = testEnv.authenticatedContext(STRANGER).firestore();
     await assertFails(
-      db.collection('exerciseTemplates').doc('e4').update({ name: 'Hacked' })
-    );
-  });
-
-  it('allows the owner to update without changing ownership', async () => {
-    await seedExercise();
-    const db = testEnv.authenticatedContext(OWNER).firestore();
-    const ref = db.collection('exerciseTemplates').doc('e1');
-    await assertSucceeds(ref.update({ name: 'Back Squat' }));
-    await assertFails(ref.update({ ownerId: STRANGER }));
-  });
-
-  it('allows the owner to update a legacy document and add ownerId', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await ctx.firestore().collection('exerciseTemplates').doc('legacy').set({
-        name: 'Legacy Squat', createdBy: OWNER,
-      });
-    });
-    const db = testEnv.authenticatedContext(OWNER).firestore();
-    await assertSucceeds(
-      db.collection('exerciseTemplates').doc('legacy').update({
-        name: 'Legacy Back Squat',
-        ownerId: OWNER,
+      db.collection('exerciseTemplates').doc('e1').update({
+        updatedBy: STRANGER,
+        deletedAt: serverTimestamp(),
       })
     );
+    await assertFails(
+      db.collection('exerciseTemplates').doc('e1')
+        .collection('exerciseVersions').doc('2').set({
+          versionNumber: 2,
+          name: 'Hacked',
+          publishedBy: STRANGER,
+        })
+    );
+  });
+
+  it('allows owner soft-delete but preserves logical ownership', async () => {
+    await seedVersionedExercise();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const ref = db.collection('exerciseTemplates').doc('e1');
+    await assertSucceeds(ref.update({
+      deletedAt: serverTimestamp(),
+      deletedBy: OWNER,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    }));
+    await assertFails(ref.update({ ownerId: STRANGER }));
+    await assertFails(ref.delete());
+  });
+
+  it('allows owner to atomically backfill legacy content as version 1', async () => {
+    await seedLegacyExercise();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('exerciseTemplates').doc('legacy');
+    const batch = db.batch();
+    batch.update(header, {
+      currentVersion: 1,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+      name: deleteField(),
+      description: deleteField(),
+      instructions: deleteField(),
+    });
+    batch.set(header.collection('exerciseVersions').doc('1'), {
+      versionNumber: 1,
+      name: 'Legacy Squat',
+      description: 'Legacy description',
+      instructions: 'Legacy instructions',
+      videoUrl: null,
+      mediaUrls: [],
+      exerciseType: 'other',
+      measurementConfiguration: {
+        primary: 'repetitions',
+        secondary: [],
+      },
+      gradingConfiguration: null,
+      publishedAt: new Date(),
+      publishedBy: OWNER,
+    });
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies changing legacy execution content without publishing versions', async () => {
+    await seedLegacyExercise();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      db.collection('exerciseTemplates').doc('legacy').update({
+        name: 'Destructive rename',
+        updatedAt: serverTimestamp(),
+        updatedBy: OWNER,
+      })
+    );
+  });
+
+  it('denies backfill that rewrites the legacy version 1 payload', async () => {
+    await seedLegacyExercise();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('exerciseTemplates').doc('legacy');
+    const batch = db.batch();
+    batch.update(header, {
+      currentVersion: 1,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+      name: deleteField(),
+      description: deleteField(),
+      instructions: deleteField(),
+    });
+    batch.set(header.collection('exerciseVersions').doc('1'), {
+      versionNumber: 1,
+      name: 'Rewritten history',
+      description: 'Legacy description',
+      instructions: 'Legacy instructions',
+      videoUrl: null,
+      mediaUrls: [],
+      exerciseType: 'other',
+      measurementConfiguration: {
+        primary: 'repetitions',
+        secondary: [],
+      },
+      gradingConfiguration: null,
+      publishedAt: new Date(),
+      publishedBy: OWNER,
+    });
+    await assertFails(batch.commit());
+  });
+
+  it('prevents immutable exercise versions from update or delete', async () => {
+    await seedVersionedExercise();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const version = db.collection('exerciseTemplates').doc('e1')
+      .collection('exerciseVersions').doc('1');
+    await assertFails(version.update({ name: 'Changed in place' }));
+    await assertFails(version.delete());
   });
 });
 
@@ -496,6 +654,110 @@ describe('workoutTemplates', () => {
     );
   });
 
+  it('allows the owner to atomically publish a pinned workout version', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adminDb = ctx.firestore();
+      await adminDb.collection('workoutTemplates').doc('publish').set({
+        name: 'Full Body',
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+      });
+      await adminDb.collection('exerciseTemplates').doc('e1').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 1,
+      });
+      await adminDb.collection('exerciseTemplates').doc('e1')
+        .collection('exerciseVersions').doc('1').set({
+          versionNumber: 1,
+        });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('publish');
+    const batch = db.batch();
+    batch.update(header, { currentVersion: 1 });
+    batch.set(
+      header.collection('workoutTemplateVersions').doc('1'),
+      {
+        versionNumber: 1,
+        storageFormat: 'exercisePrescriptionSubcollection',
+        prescriptionCount: 1,
+      }
+    );
+    batch.set(
+      header.collection('workoutTemplateVersions').doc('1')
+        .collection('exercisePrescriptions').doc('0'),
+      {
+        exerciseId: 'e1',
+        exerciseVersion: 1,
+        sortOrder: 0,
+        exerciseName: 'Squat',
+        prescription: { mode: 'reps' },
+      }
+    );
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies publishing a foreign exercise pin', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adminDb = ctx.firestore();
+      await adminDb.collection('workoutTemplates').doc('foreign-pin').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+      });
+      await adminDb.collection('exerciseTemplates').doc('foreign').set({
+        ownerId: STRANGER,
+        createdBy: STRANGER,
+        currentVersion: 1,
+      });
+      await adminDb.collection('exerciseTemplates').doc('foreign')
+        .collection('exerciseVersions').doc('1').set({ versionNumber: 1 });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('foreign-pin');
+    const batch = db.batch();
+    batch.update(header, { currentVersion: 1 });
+    batch.set(header.collection('workoutTemplateVersions').doc('1'), {
+      versionNumber: 1,
+      storageFormat: 'exercisePrescriptionSubcollection',
+      prescriptionCount: 1,
+    });
+    batch.set(
+      header.collection('workoutTemplateVersions').doc('1')
+        .collection('exercisePrescriptions').doc('0'),
+      {
+        exerciseId: 'foreign',
+        exerciseVersion: 1,
+        sortOrder: 0,
+        exerciseName: 'Foreign',
+        prescription: { mode: 'reps' },
+      }
+    );
+    await assertFails(batch.commit());
+  });
+
+  it('denies workout versions above the rule-supported prescription limit', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutTemplates').doc('too-many').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('too-many');
+    const batch = db.batch();
+    batch.update(header, { currentVersion: 1 });
+    batch.set(header.collection('workoutTemplateVersions').doc('1'), {
+      versionNumber: 1,
+      storageFormat: 'exercisePrescriptionSubcollection',
+      prescriptionCount: 10,
+    });
+    await assertFails(batch.commit());
+  });
+
   it('denies update by non-creator', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await ctx.firestore().collection('workoutTemplates').doc('w2').set({
@@ -518,8 +780,31 @@ describe('workoutTemplates', () => {
     await assertFails(
       db.collection('workoutTemplates').doc('w3')
         .collection('workoutTemplateVersions').doc('1')
-        .set({ exercises: [] })
+        .set({ versionNumber: 1, exercises: [] })
     );
+  });
+
+  it('prevents published workout versions from update or delete', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await db.collection('workoutTemplates').doc('immutable').set({
+        name: 'Upper', ownerId: OWNER, createdBy: OWNER,
+      });
+      await db.collection('workoutTemplates').doc('immutable')
+        .collection('workoutTemplateVersions').doc('1').set({
+          versionNumber: 1,
+          exercises: [{
+            exerciseId: 'e1',
+            exerciseVersion: 1,
+            sortOrder: 0,
+          }],
+        });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const version = db.collection('workoutTemplates').doc('immutable')
+      .collection('workoutTemplateVersions').doc('1');
+    await assertFails(version.update({ exercises: [] }));
+    await assertFails(version.delete());
   });
 
   it('allows the owner to update without changing ownership', async () => {

@@ -229,9 +229,18 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
     if (result == null) return;
 
     final exercises = ref.read(workoutDraftProvider);
+    if (exercises.length >= maxExercisePrescriptionsPerWorkoutVersion) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('A workout supports up to 9 exercises')),
+        );
+      }
+      return;
+    }
     ref.read(workoutDraftProvider.notifier).addExercise(
       ExercisePrescription(
         exerciseId: result.id,
+        exerciseVersion: result.version,
         exerciseName: result.name,
         sortOrder: exercises.length,
         mode: ExerciseMode.reps,

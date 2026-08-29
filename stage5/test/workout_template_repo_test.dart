@@ -10,9 +10,23 @@ void main() {
   late FakeFirebaseFirestore fakeFirestore;
   late WorkoutTemplateRepository repo;
 
-  setUp(() {
+  setUp(() async {
     fakeFirestore = FakeFirebaseFirestore();
     repo = WorkoutTemplateRepository(firestore: fakeFirestore);
+    for (final id in ['ex1', 'ex2']) {
+      final header = fakeFirestore.collection('exerciseTemplates').doc(id);
+      await header.set({
+        'ownerId': 'user1',
+        'createdBy': 'user1',
+        'currentVersion': 4,
+      });
+      for (final version in [1, 4]) {
+        await header.collection('exerciseVersions').doc('$version').set({
+          'versionNumber': version,
+          'name': id,
+        });
+      }
+    }
   });
 
   group('WorkoutTemplate.copyWith', () {
@@ -63,6 +77,7 @@ void main() {
     test('returns copy with updated fields', () {
       final p = ExercisePrescription(
         exerciseId: 'ex1',
+        exerciseVersion: 4,
         sortOrder: 0,
         mode: ExerciseMode.reps,
         exerciseName: 'Squat',
@@ -74,6 +89,7 @@ void main() {
       expect(updated.reps, '5');
       expect(updated.exerciseName, 'Squat');
       expect(updated.exerciseId, 'ex1');
+      expect(updated.exerciseVersion, 4);
     });
   });
 
@@ -207,6 +223,7 @@ void main() {
       final exercises = [
         ExercisePrescription(
           exerciseId: 'ex1',
+          exerciseVersion: 4,
           sortOrder: 0,
           mode: ExerciseMode.reps,
           exerciseName: 'Campus Board',
@@ -304,6 +321,80 @@ void main() {
       expect(version, isNull);
     });
 
+    test('publishVersion rejects missing and foreign exercise versions',
+        () async {
+      final id = await repo.create(
+        name: 'Invalid references',
+        workoutType: WorkoutType.skill,
+        userId: 'user1',
+      );
+
+      expect(
+        () => repo.publishVersion(
+          templateId: id,
+          exercises: [
+            ExercisePrescription(
+              exerciseId: 'missing',
+              sortOrder: 0,
+              mode: ExerciseMode.reps,
+            ),
+          ],
+          userId: 'user1',
+        ),
+        throwsStateError,
+      );
+      await fakeFirestore.collection('exerciseTemplates').doc('foreign').set({
+        'ownerId': 'user2',
+        'createdBy': 'user2',
+        'currentVersion': 1,
+      });
+      expect(
+        () => repo.publishVersion(
+          templateId: id,
+          exercises: [
+            ExercisePrescription(
+              exerciseId: 'foreign',
+              sortOrder: 0,
+              mode: ExerciseMode.reps,
+            ),
+          ],
+          userId: 'user1',
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('publishVersion rejects duplicate sort orders before writing',
+        () async {
+      final id = await repo.create(
+        name: 'Duplicate slots',
+        workoutType: WorkoutType.skill,
+        userId: 'user1',
+      );
+
+      expect(
+        () => repo.publishVersion(
+          templateId: id,
+          exercises: [
+            ExercisePrescription(
+              exerciseId: 'ex1',
+              sortOrder: 0,
+              mode: ExerciseMode.reps,
+            ),
+            ExercisePrescription(
+              exerciseId: 'ex2',
+              sortOrder: 0,
+              mode: ExerciseMode.reps,
+            ),
+          ],
+          userId: 'user1',
+        ),
+        throwsArgumentError,
+      );
+      expect((await repo.getById(id))!.currentVersion, 0);
+      expect(await repo.getVersion(id, 1), isNull);
+    });
+
     test('prescription serialization round-trip preserves all fields',
         () async {
       final id = await repo.create(
@@ -317,6 +408,7 @@ void main() {
         exercises: [
           ExercisePrescription(
             exerciseId: 'ex1',
+            exerciseVersion: 4,
             sortOrder: 0,
             mode: ExerciseMode.reps,
             exerciseName: 'Bench Press',
@@ -333,6 +425,7 @@ void main() {
       final version = await repo.getVersion(id, 1);
       final p = version!.exercises.first;
       expect(p.exerciseId, 'ex1');
+      expect(p.exerciseVersion, 4);
       expect(p.exerciseName, 'Bench Press');
       expect(p.mode, ExerciseMode.reps);
       expect(p.sets, 4);

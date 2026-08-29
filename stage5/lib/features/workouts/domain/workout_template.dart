@@ -1,6 +1,8 @@
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/domain/foundation_models.dart';
 
+const maxExercisePrescriptionsPerWorkoutVersion = 9;
+
 /// Workout template header with versioning support.
 ///
 /// The template holds shared metadata. Each publish creates an immutable
@@ -141,6 +143,12 @@ class WorkoutTemplateVersion {
     if (versionNumber < 1) {
       throw ArgumentError('versionNumber must be >= 1');
     }
+    if (exercises.length > maxExercisePrescriptionsPerWorkoutVersion) {
+      throw ArgumentError(
+        'A workout version supports at most '
+        '$maxExercisePrescriptionsPerWorkoutVersion exercises',
+      );
+    }
 
     for (final exercise in exercises) {
       exercise.validate();
@@ -181,6 +189,7 @@ class ExercisePrescription {
     required this.exerciseId,
     required this.sortOrder,
     required this.mode,
+    this.exerciseVersion = 1,
     this.exerciseName,
     this.sets,
     this.reps,
@@ -191,6 +200,7 @@ class ExercisePrescription {
   });
 
   final String exerciseId;
+  final int exerciseVersion;
   final int sortOrder;
   final ExerciseMode mode;
   final String? exerciseName;
@@ -204,6 +214,7 @@ class ExercisePrescription {
   /// Creates a copy with the given fields replaced.
   ExercisePrescription copyWith({
     String? exerciseId,
+    int? exerciseVersion,
     int? sortOrder,
     ExerciseMode? mode,
     String? exerciseName,
@@ -216,6 +227,7 @@ class ExercisePrescription {
   }) {
     return ExercisePrescription(
       exerciseId: exerciseId ?? this.exerciseId,
+      exerciseVersion: exerciseVersion ?? this.exerciseVersion,
       sortOrder: sortOrder ?? this.sortOrder,
       mode: mode ?? this.mode,
       exerciseName: exerciseName ?? this.exerciseName,
@@ -232,6 +244,9 @@ class ExercisePrescription {
   void validate() {
     if (exerciseId.isEmpty) {
       throw ArgumentError('exerciseId cannot be empty');
+    }
+    if (exerciseVersion < 1) {
+      throw ArgumentError('exerciseVersion must be >= 1');
     }
     if (sortOrder < 0) {
       throw ArgumentError('sortOrder must be >= 0');

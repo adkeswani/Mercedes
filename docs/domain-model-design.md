@@ -473,7 +473,7 @@ tests, and any required backfill tests before the next step depends on it.
 
 ### Stage 5 implementation status
 
-Sequence step 1 is implemented in `stage5/`.
+Sequence steps 1 and 2 are implemented in `stage5/`.
 
 - Trainer-client relationships use deterministic
   `{trainerId}_{athleteId}` document IDs, retain ended relationships for audit,
@@ -487,9 +487,25 @@ Sequence step 1 is implemented in `stage5/`.
   owner mutation writes `ownerId` as an incremental backfill.
 - Owner library queries continue using `createdBy` during this compatibility
   window so existing Stage 4 documents remain visible.
-- Exercise versioning, shared organization metadata, typed workout blocks,
-  program instances, and subscription behavior remain deferred to their
-  respective sequence steps.
+- Exercise headers now contain stable ownership, lifecycle, audit metadata, and
+  `currentVersion`. Immutable `exerciseVersions` contain name, description,
+  instructions, media/video, exercise type, measurement configuration, grading
+  configuration, and publication metadata.
+- Compatibility readers treat unversioned Stage 4 exercise documents as
+  version 1. The owner-only idempotent backfill materializes version 1 and
+  removes execution fields from the header; editing a legacy document
+  atomically preserves its original fields as version 1 and publishes version
+  2.
+- Workout prescriptions now persist `exerciseId` plus `exerciseVersion`.
+  New prescriptions are immutable subdocuments so Firestore rules can validate
+  each owner-scoped exercise-version pin; compatibility readers still support
+  legacy array-backed workout versions and resolve missing pins to version 1.
+  Scheduled workout details use the workout instance's pinned workout version
+  and link to each pinned exercise version, preserving historical content.
+- Exercise notes continue to use the logical exercise ID and therefore follow
+  the exercise across versions.
+- Shared organization metadata, typed workout blocks, program instances, and
+  subscription behavior remain deferred to their respective sequence steps.
 
 ## 12. Deferred Details
 

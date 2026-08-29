@@ -48,6 +48,84 @@ service cloud.firestore {
              && request.resource.data.ownerId == templateOwner(resource.data);
     }
 
+    function templateVersion(data) {
+      return 'currentVersion' in data ? data.currentVersion : 0;
+    }
+
+    function publishesNextExerciseVersion(templateId) {
+      let nextVersion = templateVersion(resource.data) + 1;
+      return request.resource.data.currentVersion == nextVersion
+             && existsAfter(
+               /databases/$(database)/documents/exerciseTemplates/$(templateId)/exerciseVersions/$(nextVersion)
+             );
+    }
+
+    function publishesLegacyExerciseEdit(templateId) {
+      return templateVersion(resource.data) == 0
+             && request.resource.data.currentVersion == 2
+             && existsAfter(
+               /databases/$(database)/documents/exerciseTemplates/$(templateId)/exerciseVersions/1
+             )
+             && existsAfter(
+               /databases/$(database)/documents/exerciseTemplates/$(templateId)/exerciseVersions/2
+             );
+    }
+
+    function preservesLegacyExerciseAsVersionOne(templateId) {
+      let version = getAfter(
+        /databases/$(database)/documents/exerciseTemplates/$(templateId)/exerciseVersions/1
+      ).data;
+      return !('name' in request.resource.data)
+             && !('description' in request.resource.data)
+             && !('instructions' in request.resource.data)
+             && !('videoUrl' in request.resource.data)
+             && !('mediaUrls' in request.resource.data)
+             && !('exerciseType' in request.resource.data)
+             && !('measurementConfiguration' in request.resource.data)
+             && !('gradingConfiguration' in request.resource.data)
+             && version.name
+                == ('name' in resource.data ? resource.data.name : '')
+             && version.description
+                == ('description' in resource.data
+                    ? resource.data.description : '')
+             && version.instructions
+                == ('instructions' in resource.data
+                    ? resource.data.instructions : '')
+             && version.videoUrl
+                == ('videoUrl' in resource.data ? resource.data.videoUrl : null)
+             && version.mediaUrls
+                == ('mediaUrls' in resource.data ? resource.data.mediaUrls : [])
+             && version.exerciseType
+                == ('exerciseType' in resource.data
+                    ? resource.data.exerciseType : 'other')
+             && version.measurementConfiguration
+                == ('measurementConfiguration' in resource.data
+                    ? resource.data.measurementConfiguration
+                    : {'primary': 'repetitions', 'secondary': []})
+             && version.gradingConfiguration
+                == ('gradingConfiguration' in resource.data
+                    ? resource.data.gradingConfiguration : null);
+    }
+
+    function publishesNextWorkoutVersion(templateId) {
+      let nextVersion = templateVersion(resource.data) + 1;
+      return request.resource.data.currentVersion == nextVersion
+             && existsAfter(
+               /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(nextVersion)
+             );
+    }
+
+    function isOwnedExerciseVersion(exerciseId, versionNumber) {
+      let exercise = get(
+        /databases/$(database)/documents/exerciseTemplates/$(exerciseId)
+      ).data;
+      return templateOwner(exercise) == request.auth.uid
+             && ((templateVersion(exercise) == 0 && versionNumber == 1)
+                 || exists(
+                      /databases/$(database)/documents/exerciseTemplates/$(exerciseId)/exerciseVersions/$(versionNumber)
+                    ));
+    }
+
     function isProgramAssignable(programId) {
       return get(/databases/$(database)/documents/programs/$(programId)).data.type
              == 'assignable';
@@ -196,20 +274,99 @@ service cloud.firestore {
     }
 
     // ── Exercise Templates ──
-    // Reads remain signed-in during the Stage 4 compatibility window because
-    // assigned workouts still resolve live exercise documents.
-    // Create/update/delete: owner only.
+    // Logical headers retain signed-in reads while assigned Stage 4 workouts
+    // still resolve them. Execution content is immutable in exerciseVersions.
 
     match /exerciseTemplates/{exerciseId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
-                      && request.resource.data.ownerId == request.auth.uid
-                      && request.resource.data.createdBy == request.auth.uid;
+                     && request.resource.data.keys().hasOnly([
+                          'ownerId', 'currentVersion', 'createdBy', 'createdAt',
+                          'updatedAt', 'updatedBy', 'deletedAt', 'deletedBy'
+                        ])
+                     && request.resource.data.ownerId == request.auth.uid
+                     && request.resource.data.createdBy == request.auth.uid
+                     && request.resource.data.currentVersion == 1
+                     && existsAfter(
+                          /databases/$(database)/documents/exerciseTemplates/$(exerciseId)/exerciseVersions/1
+                        );
       allow update: if isSignedIn()
                     && templateOwner(resource.data) == request.auth.uid
-                    && preservesTemplateOwnership();
-      allow delete: if isSignedIn()
-                    && templateOwner(resource.data) == request.auth.uid;
+                    && preservesTemplateOwnership()
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly([
+                           'ownerId', 'currentVersion', 'updatedAt',
+                           'updatedBy', 'deletedAt', 'deletedBy', 'name',
+                           'description', 'instructions', 'videoUrl',
+                           'mediaUrls', 'exerciseType',
+                           'measurementConfiguration',
+                           'gradingConfiguration'
+                         ])
+                    && ((templateVersion(request.resource.data)
+                           == templateVersion(resource.data)
+                         && request.resource.data.diff(resource.data)
+                              .affectedKeys().hasOnly([
+                                'ownerId', 'updatedAt', 'updatedBy',
+                                'deletedAt', 'deletedBy'
+                              ]))
+                        || publishesNextExerciseVersion(exerciseId)
+                        || publishesLegacyExerciseEdit(exerciseId))
+                     && (templateVersion(resource.data) != 0
+                        || templateVersion(request.resource.data) == 0
+                        || preservesLegacyExerciseAsVersionOne(exerciseId));
+      allow delete: if false;
+
+      match /exerciseVersions/{versionNumber} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn()
+                      && templateOwner(
+                           getAfter(
+                             /databases/$(database)/documents/exerciseTemplates/$(exerciseId)
+                           ).data
+                         ) == request.auth.uid
+                      && request.resource.data.keys().hasOnly([
+                           'versionNumber', 'name', 'description',
+                           'instructions', 'videoUrl', 'mediaUrls',
+                           'exerciseType', 'measurementConfiguration',
+                           'gradingConfiguration', 'publishedAt', 'publishedBy'
+                         ])
+                      && versionNumber
+                         == string(request.resource.data.versionNumber)
+                      && request.resource.data.versionNumber >= 1
+                      && request.resource.data.publishedBy == request.auth.uid
+                      && ((!exists(
+                             /databases/$(database)/documents/exerciseTemplates/$(exerciseId)
+                           )
+                           && request.resource.data.versionNumber == 1
+                           && getAfter(
+                                /databases/$(database)/documents/exerciseTemplates/$(exerciseId)
+                              ).data.currentVersion == 1)
+                          || (exists(
+                                /databases/$(database)/documents/exerciseTemplates/$(exerciseId)
+                              )
+                              && ((templateVersion(
+                                     get(
+                                       /databases/$(database)/documents/exerciseTemplates/$(exerciseId)
+                                     ).data
+                                   ) + 1
+                                   == request.resource.data.versionNumber
+                                   && getAfter(
+                                        /databases/$(database)/documents/exerciseTemplates/$(exerciseId)
+                                      ).data.currentVersion
+                                      == request.resource.data.versionNumber)
+                                  || (templateVersion(
+                                        get(
+                                          /databases/$(database)/documents/exerciseTemplates/$(exerciseId)
+                                        ).data
+                                      ) == 0
+                                      && request.resource.data.versionNumber
+                                         in [1, 2]
+                                      && getAfter(
+                                           /databases/$(database)/documents/exerciseTemplates/$(exerciseId)
+                                         ).data.currentVersion == 2))));
+        allow update, delete: if false;
+      }
     }
 
     // ── Workout Templates ──
@@ -224,17 +381,72 @@ service cloud.firestore {
                       && request.resource.data.createdBy == request.auth.uid;
       allow update: if isSignedIn()
                     && templateOwner(resource.data) == request.auth.uid
-                    && preservesTemplateOwnership();
-      allow delete: if isSignedIn()
-                    && templateOwner(resource.data) == request.auth.uid;
+                    && preservesTemplateOwnership()
+                    && (templateVersion(request.resource.data)
+                          == templateVersion(resource.data)
+                        || publishesNextWorkoutVersion(templateId));
+      allow delete: if false;
 
       // Workout template versions (subcollection)
       match /workoutTemplateVersions/{versionNumber} {
         allow read: if isSignedIn();
-        allow write: if isSignedIn()
+        allow create: if isSignedIn()
                        && templateOwner(
                            get(/databases/$(database)/documents/workoutTemplates/$(templateId)).data)
-                          == request.auth.uid;
+                          == request.auth.uid
+                       && versionNumber
+                          == string(request.resource.data.versionNumber)
+                       && request.resource.data.versionNumber >= 1
+                       && request.resource.data.storageFormat
+                          == 'exercisePrescriptionSubcollection'
+                       && !('exercises' in request.resource.data)
+                       && request.resource.data.prescriptionCount is int
+                       && request.resource.data.prescriptionCount >= 0
+                       && request.resource.data.prescriptionCount <= 9
+                       && templateVersion(
+                            get(
+                              /databases/$(database)/documents/workoutTemplates/$(templateId)
+                            ).data
+                          ) + 1 == request.resource.data.versionNumber
+                       && getAfter(
+                            /databases/$(database)/documents/workoutTemplates/$(templateId)
+                          ).data.currentVersion
+                          == request.resource.data.versionNumber;
+        allow update, delete: if false;
+
+        match /exercisePrescriptions/{sortOrder} {
+          allow read: if isSignedIn();
+          allow create: if isSignedIn()
+                         && templateOwner(
+                             get(
+                               /databases/$(database)/documents/workoutTemplates/$(templateId)
+                             ).data
+                           ) == request.auth.uid
+                         && request.resource.data.keys().hasOnly([
+                             'exerciseId', 'exerciseVersion', 'sortOrder',
+                             'exerciseName', 'prescription'
+                           ])
+                         && sortOrder == string(request.resource.data.sortOrder)
+                         && request.resource.data.sortOrder >= 0
+                         && request.resource.data.exerciseVersion >= 1
+                         && isOwnedExerciseVersion(
+                             request.resource.data.exerciseId,
+                             request.resource.data.exerciseVersion
+                           )
+                         && !exists(
+                             /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                           )
+                         && versionNumber == string(
+                             getAfter(
+                               /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                             ).data.versionNumber
+                           )
+                         && request.resource.data.sortOrder
+                           < getAfter(
+                               /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                             ).data.prescriptionCount;
+          allow update, delete: if false;
+        }
       }
     }
 

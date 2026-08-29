@@ -110,6 +110,7 @@ void main() {
         exercises: [
           ExercisePrescription(
             exerciseId: 'ex1',
+            exerciseVersion: 3,
             sortOrder: 0,
             mode: ExerciseMode.reps,
             sets: 3,
@@ -126,6 +127,7 @@ void main() {
       );
       expect(version.versionNumber, 1);
       expect(version.exercises.length, 2);
+      expect(version.exercises.first.exerciseVersion, 3);
       expect(version.childWorkouts, isEmpty);
     });
 
@@ -154,6 +156,22 @@ void main() {
             mode: ExerciseMode.reps,
           ),
         ],
+      );
+      expect(() => version.validate(), throwsArgumentError);
+    });
+
+    test('validate rejects more than the rule-supported exercise limit', () {
+      final version = WorkoutTemplateVersion(
+        versionNumber: 1,
+        publishedAt: DateTime(2024, 1, 1),
+        exercises: List.generate(
+          maxExercisePrescriptionsPerWorkoutVersion + 1,
+          (index) => ExercisePrescription(
+            exerciseId: 'ex$index',
+            sortOrder: index,
+            mode: ExerciseMode.reps,
+          ),
+        ),
       );
       expect(() => version.validate(), throwsArgumentError);
     });
@@ -245,6 +263,16 @@ void main() {
     test('validate throws on empty exerciseId', () {
       final prescription = ExercisePrescription(
         exerciseId: '',
+        sortOrder: 0,
+        mode: ExerciseMode.reps,
+      );
+      expect(() => prescription.validate(), throwsArgumentError);
+    });
+
+    test('validate throws on exerciseVersion < 1', () {
+      final prescription = ExercisePrescription(
+        exerciseId: 'ex1',
+        exerciseVersion: 0,
         sortOrder: 0,
         mode: ExerciseMode.reps,
       );

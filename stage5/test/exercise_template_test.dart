@@ -6,343 +6,430 @@ import 'package:stage5/features/exercises/data/exercise_template_repository.dart
 import 'package:stage5/features/exercises/domain/exercise_template.dart';
 
 void main() {
-  late FakeFirebaseFirestore fakeFirestore;
-  late ExerciseTemplateRepository repo;
+  late FakeFirebaseFirestore firestore;
+  late ExerciseTemplateRepository repository;
+
+  const measurement = ExerciseMeasurementConfiguration(
+    primary: ExerciseMeasurementType.weight,
+    secondary: [ExerciseMeasurementType.repetitions],
+  );
+  const grading = ExerciseGradingConfiguration(
+    system: ExerciseGradingSystem.gymColor,
+    gymColors: ['Yellow', 'Blue', 'Black'],
+  );
 
   setUp(() {
-    fakeFirestore = FakeFirebaseFirestore();
-    repo = ExerciseTemplateRepository(firestore: fakeFirestore);
+    firestore = FakeFirebaseFirestore();
+    repository = ExerciseTemplateRepository(firestore: firestore);
   });
 
-  group('ExerciseTemplate.copyWith', () {
-    test('returns a copy with updated fields', () {
-      final now = DateTime(2026, 1, 1);
-      final template = ExerciseTemplate(
-        id: 'ex1',
-        ownerId: 'user1',
-        name: 'Squat',
-        description: 'Barbell squat',
-        instructions: 'Place bar on back',
-        createdAt: now,
-        createdBy: 'user1',
-        updatedAt: now,
-        updatedBy: 'user1',
-      );
-      final updated = template.copyWith(name: 'Back Squat');
-      expect(updated.name, 'Back Squat');
-      expect(updated.id, 'ex1');
-      expect(updated.description, 'Barbell squat');
+  ExerciseVersion version({
+    int number = 1,
+    String name = 'Back Squat',
+  }) {
+    return ExerciseVersion(
+      versionNumber: number,
+      name: name,
+      description: 'Barbell squat',
+      instructions: 'Brace and squat',
+      videoUrl: 'https://example.com/squat',
+      mediaUrls: const ['https://example.com/squat.jpg'],
+      exerciseType: ExerciseType.strength,
+      measurementConfiguration: measurement,
+      gradingConfiguration: grading,
+      publishedAt: DateTime(2026, 1, 1),
+      publishedBy: 'coach1',
+    );
+  }
+
+  group('exercise version domain', () {
+    test('validates complete execution configuration', () {
+      expect(() => version().validate(), returnsNormally);
     });
 
-    test('preserves all fields when no arguments given', () {
-      final now = DateTime(2026, 1, 1);
-      final template = ExerciseTemplate(
-        id: 'ex1',
-        ownerId: 'user1',
-        name: 'Squat',
-        description: 'Desc',
-        instructions: 'Steps',
-        videoUrl: 'https://example.com',
-        createdAt: now,
-        createdBy: 'user1',
-        updatedAt: now,
-        updatedBy: 'user1',
+    test('rejects invalid version numbers', () {
+      expect(() => version(number: 0).validate(), throwsArgumentError);
+    });
+
+    test('rejects duplicate primary and secondary measurements', () {
+      final invalid = version().copyWithMeasurement(
+        const ExerciseMeasurementConfiguration(
+          primary: ExerciseMeasurementType.weight,
+          secondary: [ExerciseMeasurementType.weight],
+        ),
       );
-      final copy = template.copyWith();
-      expect(copy.id, template.id);
-      expect(copy.name, template.name);
-      expect(copy.videoUrl, template.videoUrl);
+      expect(() => invalid.validate(), throwsArgumentError);
+    });
+
+    test('gym color grading requires configured colors', () {
+      const invalid = ExerciseGradingConfiguration(
+        system: ExerciseGradingSystem.gymColor,
+      );
+      expect(() => invalid.validate(), throwsArgumentError);
+    });
+
+    test('logical header exposes current immutable version', () {
+      final exercise = ExerciseTemplate(
+        id: 'exercise1',
+        ownerId: 'coach1',
+        currentVersion: 1,
+        version: version(),
+        createdAt: DateTime(2026, 1, 1),
+        createdBy: 'coach1',
+        updatedAt: DateTime(2026, 1, 1),
+        updatedBy: 'coach1',
+      );
+
+      exercise.validate();
+      expect(exercise.name, 'Back Squat');
+      expect(exercise.measurementConfiguration, measurement);
+      expect(exercise.currentVersion, 1);
+      expect(exercise.isDeleted, isFalse);
+    });
+
+    test('logical header can resolve an older historical version', () {
+      final exercise = ExerciseTemplate(
+        id: 'exercise1',
+        ownerId: 'coach1',
+        currentVersion: 2,
+        version: version(),
+        createdAt: DateTime(2026, 1, 1),
+        createdBy: 'coach1',
+        updatedAt: DateTime(2026, 1, 1),
+        updatedBy: 'coach1',
+      );
+      expect(() => exercise.validate(), returnsNormally);
+      expect(exercise.version.versionNumber, 1);
     });
   });
 
-  group('ExerciseTemplateRepository', () {
-    test('create adds document and returns ID', () async {
-      final id = await repo.create(
-        name: 'Bench Press',
-        description: 'Flat bench',
-        instructions: 'Lie on bench, press bar up',
-        userId: 'user1',
+  group('ExerciseTemplateRepository versioning', () {
+    test('create atomically writes a stable header and immutable version 1',
+        () async {
+      final id = await repository.create(
+        name: 'Moon Board',
+        description: 'Board climbing',
+        instructions: 'Climb the selected problem',
+        videoUrl: 'https://example.com/moon-board',
+        mediaUrls: const ['https://example.com/problem.png'],
+        exerciseType: ExerciseType.climbing,
+        measurementConfiguration: const ExerciseMeasurementConfiguration(
+          primary: ExerciseMeasurementType.completion,
+        ),
+        gradingConfiguration: const ExerciseGradingConfiguration(
+          system: ExerciseGradingSystem.vScale,
+        ),
+        userId: 'coach1',
       );
 
-      expect(id, isNotEmpty);
+      final header =
+          await firestore.collection('exerciseTemplates').doc(id).get();
+      expect(header.data()!['ownerId'], 'coach1');
+      expect(header.data()!['currentVersion'], 1);
+      expect(header.data()!.containsKey('name'), isFalse);
 
-      final doc =
-          await fakeFirestore.collection('exerciseTemplates').doc(id).get();
-      expect(doc.exists, true);
-      expect(doc.data()!['name'], 'Bench Press');
-      expect(doc.data()!['createdBy'], 'user1');
-      expect(doc.data()!['ownerId'], 'user1');
-      expect(doc.data()!['updatedBy'], 'user1');
-      expect(doc.data()!['deletedAt'], isNull);
-    });
-
-    test('create stores videoUrl when provided', () async {
-      final id = await repo.create(
-        name: 'Deadlift',
-        description: 'Conventional deadlift',
-        instructions: 'Hinge at hips',
-        userId: 'user1',
-        videoUrl: 'https://example.com/video',
+      final rawVersion =
+          await header.reference.collection('exerciseVersions').doc('1').get();
+      expect(rawVersion.data()!['name'], 'Moon Board');
+      expect(rawVersion.data()!['exerciseType'], 'climbing');
+      expect(
+        rawVersion.data()!['measurementConfiguration']['primary'],
+        'completion',
       );
+      expect(rawVersion.data()!['gradingConfiguration']['system'], 'vScale');
 
-      final doc =
-          await fakeFirestore.collection('exerciseTemplates').doc(id).get();
-      expect(doc.data()!['videoUrl'], 'https://example.com/video');
+      final exercise = await repository.getById(id);
+      expect(exercise!.name, 'Moon Board');
+      expect(exercise.currentVersion, 1);
+      expect(exercise.version.mediaUrls, ['https://example.com/problem.png']);
     });
 
-    test('getById returns template', () async {
-      final id = await repo.create(
-        name: 'Row',
-        description: 'Barbell row',
-        instructions: 'Pull bar to chest',
-        userId: 'user1',
-      );
-
-      final template = await repo.getById(id);
-      expect(template, isNotNull);
-      expect(template!.name, 'Row');
-      expect(template.id, id);
-    });
-
-    test('getById returns null for non-existent doc', () async {
-      final template = await repo.getById('nonexistent');
-      expect(template, isNull);
-    });
-
-    test('getById returns null for soft-deleted template', () async {
-      final id = await repo.create(
-        name: 'OHP',
-        description: 'Overhead press',
-        instructions: 'Press bar overhead',
-        userId: 'user1',
-      );
-
-      await repo.softDelete(id, 'user1');
-      final template = await repo.getById(id);
-      expect(template, isNull);
-    });
-
-    test('getByIdIncludingDeleted returns soft-deleted template', () async {
-      final id = await repo.create(
-        name: 'Archived Exercise',
-        description: 'Was deleted',
-        instructions: 'Still readable',
-        userId: 'user1',
-      );
-
-      await repo.softDelete(id, 'user1');
-      final template = await repo.getByIdIncludingDeleted(id);
-      expect(template, isNotNull);
-      expect(template!.name, 'Archived Exercise');
-      expect(template.isDeleted, isTrue);
-    });
-
-    test('update modifies fields', () async {
-      final id = await repo.create(
+    test('update publishes v2 without changing v1', () async {
+      final id = await repository.create(
         name: 'Squat',
         description: 'Back squat',
         instructions: 'Squat down',
-        userId: 'user1',
+        exerciseType: ExerciseType.strength,
+        measurementConfiguration: measurement,
+        gradingConfiguration: grading,
+        userId: 'coach1',
       );
 
-      await repo.update(
+      final nextVersion = await repository.update(
         id: id,
         name: 'Front Squat',
         description: 'Front rack squat',
-        instructions: 'Hold bar in front rack, squat down',
-        userId: 'user1',
+        instructions: 'Keep elbows high',
         videoUrl: 'https://example.com/front-squat',
+        userId: 'coach1',
       );
 
-      final template = await repo.getById(id);
-      expect(template!.name, 'Front Squat');
-      expect(template.description, 'Front rack squat');
-      expect(template.videoUrl, 'https://example.com/front-squat');
+      expect(nextVersion, 2);
+      final v1 = await repository.getVersion(id, 1);
+      final v2 = await repository.getVersion(id, 2);
+      expect(v1!.name, 'Squat');
+      expect(v2!.name, 'Front Squat');
+      expect(
+          v2.measurementConfiguration.primary, ExerciseMeasurementType.weight);
+      expect(v2.gradingConfiguration!.gymColors, grading.gymColors);
+      expect((await repository.getById(id))!.currentVersion, 2);
     });
 
-    test('softDelete sets deletedAt and deletedBy', () async {
-      final id = await repo.create(
-        name: 'Curl',
-        description: 'Bicep curl',
-        instructions: 'Curl the bar',
-        userId: 'user1',
+    test('can resolve a historical version through the logical exercise',
+        () async {
+      final id = await repository.create(
+        name: 'Original',
+        description: 'Original description',
+        instructions: 'Original instructions',
+        userId: 'coach1',
+      );
+      await repository.update(
+        id: id,
+        name: 'Updated',
+        description: 'Updated description',
+        instructions: 'Updated instructions',
+        userId: 'coach1',
       );
 
-      await repo.softDelete(id, 'user1');
-
-      // Read raw doc — soft-deleted should have deletedBy set
-      final doc =
-          await fakeFirestore.collection('exerciseTemplates').doc(id).get();
-      expect(doc.data()!['deletedBy'], 'user1');
-      expect(doc.data()!['deletedAt'], isNotNull);
+      final historical = await repository.getById(id, versionNumber: 1);
+      expect(historical!.name, 'Original');
+      expect(historical.currentVersion, 2);
+      expect(historical.version.versionNumber, 1);
     });
 
-    test('watchAll streams only non-deleted templates for user', () async {
-      // Create templates for user1
-      await repo.create(
-        name: 'Exercise A',
-        description: 'Desc A',
-        instructions: 'Do A',
-        userId: 'user1',
+    test('watchAll resolves latest versions and filters owner and deletion',
+        () async {
+      final first = await repository.create(
+        name: 'First',
+        description: 'Description',
+        instructions: 'Instructions',
+        userId: 'coach1',
       );
-      final idB = await repo.create(
-        name: 'Exercise B',
-        description: 'Desc B',
-        instructions: 'Do B',
-        userId: 'user1',
+      await repository.create(
+        name: 'Other owner',
+        description: 'Description',
+        instructions: 'Instructions',
+        userId: 'coach2',
       );
-      // Create template for different user
-      await repo.create(
-        name: 'Exercise C',
-        description: 'Desc C',
-        instructions: 'Do C',
-        userId: 'user2',
+      final deleted = await repository.create(
+        name: 'Deleted',
+        description: 'Description',
+        instructions: 'Instructions',
+        userId: 'coach1',
       );
+      await repository.update(
+        id: first,
+        name: 'Latest First',
+        description: 'Description',
+        instructions: 'Instructions',
+        userId: 'coach1',
+      );
+      await repository.softDelete(deleted, 'coach1');
 
-      // Soft-delete one of user1's templates
-      await repo.softDelete(idB, 'user1');
-
-      final templates = await repo.watchAll('user1').first;
-      expect(templates.length, 1);
-      expect(templates.first.name, 'Exercise A');
+      final exercises = await repository.watchAll('coach1').first;
+      expect(exercises.map((exercise) => exercise.name), ['Latest First']);
     });
 
-    test('serialization round-trip preserves all fields', () async {
-      final id = await repo.create(
-        name: 'Plank',
-        description: 'Core hold',
-        instructions: 'Hold body straight',
-        userId: 'user1',
-        videoUrl: 'https://example.com/plank',
+    test('soft-deleted exercise remains resolvable for historical workouts',
+        () async {
+      final id = await repository.create(
+        name: 'Archived',
+        description: 'Description',
+        instructions: 'Instructions',
+        userId: 'coach1',
       );
+      await repository.softDelete(id, 'coach1');
 
-      final template = await repo.getById(id);
-      expect(template, isNotNull);
-      expect(template!.id, id);
-      expect(template.name, 'Plank');
-      expect(template.description, 'Core hold');
-      expect(template.instructions, 'Hold body straight');
-      expect(template.videoUrl, 'https://example.com/plank');
-      expect(template.createdBy, 'user1');
-      expect(template.ownerId, 'user1');
-      expect(template.updatedBy, 'user1');
-      expect(template.isDeleted, false);
+      expect(await repository.getById(id), isNull);
+      final archived = await repository.getByIdIncludingDeleted(id);
+      expect(archived!.isDeleted, isTrue);
+      expect(archived.name, 'Archived');
     });
   });
 
-  group('ExerciseTemplateRepository ownership', () {
-    test('reads legacy createdBy as ownerId', () async {
-      await fakeFirestore.collection('exerciseTemplates').doc('legacy').set({
-        'name': 'Legacy',
-        'description': 'Existing document',
-        'instructions': 'Preserve compatibility',
-        'createdBy': 'user1',
+  group('legacy compatibility and backfill', () {
+    Future<void> seedLegacy(String id, {String owner = 'coach1'}) async {
+      await firestore.collection('exerciseTemplates').doc(id).set({
+        'name': 'Legacy Squat',
+        'description': 'Legacy description',
+        'instructions': 'Legacy instructions',
+        'videoUrl': 'https://example.com/legacy',
+        'exerciseType': 'strength',
+        'measurementConfiguration': {
+          'primary': 'weight',
+          'secondary': ['repetitions'],
+        },
+        'createdBy': owner,
+        'createdAt': Timestamp.fromDate(DateTime(2025, 1, 1)),
+        'updatedAt': Timestamp.fromDate(DateTime(2025, 1, 1)),
+        'updatedBy': owner,
+        'deletedAt': null,
       });
+    }
 
-      final template = await repo.getById('legacy');
+    test('legacy document is read as synthetic version 1', () async {
+      await seedLegacy('legacy');
 
-      expect(template!.ownerId, 'user1');
+      final exercise = await repository.getById('legacy');
+      expect(exercise!.ownerId, 'coach1');
+      expect(exercise.currentVersion, 1);
+      expect(exercise.version.versionNumber, 1);
+      expect(exercise.name, 'Legacy Squat');
+      expect(
+        exercise.measurementConfiguration.primary,
+        ExerciseMeasurementType.weight,
+      );
     });
 
-    test('update throws when caller is not creator', () async {
-      final id = await repo.create(
-        name: 'Owned Exercise',
-        description: 'desc',
-        instructions: 'instr',
-        userId: 'user1',
-      );
+    test('explicit backfill materializes v1 and removes legacy payload',
+        () async {
+      await seedLegacy('legacy');
+
+      final result = await repository.backfillLegacyVersion('legacy', 'coach1');
+      expect(result, ExerciseBackfillResult.backfilled);
+
+      final header =
+          await firestore.collection('exerciseTemplates').doc('legacy').get();
+      expect(header.data()!['ownerId'], 'coach1');
+      expect(header.data()!['currentVersion'], 1);
+      expect(header.data()!.containsKey('name'), isFalse);
+      final v1 = await repository.getVersion('legacy', 1);
+      expect(v1!.name, 'Legacy Squat');
+      expect(v1.publishedAt, DateTime(2025, 1, 1));
+    });
+
+    test('backfill is idempotent', () async {
+      await seedLegacy('legacy');
+      await repository.backfillLegacyVersion('legacy', 'coach1');
 
       expect(
-        () => repo.update(
-          id: id,
+        await repository.backfillLegacyVersion('legacy', 'coach1'),
+        ExerciseBackfillResult.notNeeded,
+      );
+    });
+
+    test('first legacy edit preserves v1 and publishes v2', () async {
+      await seedLegacy('legacy');
+
+      final number = await repository.update(
+        id: 'legacy',
+        name: 'Edited Squat',
+        description: 'New description',
+        instructions: 'New instructions',
+        userId: 'coach1',
+      );
+
+      expect(number, 2);
+      expect((await repository.getVersion('legacy', 1))!.name, 'Legacy Squat');
+      expect((await repository.getVersion('legacy', 2))!.name, 'Edited Squat');
+    });
+
+    test('owned batch backfill only counts legacy records', () async {
+      await seedLegacy('legacy1');
+      await seedLegacy('legacy2');
+      await repository.create(
+        name: 'Versioned',
+        description: 'Description',
+        instructions: 'Instructions',
+        userId: 'coach1',
+      );
+      await seedLegacy('other', owner: 'coach2');
+
+      expect(await repository.backfillOwnedLegacyExercises('coach1'), 2);
+    });
+
+    test('update and backfill reject non-owner', () async {
+      await seedLegacy('legacy');
+
+      expect(
+        () => repository.update(
+          id: 'legacy',
           name: 'Hijacked',
-          description: 'desc',
-          instructions: 'instr',
-          userId: 'not_the_creator',
+          description: 'Description',
+          instructions: 'Instructions',
+          userId: 'stranger',
         ),
         throwsStateError,
       );
-    });
-
-    test('softDelete throws when caller is not creator', () async {
-      final id = await repo.create(
-        name: 'Owned Exercise',
-        description: 'desc',
-        instructions: 'instr',
-        userId: 'user1',
-      );
-
       expect(
-        () => repo.softDelete(id, 'not_the_creator'),
+        () => repository.backfillLegacyVersion('legacy', 'stranger'),
         throwsStateError,
       );
     });
   });
 
-  group('ExerciseTemplateRepository.isExerciseReferenced', () {
-    test('returns true when exercise is in a published workout', () async {
-      final exerciseId = await repo.create(
-        name: 'Bench Press',
-        description: 'Flat bench',
-        instructions: 'Press',
-        userId: 'user1',
+  group('workout reference compatibility', () {
+    test('finds references in immutable prescription subcollections', () async {
+      final exerciseId = await repository.create(
+        name: 'Pinned',
+        description: 'Description',
+        instructions: 'Instructions',
+        userId: 'coach1',
       );
-
-      // Create a workout template that references this exercise
-      final workoutRef = fakeFirestore.collection('workoutTemplates').doc();
-      await workoutRef.set({
-        'name': 'Push Day',
+      final workout = firestore.collection('workoutTemplates').doc('workout');
+      await workout.set({
+        'ownerId': 'coach1',
+        'createdBy': 'coach1',
         'currentVersion': 1,
         'deletedAt': null,
-        'createdBy': 'user1',
       });
-      await workoutRef.collection('workoutTemplateVersions').doc('1').set({
+      final version =
+          workout.collection('workoutTemplateVersions').doc('1');
+      await version.set({
         'versionNumber': 1,
-        'exercises': [
-          {'exerciseId': exerciseId, 'sortOrder': 0},
-        ],
+        'storageFormat': 'exercisePrescriptionSubcollection',
+      });
+      await version.collection('exercisePrescriptions').doc('0').set({
+        'exerciseId': exerciseId,
+        'exerciseVersion': 1,
+        'sortOrder': 0,
       });
 
-      final referenced = await repo.isExerciseReferenced(exerciseId);
-      expect(referenced, isTrue);
+      expect(await repository.isExerciseReferenced(exerciseId), isTrue);
     });
 
-    test('returns false when exercise is not referenced', () async {
-      final exerciseId = await repo.create(
-        name: 'Lonely Exercise',
-        description: 'Not used',
-        instructions: 'N/A',
-        userId: 'user1',
+    test('continues finding references in legacy workout arrays', () async {
+      final exerciseId = await repository.create(
+        name: 'Legacy pinned',
+        description: 'Description',
+        instructions: 'Instructions',
+        userId: 'coach1',
       );
-
-      final referenced = await repo.isExerciseReferenced(exerciseId);
-      expect(referenced, isFalse);
-    });
-
-    test('returns false when referencing workout is deleted', () async {
-      final exerciseId = await repo.create(
-        name: 'Used Then Freed',
-        description: 'Desc',
-        instructions: 'Instr',
-        userId: 'user1',
-      );
-
-      final workoutRef = fakeFirestore.collection('workoutTemplates').doc();
-      await workoutRef.set({
-        'name': 'Deleted Workout',
+      final workout = firestore.collection('workoutTemplates').doc('legacy');
+      await workout.set({
+        'ownerId': 'coach1',
+        'createdBy': 'coach1',
         'currentVersion': 1,
-        'deletedAt': Timestamp.now(),
-        'createdBy': 'user1',
+        'deletedAt': null,
       });
-      await workoutRef.collection('workoutTemplateVersions').doc('1').set({
+      await workout.collection('workoutTemplateVersions').doc('1').set({
         'versionNumber': 1,
         'exercises': [
           {'exerciseId': exerciseId, 'sortOrder': 0},
         ],
       });
 
-      final referenced = await repo.isExerciseReferenced(exerciseId);
-      expect(referenced, isFalse);
+      expect(await repository.isExerciseReferenced(exerciseId), isTrue);
     });
   });
+}
+
+extension on ExerciseVersion {
+  ExerciseVersion copyWithMeasurement(
+    ExerciseMeasurementConfiguration configuration,
+  ) {
+    return ExerciseVersion(
+      versionNumber: versionNumber,
+      name: name,
+      description: description,
+      instructions: instructions,
+      videoUrl: videoUrl,
+      mediaUrls: mediaUrls,
+      exerciseType: exerciseType,
+      measurementConfiguration: configuration,
+      gradingConfiguration: gradingConfiguration,
+      publishedAt: publishedAt,
+      publishedBy: publishedBy,
+    );
+  }
 }

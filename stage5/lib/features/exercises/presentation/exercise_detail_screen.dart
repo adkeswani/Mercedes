@@ -17,9 +17,14 @@ import 'package:stage5/features/exercises/presentation/youtube_embed.dart';
 /// by everyone (coaches and athletes); an Edit action is only shown to the
 /// exercise's creator.
 class ExerciseDetailScreen extends ConsumerWidget {
-  const ExerciseDetailScreen({super.key, required this.exerciseId});
+  const ExerciseDetailScreen({
+    super.key,
+    required this.exerciseId,
+    this.versionNumber,
+  });
 
   final String exerciseId;
+  final int? versionNumber;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -31,7 +36,12 @@ class ExerciseDetailScreen extends ConsumerWidget {
         title: const Text('Exercise'),
       ),
       body: FutureBuilder<ExerciseTemplate?>(
-        future: repo.getById(exerciseId),
+        future: versionNumber == null
+            ? repo.getById(exerciseId)
+            : repo.getByIdIncludingDeleted(
+                exerciseId,
+                versionNumber: versionNumber,
+              ),
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());

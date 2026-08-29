@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/exercises/presentation/exercise_note_widget.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
@@ -51,8 +50,9 @@ class _WorkoutCompletionScreenState
     if (instance != null && mounted) {
       // Load exercises from the workout template
       final workoutRepo = ref.read(workoutTemplateRepositoryProvider);
-      final exercises = await workoutRepo.getLatestExercises(
+      final workoutVersion = await workoutRepo.getVersion(
         instance.workoutTemplateId,
+        instance.workoutTemplateVersion,
       );
 
       final uid = ref.read(authStateProvider).value?.uid;
@@ -60,7 +60,7 @@ class _WorkoutCompletionScreenState
 
       setState(() {
         _instance = instance;
-        _exercises = exercises;
+        _exercises = workoutVersion?.exercises ?? [];
         _isAthlete = isAthlete;
         if (instance.isCompleted) {
           _isEditing = true;
@@ -177,8 +177,10 @@ class _WorkoutCompletionScreenState
               return Card(
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
-                  onTap: () =>
-                      context.push('/exercises/${exercise.exerciseId}'),
+                  onTap: () => context.push(
+                    '/exercises/${exercise.exerciseId}'
+                    '?version=${exercise.exerciseVersion}',
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.all(12),
                     child: Column(
