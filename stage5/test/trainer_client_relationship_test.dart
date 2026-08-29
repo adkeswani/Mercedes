@@ -184,5 +184,155 @@ void main() {
         containsAll(['trainer1', 'trainer2']),
       );
     });
+
+    group('legacy enrollment backfill', () {
+      Future<void> seedProgram(
+        String id, {
+        String ownerId = 'trainer1',
+        ProgramType type = ProgramType.assignable,
+      }) {
+        return firestore.collection('programs').doc(id).set({
+          'ownerId': ownerId,
+          'type': type.name,
+        });
+      }
+
+      Future<void> seedEnrollment(
+        String id, {
+        String programId = 'program1',
+        String athleteId = 'athlete1',
+        String addedBy = 'trainer1',
+        EnrollmentStatus status = EnrollmentStatus.active,
+      }) {
+        return firestore.collection('enrollments').doc(id).set({
+          'programId': programId,
+          'athleteId': athleteId,
+          'addedBy': addedBy,
+          'status': status.name,
+        });
+      }
+
+      test('creates one relationship per athlete from active enrollments',
+          () async {
+        await seedProgram('program1');
+        await seedProgram('program2');
+        await seedEnrollment('enrollment1');
+        await seedEnrollment(
+          'enrollment2',
+          programId: 'program2',
+        );
+
+        expect(
+          await repository.backfillActiveEnrollmentRelationships(
+            trainerId: 'trainer1',
+            callerUserId: 'trainer1',
+          ),
+          1,
+        );
+        final relationship =
+            await repository.getRelationship('trainer1', 'athlete1');
+        expect(relationship, isNotNull);
+        expect(relationship!.isActive, isTrue);
+        expect(relationship.createdBy, 'trainer1');
+      });
+
+      test('is idempotent and never reactivates an ended relationship',
+          () async {
+        await seedProgram('program1');
+        await seedEnrollment('enrollment1');
+        await repository.startRelationship(
+          trainerId: 'trainer1',
+          athleteId: 'athlete1',
+          callerUserId: 'trainer1',
+        );
+        await repository.endRelationship(
+          trainerId: 'trainer1',
+          athleteId: 'athlete1',
+          callerUserId: 'trainer1',
+        );
+
+        expect(
+          await repository.backfillActiveEnrollmentRelationships(
+            trainerId: 'trainer1',
+            callerUserId: 'trainer1',
+          ),
+          0,
+        );
+        final relationship =
+            await repository.getRelationship('trainer1', 'athlete1');
+        expect(relationship!.isEnded, isTrue);
+      });
+
+      test('ignores removed enrollments and personal self-enrollments',
+          () async {
+        await seedProgram('program1');
+        await seedProgram(
+          'personal',
+          type: ProgramType.personal,
+        );
+        await seedEnrollment(
+          'removed',
+          status: EnrollmentStatus.removed,
+        );
+        await seedEnrollment(
+          'self',
+          programId: 'personal',
+          athleteId: 'trainer1',
+        );
+
+        expect(
+          await repository.backfillActiveEnrollmentRelationships(
+            trainerId: 'trainer1',
+            callerUserId: 'trainer1',
+          ),
+          0,
+        );
+        final relationships =
+            await firestore.collection('trainerClientRelationships').get();
+        expect(relationships.docs, isEmpty);
+      });
+
+      test('rejects a caller who does not own the roster', () {
+        expect(
+          () => repository.backfillActiveEnrollmentRelationships(
+            trainerId: 'trainer1',
+            callerUserId: 'stranger',
+          ),
+          throwsStateError,
+        );
+      });
+
+      test('rejects an enrollment whose program has another owner', () async {
+        await seedProgram('program1', ownerId: 'stranger');
+        await seedEnrollment('enrollment1');
+
+        expect(
+          () => repository.backfillActiveEnrollmentRelationships(
+            trainerId: 'trainer1',
+            callerUserId: 'trainer1',
+          ),
+          throwsStateError,
+        );
+      });
+
+      test('migrates when an enrolled program later became personal', () async {
+        await seedProgram(
+          'program1',
+          type: ProgramType.personal,
+        );
+        await seedEnrollment('enrollment1');
+
+        expect(
+          await repository.backfillActiveEnrollmentRelationships(
+            trainerId: 'trainer1',
+            callerUserId: 'trainer1',
+          ),
+          1,
+        );
+        final relationship =
+            await repository.getRelationship('trainer1', 'athlete1');
+        expect(relationship!.isActive, isTrue);
+      });
+    });
   });
 }

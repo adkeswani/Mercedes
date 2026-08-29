@@ -153,6 +153,45 @@ describe('trainerClientRelationships', () => {
     );
   });
 
+  it('allows an owner to read a legacy enrollment and backfill its relationship',
+      async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await db.collection('programs').doc(PROGRAM_ID).set({
+        ownerId: OWNER,
+        type: 'assignable',
+      });
+      await db.collection('enrollments').doc(ENROLLMENT_ID).set({
+        programId: PROGRAM_ID,
+        athleteId: ATHLETE,
+        addedBy: OWNER,
+        status: 'active',
+      });
+    });
+
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const enrollments = await assertSucceeds(
+      db.collection('enrollments')
+        .where('addedBy', '==', OWNER)
+        .where('status', '==', 'active')
+        .get()
+    );
+    expect(enrollments.docs).toHaveLength(1);
+    await assertSucceeds(
+      db.runTransaction(async (transaction) => {
+        const relationship = db.collection('trainerClientRelationships')
+          .doc(RELATIONSHIP_ID);
+        const enrollment = db.collection('enrollments').doc(ENROLLMENT_ID);
+        const program = db.collection('programs').doc(PROGRAM_ID);
+        const existing = await transaction.get(relationship);
+        expect(existing.exists).toBe(false);
+        expect((await transaction.get(enrollment)).exists).toBe(true);
+        expect((await transaction.get(program)).exists).toBe(true);
+        transaction.set(relationship, activeRelationship());
+      })
+    );
+  });
+
   it('denies athlete-created and self relationships', async () => {
     const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
     await assertFails(

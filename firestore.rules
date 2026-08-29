@@ -325,7 +325,8 @@ service cloud.firestore {
 
     match /trainerClientRelationships/{id} {
       allow read: if isSignedIn()
-                  && (resource.data.trainerId == request.auth.uid
+                  && (resource == null
+                      || resource.data.trainerId == request.auth.uid
                       || resource.data.athleteId == request.auth.uid);
       allow create: if isSignedIn()
                     && id == relationshipId(

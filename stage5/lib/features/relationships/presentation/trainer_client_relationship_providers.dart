@@ -9,6 +9,29 @@ final trainerClientRelationshipRepositoryProvider =
   return TrainerClientRelationshipRepository();
 });
 
+/// Idempotently materializes durable roster relationships for active legacy
+/// enrollments owned by [trainerId].
+final trainerClientRelationshipBackfillForUserProvider =
+    FutureProvider.family<int, String>((ref, trainerId) {
+  final repo = ref.watch(trainerClientRelationshipRepositoryProvider);
+  return repo.backfillActiveEnrollmentRelationships(
+    trainerId: trainerId,
+    callerUserId: trainerId,
+  );
+});
+
+/// Runs the owner-scoped roster backfill for the authenticated trainer.
+final trainerClientRelationshipBackfillProvider =
+    FutureProvider<int>((ref) async {
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) {
+    return 0;
+  }
+  return ref.watch(
+    trainerClientRelationshipBackfillForUserProvider(user.uid).future,
+  );
+});
+
 final trainerClientsProvider =
     StreamProvider<List<TrainerClientRelationship>>((ref) {
   final user = ref.watch(authStateProvider).value;

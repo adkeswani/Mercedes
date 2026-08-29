@@ -7,6 +7,7 @@ import 'package:stage5/features/auth/data/user_profile_repository.dart';
 import 'package:stage5/features/auth/domain/user_profile.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
+import 'package:stage5/features/relationships/presentation/trainer_client_relationship_providers.dart';
 
 /// The possible states of the app entry flow.
 enum AppEntryState {
@@ -54,6 +55,8 @@ final appEntryStateProvider = Provider<AppEntryState>((ref) {
   final authState = ref.watch(authStateProvider);
   final profileState = ref.watch(userProfileProvider);
   final exerciseBackfill = ref.watch(exerciseVersionBackfillProvider);
+  final relationshipBackfill =
+      ref.watch(trainerClientRelationshipBackfillProvider);
 
   return authState.when(
     loading: () => AppEntryState.signedOut,
@@ -70,7 +73,11 @@ final appEntryStateProvider = Provider<AppEntryState>((ref) {
           return exerciseBackfill.when(
             loading: () => AppEntryState.waitingForProfile,
             error: (_, __) => AppEntryState.error,
-            data: (_) => AppEntryState.ready,
+            data: (_) => relationshipBackfill.when(
+              loading: () => AppEntryState.waitingForProfile,
+              error: (_, __) => AppEntryState.error,
+              data: (_) => AppEntryState.ready,
+            ),
           );
         },
       );

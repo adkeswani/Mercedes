@@ -25,6 +25,26 @@ class TrainerClientRelationshipRepository {
     }
   }
 
+  Map<String, dynamic> _activeRelationshipData({
+    required String trainerId,
+    required String athleteId,
+    required String callerUserId,
+  }) {
+    return {
+      'trainerId': trainerId,
+      'athleteId': athleteId,
+      'status': TrainerClientRelationshipStatus.active.name,
+      'startedAt': FieldValue.serverTimestamp(),
+      'endedAt': null,
+      'createdAt': FieldValue.serverTimestamp(),
+      'createdBy': callerUserId,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': callerUserId,
+      'deletedAt': null,
+      'deletedBy': null,
+    };
+  }
+
   /// Starts a relationship, or reactivates a previously ended relationship.
   Future<String> startRelationship({
     required String trainerId,
@@ -44,19 +64,14 @@ class TrainerClientRelationshipRepository {
     await _firestore.runTransaction<void>((transaction) async {
       final existing = await transaction.get(docRef);
       if (!existing.exists) {
-        transaction.set(docRef, {
-          'trainerId': trainerId,
-          'athleteId': athleteId,
-          'status': TrainerClientRelationshipStatus.active.name,
-          'startedAt': FieldValue.serverTimestamp(),
-          'endedAt': null,
-          'createdAt': FieldValue.serverTimestamp(),
-          'createdBy': callerUserId,
-          'updatedAt': FieldValue.serverTimestamp(),
-          'updatedBy': callerUserId,
-          'deletedAt': null,
-          'deletedBy': null,
-        });
+        transaction.set(
+          docRef,
+          _activeRelationshipData(
+            trainerId: trainerId,
+            athleteId: athleteId,
+            callerUserId: callerUserId,
+          ),
+        );
         return;
       }
 
@@ -76,6 +91,103 @@ class TrainerClientRelationshipRepository {
       });
     });
     return id;
+  }
+
+  /// Creates missing roster relationships inferred from active legacy
+  /// enrollments owned by [trainerId].
+  ///
+  /// Existing relationships are left unchanged, including ended relationships,
+  /// so an explicit removal is never undone by a later migration run. Personal
+  /// self-enrollments are not trainer-client relationships.
+  Future<int> backfillActiveEnrollmentRelationships({
+    required String trainerId,
+    required String callerUserId,
+  }) async {
+    _verifyTrainerCaller(trainerId, callerUserId);
+
+    final enrollments = await _firestore
+        .collection('enrollments')
+        .where('addedBy', isEqualTo: trainerId)
+        .where('status', isEqualTo: EnrollmentStatus.active.name)
+        .get();
+
+    var count = 0;
+    for (final enrollment in enrollments.docs) {
+      final enrollmentData = enrollment.data();
+      final athleteId = enrollmentData['athleteId'] as String?;
+      final programId = enrollmentData['programId'] as String?;
+      if (athleteId == null || athleteId.isEmpty) {
+        throw StateError('Enrollment ${enrollment.id} has no athlete');
+      }
+      if (programId == null || programId.isEmpty) {
+        throw StateError('Enrollment ${enrollment.id} has no program');
+      }
+      if (athleteId == trainerId) {
+        continue;
+      }
+
+      final relationshipRef =
+          _collection.doc(relationshipId(trainerId, athleteId));
+      final enrollmentRef =
+          _firestore.collection('enrollments').doc(enrollment.id);
+      final programRef = _firestore.collection('programs').doc(programId);
+
+      final created =
+          await _firestore.runTransaction<bool>((transaction) async {
+        final existingRelationship = await transaction.get(relationshipRef);
+        if (existingRelationship.exists) {
+          final data = existingRelationship.data()!;
+          if (data['trainerId'] != trainerId ||
+              data['athleteId'] != athleteId) {
+            throw StateError(
+              'Relationship ${relationshipRef.id} is not owned by $trainerId',
+            );
+          }
+          return false;
+        }
+
+        final currentEnrollment = await transaction.get(enrollmentRef);
+        if (!currentEnrollment.exists) {
+          return false;
+        }
+        final currentData = currentEnrollment.data()!;
+        if (currentData['status'] != EnrollmentStatus.active.name) {
+          return false;
+        }
+        if (currentData['addedBy'] != trainerId ||
+            currentData['athleteId'] != athleteId ||
+            currentData['programId'] != programId) {
+          throw StateError(
+            'Enrollment ${enrollment.id} is not owned by $trainerId',
+          );
+        }
+
+        final program = await transaction.get(programRef);
+        if (!program.exists) {
+          throw StateError('Program $programId not found');
+        }
+        final programData = program.data()!;
+        if (programData['ownerId'] != trainerId) {
+          throw StateError(
+            'User $trainerId is not the owner of program $programId',
+          );
+        }
+
+        transaction.set(
+          relationshipRef,
+          _activeRelationshipData(
+            trainerId: trainerId,
+            athleteId: athleteId,
+            callerUserId: callerUserId,
+          ),
+        );
+        return true;
+      });
+      if (created) {
+        count++;
+      }
+    }
+    return count;
   }
 
   /// Ends an active relationship without deleting its audit history.
