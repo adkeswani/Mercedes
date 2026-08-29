@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:stage5/core/enums.dart';
+import 'package:stage5/features/library/data/library_serialization.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
 import 'package:stage5/features/programs/domain/program.dart';
 
 /// Firestore repository for program CRUD and version publishing.
@@ -56,7 +58,16 @@ class ProgramRepository {
     required ProgramType type,
     required String userId,
     String? description,
+    List<String> tags = const [],
+    String? folderId,
+    TemplateProvenance? provenance,
   }) async {
+    final normalizedTags = normalizeLibraryTags(tags);
+    await _validateCreationMetadata(
+      userId: userId,
+      folderId: folderId,
+      provenance: provenance,
+    );
     final docRef = _collection.doc();
     await docRef.set({
       'name': name,
@@ -65,12 +76,18 @@ class ProgramRepository {
       'type': type.name,
       'status': ProgramStatus.draft.name,
       'currentVersion': 0,
-      'folderId': null,
+      'tags': normalizedTags,
+      'folderId': folderId,
+      'provenance': provenanceToMap(
+        provenance,
+        copiedAt: FieldValue.serverTimestamp(),
+      ),
       'typeWeightOverrides': null,
       'loadStrategyId': null,
       'createdBy': userId,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': userId,
       'deletedAt': null,
       'deletedBy': null,
     });
@@ -91,6 +108,7 @@ class ProgramRepository {
       'name': name,
       'description': description,
       'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': userId,
     });
   }
 
@@ -106,6 +124,7 @@ class ProgramRepository {
     await _collection.doc(id).update({
       'type': type.name,
       'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': userId,
     });
   }
 
@@ -118,9 +137,43 @@ class ProgramRepository {
     required String userId,
   }) async {
     await verifyOwnership(id, userId);
+    if (folderId != null) {
+      await verifyLibraryFolderOwnership(
+        firestore: _firestore,
+        folderId: folderId,
+        itemType: LibraryItemType.program,
+        userId: userId,
+      );
+    }
     await _collection.doc(id).update({
       'folderId': folderId,
       'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': userId,
+    });
+  }
+
+  /// Updates stable tags and folder organization without publishing a version.
+  Future<void> updateOrganization({
+    required String id,
+    required List<String> tags,
+    required String? folderId,
+    required String userId,
+  }) async {
+    await verifyOwnership(id, userId);
+    final normalizedTags = normalizeLibraryTags(tags);
+    if (folderId != null) {
+      await verifyLibraryFolderOwnership(
+        firestore: _firestore,
+        folderId: folderId,
+        itemType: LibraryItemType.program,
+        userId: userId,
+      );
+    }
+    await _collection.doc(id).update({
+      'tags': normalizedTags,
+      'folderId': folderId,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': userId,
     });
   }
 
@@ -147,6 +200,7 @@ class ProgramRepository {
       'deletedAt': FieldValue.serverTimestamp(),
       'deletedBy': userId,
       'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': userId,
     });
   }
 
@@ -164,6 +218,7 @@ class ProgramRepository {
     required String userId,
     String? changeNote,
   }) async {
+    await verifyOwnership(programId, userId);
     return _firestore.runTransaction<int>((txn) async {
       final headerRef = _collection.doc(programId);
       final headerSnap = await txn.get(headerRef);
@@ -171,15 +226,17 @@ class ProgramRepository {
       if (!headerSnap.exists) {
         throw StateError('Program $programId not found');
       }
+      if (headerSnap.data()!['ownerId'] != userId) {
+        throw StateError('User $userId is not the owner of program $programId');
+      }
 
       final currentVersion =
           (headerSnap.data()!['currentVersion'] as int?) ?? 0;
       final nextVersion = currentVersion + 1;
       final now = DateTime.now();
 
-      final versionRef = headerRef
-          .collection('programVersions')
-          .doc(nextVersion.toString());
+      final versionRef =
+          headerRef.collection('programVersions').doc(nextVersion.toString());
 
       txn.set(versionRef, {
         'versionNumber': nextVersion,
@@ -192,6 +249,7 @@ class ProgramRepository {
         'currentVersion': nextVersion,
         'status': ProgramStatus.published.name,
         'updatedAt': Timestamp.fromDate(now),
+        'updatedBy': userId,
       });
 
       return nextVersion;
@@ -219,9 +277,8 @@ class ProgramRepository {
         .collection('programVersions')
         .orderBy('versionNumber', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => _versionFromMap(doc.data()))
-            .toList());
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => _versionFromMap(doc.data())).toList());
   }
 
   /// Creates a copy of an existing program as a new draft.
@@ -247,6 +304,15 @@ class ProgramRepository {
       type: source.type,
       userId: userId,
       description: source.description,
+      tags: source.tags,
+      folderId: source.ownerId == userId ? source.folderId : null,
+      provenance: TemplateProvenance(
+        sourceTemplateId: source.id,
+        sourceOwnerId: source.ownerId,
+        sourceVersion: source.currentVersion,
+        copiedAt: DateTime.now(),
+        copiedBy: userId,
+      ),
     );
 
     // If the source has published versions, copy the latest version's
@@ -282,7 +348,9 @@ class ProgramRepository {
       type: _parseProgramType(data['type'] as String?),
       status: _parseProgramStatus(data['status'] as String?),
       currentVersion: (data['currentVersion'] as int?) ?? 0,
+      tags: libraryTagsFromMap(data['tags']),
       folderId: data['folderId'] as String?,
+      provenance: provenanceFromMap(data['provenance']),
       typeWeightOverrides: _parseTypeWeightOverrides(
         data['typeWeightOverrides'] as Map<String, dynamic>?,
       ),
@@ -290,7 +358,8 @@ class ProgramRepository {
       createdBy: data['createdBy'] as String? ?? '',
       createdAt: _toDateTime(data['createdAt']),
       updatedAt: _toDateTime(data['updatedAt']),
-      updatedBy: data['createdBy'] as String? ?? '',
+      updatedBy:
+          data['updatedBy'] as String? ?? data['createdBy'] as String? ?? '',
       deletedAt:
           data['deletedAt'] != null ? _toDateTime(data['deletedAt']) : null,
       deletedBy: data['deletedBy'] as String?,
@@ -327,6 +396,26 @@ class ProgramRepository {
       'sortOrder': entry.sortOrder,
       'workoutName': entry.workoutName,
     };
+  }
+
+  Future<void> _validateCreationMetadata({
+    required String userId,
+    required String? folderId,
+    required TemplateProvenance? provenance,
+  }) async {
+    if (userId.isEmpty) throw ArgumentError('userId cannot be empty');
+    provenance?.validate();
+    if (provenance != null && provenance.copiedBy != userId) {
+      throw StateError('Copy provenance must identify its owner as copiedBy');
+    }
+    if (folderId != null) {
+      await verifyLibraryFolderOwnership(
+        firestore: _firestore,
+        folderId: folderId,
+        itemType: LibraryItemType.program,
+        userId: userId,
+      );
+    }
   }
 
   static ProgramType _parseProgramType(String? value) {

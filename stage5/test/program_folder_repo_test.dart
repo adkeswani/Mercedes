@@ -25,6 +25,7 @@ void main() {
           await fakeFirestore.collection('programFolders').doc(id).get();
       expect(doc.data()!['name'], 'Strength');
       expect(doc.data()!['ownerId'], 'coach1');
+      expect(doc.data()!['itemType'], 'program');
     });
 
     test('create trims the name and rejects blank names', () async {
@@ -44,6 +45,11 @@ void main() {
       await repo.create(name: 'Beta', userId: 'coach1');
       await repo.create(name: 'Alpha', userId: 'coach1');
       await repo.create(name: 'Other', userId: 'coach2');
+      await fakeFirestore.collection('programFolders').doc('exercise').set({
+        'ownerId': 'coach1',
+        'itemType': 'exercise',
+        'name': 'Exercise Folder',
+      });
 
       final folders = await repo.watchFolders('coach1').first;
       expect(folders.map((f) => f.name).toList(), ['Alpha', 'Beta']);

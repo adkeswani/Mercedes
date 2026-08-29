@@ -12,6 +12,10 @@ Implemented in this slice:
 - Explicit `ownerId` fields for exercise and workout templates.
 - Stable logical exercise headers with immutable execution-content versions.
 - Workout prescriptions that pin both the logical exercise ID and version.
+- Shared stable tags, type-scoped flat folders, and immutable copy provenance
+  for exercise, workout, and program headers.
+- A common library metadata/folder abstraction used by all three template
+  repositories without changing the current program-folder UX.
 - Active-relationship checks for new enrollments and workout assignments.
 - Firestore rules and indexes for relationship-scoped mutations.
 
@@ -38,5 +42,13 @@ Compatibility behavior:
   writes are enforced now.
 - Exercise notes remain keyed to the stable logical exercise ID, so they follow
   the exercise across versions.
-- Typed workout blocks, shared organization metadata, provenance,
-  subscriptions, and later implementation-sequence entities remain deferred.
+- Existing headers without library metadata resolve with empty tags, no folder,
+  and no provenance. The next owner organization mutation writes the new fields
+  without rewriting immutable template versions.
+- Existing untyped `programFolders` remain program folders. The collection name
+  and IDs are retained for compatibility, while new folders carry an
+  `itemType` discriminator and cannot be assigned across owners or types.
+- Copy operations atomically record source template ID, source owner, pinned
+  source version, timestamp, and copier. Provenance cannot be changed later.
+- Typed workout blocks, subscriptions, and later implementation-sequence
+  entities remain deferred.

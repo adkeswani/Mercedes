@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:stage5/core/enums.dart';
+import 'package:stage5/features/library/data/library_serialization.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 
 /// Firestore repository for workout template CRUD and version publishing.
@@ -59,13 +61,28 @@ class WorkoutTemplateRepository {
     required String name,
     required WorkoutType workoutType,
     required String userId,
+    List<String> tags = const [],
+    String? folderId,
+    TemplateProvenance? provenance,
   }) async {
+    final normalizedTags = normalizeLibraryTags(tags);
+    await _validateCreationMetadata(
+      userId: userId,
+      folderId: folderId,
+      provenance: provenance,
+    );
     final docRef = _collection.doc();
     await docRef.set({
       'name': name,
       'workoutType': workoutType.name,
       'currentVersion': 0,
       'ownerId': userId,
+      'tags': normalizedTags,
+      'folderId': folderId,
+      'provenance': provenanceToMap(
+        provenance,
+        copiedAt: FieldValue.serverTimestamp(),
+      ),
       'createdBy': userId,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -74,6 +91,32 @@ class WorkoutTemplateRepository {
       'deletedBy': null,
     });
     return docRef.id;
+  }
+
+  /// Updates stable owner organization without publishing a workout version.
+  Future<void> updateOrganization({
+    required String id,
+    required List<String> tags,
+    required String? folderId,
+    required String userId,
+  }) async {
+    await _verifyOwnership(id, userId);
+    final normalizedTags = normalizeLibraryTags(tags);
+    if (folderId != null) {
+      await verifyLibraryFolderOwnership(
+        firestore: _firestore,
+        folderId: folderId,
+        itemType: LibraryItemType.workout,
+        userId: userId,
+      );
+    }
+    await _collection.doc(id).update({
+      'ownerId': userId,
+      'tags': normalizedTags,
+      'folderId': folderId,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': userId,
+    });
   }
 
   /// Updates the workout template header's editable fields.
@@ -274,6 +317,15 @@ class WorkoutTemplateRepository {
       name: '${source.name} (Copy)',
       workoutType: source.workoutType,
       userId: userId,
+      tags: source.tags,
+      folderId: source.ownerId == userId ? source.folderId : null,
+      provenance: TemplateProvenance(
+        sourceTemplateId: source.id,
+        sourceOwnerId: source.ownerId,
+        sourceVersion: source.currentVersion,
+        copiedAt: DateTime.now(),
+        copiedBy: userId,
+      ),
     );
 
     return newId;
@@ -331,6 +383,9 @@ class WorkoutTemplateRepository {
       name: data['name'] as String? ?? '',
       workoutType: _parseWorkoutType(data['workoutType'] as String?),
       currentVersion: (data['currentVersion'] as int?) ?? 0,
+      tags: libraryTagsFromMap(data['tags']),
+      folderId: data['folderId'] as String?,
+      provenance: provenanceFromMap(data['provenance']),
       createdBy: data['createdBy'] as String? ?? '',
       createdAt: _toDateTime(data['createdAt']),
       updatedAt: _toDateTime(data['updatedAt']),
@@ -425,5 +480,25 @@ class WorkoutTemplateRepository {
   static DateTime _toDateTime(dynamic value) {
     if (value is Timestamp) return value.toDate();
     return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  Future<void> _validateCreationMetadata({
+    required String userId,
+    required String? folderId,
+    required TemplateProvenance? provenance,
+  }) async {
+    if (userId.isEmpty) throw ArgumentError('userId cannot be empty');
+    provenance?.validate();
+    if (provenance != null && provenance.copiedBy != userId) {
+      throw StateError('Copy provenance must identify its owner as copiedBy');
+    }
+    if (folderId != null) {
+      await verifyLibraryFolderOwnership(
+        firestore: _firestore,
+        folderId: folderId,
+        itemType: LibraryItemType.workout,
+        userId: userId,
+      );
+    }
   }
 }

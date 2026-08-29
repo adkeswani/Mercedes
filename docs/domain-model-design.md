@@ -473,7 +473,7 @@ tests, and any required backfill tests before the next step depends on it.
 
 ### Stage 5 implementation status
 
-Sequence steps 1 and 2 are implemented in `stage5/`.
+Sequence steps 1 through 3 are implemented in `stage5/`.
 
 - Trainer-client relationships use deterministic
   `{trainerId}_{athleteId}` document IDs, retain ended relationships for audit,
@@ -505,8 +505,22 @@ Sequence steps 1 and 2 are implemented in `stage5/`.
   and link to each pinned exercise version, preserving historical content.
 - Exercise notes continue to use the logical exercise ID and therefore follow
   the exercise across versions.
-- Shared organization metadata, typed workout blocks, program instances, and
-  subscription behavior remain deferred to their respective sequence steps.
+- Exercise, workout, and program headers now share stable tags, an optional
+  type-scoped flat folder, and immutable copy provenance. Repository
+  organization mutations verify both template and folder ownership.
+- Existing headers safely resolve missing metadata as empty tags, no folder,
+  and no provenance; the next owner organization mutation materializes tags and
+  folder state. Legacy provenance remains null because copy history cannot be
+  reconstructed safely.
+- The existing `programFolders` collection and IDs are retained as the shared
+  folder store. Missing `itemType` means `program`, while new exercise and
+  workout folders are explicitly discriminated. This preserves the Stage 4
+  program-folder UX and prevents cross-type folder assignment.
+- Workout and program copies record the source's current version; copied
+  exercises atomically materialize source content as version 1. Provenance is
+  created with the copy and cannot be rewritten.
+- Typed workout blocks, program instances, and subscription behavior remain
+  deferred to their respective sequence steps.
 
 ## 12. Deferred Details
 

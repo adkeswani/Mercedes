@@ -1,4 +1,5 @@
 import 'package:stage5/features/auth/domain/foundation_models.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
 
 /// Broad execution category for an exercise.
 enum ExerciseType { strength, climbing, conditioning, mobility, skill, other }
@@ -112,7 +113,7 @@ class ExerciseVersion {
 ///
 /// Organizational metadata and athlete notes use [id], while execution
 /// content lives in immutable [ExerciseVersion] sub-documents.
-class ExerciseTemplate with Auditable {
+class ExerciseTemplate with Auditable implements LibraryItem {
   ExerciseTemplate({
     required this.id,
     required this.ownerId,
@@ -122,6 +123,9 @@ class ExerciseTemplate with Auditable {
     required this.createdBy,
     required this.updatedAt,
     required this.updatedBy,
+    this.tags = const [],
+    this.folderId,
+    this.provenance,
     this.deletedAt,
     this.deletedBy,
   });
@@ -130,6 +134,12 @@ class ExerciseTemplate with Auditable {
   final String ownerId;
   final int currentVersion;
   final ExerciseVersion version;
+  @override
+  final List<String> tags;
+  @override
+  final String? folderId;
+  @override
+  final TemplateProvenance? provenance;
 
   String get name => version.name;
   String get description => version.description;
@@ -162,6 +172,9 @@ class ExerciseTemplate with Auditable {
     String? ownerId,
     int? currentVersion,
     ExerciseVersion? version,
+    List<String>? tags,
+    String? folderId,
+    TemplateProvenance? provenance,
     DateTime? createdAt,
     String? createdBy,
     DateTime? updatedAt,
@@ -174,6 +187,9 @@ class ExerciseTemplate with Auditable {
       ownerId: ownerId ?? this.ownerId,
       currentVersion: currentVersion ?? this.currentVersion,
       version: version ?? this.version,
+      tags: tags ?? this.tags,
+      folderId: folderId ?? this.folderId,
+      provenance: provenance ?? this.provenance,
       createdAt: createdAt ?? this.createdAt,
       createdBy: createdBy ?? this.createdBy,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -203,6 +219,11 @@ class ExerciseTemplate with Auditable {
       throw ArgumentError('updatedBy cannot be empty');
     }
     version.validate();
+    validateLibraryMetadata(
+      tags: tags,
+      folderId: folderId,
+      provenance: provenance,
+    );
     Auditable.validateTimestamps(
       createdAt: createdAt,
       updatedAt: updatedAt,

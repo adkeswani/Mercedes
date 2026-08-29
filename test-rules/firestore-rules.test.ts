@@ -498,7 +498,11 @@ describe('exerciseTemplates', () => {
       ownerDb.collection('exerciseTemplates').doc('missing-version').set({
         ownerId: OWNER,
         currentVersion: 1,
+        tags: [],
+        folderId: null,
+        provenance: null,
         createdBy: OWNER,
+        updatedBy: OWNER,
       })
     );
   });
@@ -519,6 +523,60 @@ describe('exerciseTemplates', () => {
           name: 'Hacked',
           publishedBy: STRANGER,
         })
+    );
+  });
+
+  it('allows owner organization updates with an owned typed folder', async () => {
+    await seedVersionedExercise();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('programFolders').doc('exercise-folder').set({
+        ownerId: OWNER, itemType: 'exercise', name: 'Strength',
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('exerciseTemplates').doc('e1').update({
+        tags: ['Strength'],
+        folderId: 'exercise-folder',
+        updatedAt: serverTimestamp(),
+        updatedBy: OWNER,
+      })
+    );
+  });
+
+  it('denies foreign, wrong-type, and provenance-changing exercise updates', async () => {
+    await seedVersionedExercise();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await db.collection('programFolders').doc('foreign').set({
+        ownerId: STRANGER, itemType: 'exercise', name: 'Foreign',
+      });
+      await db.collection('programFolders').doc('wrong-type').set({
+        ownerId: OWNER, itemType: 'workout', name: 'Workout',
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    for (const folderId of ['foreign', 'wrong-type']) {
+      await assertFails(
+        db.collection('exerciseTemplates').doc('e1').update({
+          folderId,
+          updatedAt: serverTimestamp(),
+          updatedBy: OWNER,
+        })
+      );
+    }
+    await assertFails(
+      db.collection('exerciseTemplates').doc('e1').update({
+        provenance: {
+          sourceTemplateId: 'source',
+          sourceOwnerId: OWNER,
+          sourceVersion: 1,
+          copiedAt: serverTimestamp(),
+          copiedBy: OWNER,
+        },
+        updatedAt: serverTimestamp(),
+        updatedBy: OWNER,
+      })
     );
   });
 
@@ -676,7 +734,7 @@ describe('workoutTemplates', () => {
     const db = testEnv.authenticatedContext(OWNER).firestore();
     const header = db.collection('workoutTemplates').doc('publish');
     const batch = db.batch();
-    batch.update(header, { currentVersion: 1 });
+    batch.update(header, { currentVersion: 1, updatedBy: OWNER });
     batch.set(
       header.collection('workoutTemplateVersions').doc('1'),
       {
@@ -699,6 +757,60 @@ describe('workoutTemplates', () => {
     await assertSucceeds(batch.commit());
   });
 
+  it('allows nine exercise pins on a foldered workout', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adminDb = ctx.firestore();
+      await adminDb.collection('programFolders').doc('workout-folder').set({
+        ownerId: OWNER,
+        itemType: 'workout',
+        deletedAt: null,
+      });
+      await adminDb.collection('workoutTemplates').doc('foldered-nine').set({
+        name: 'Nine',
+        ownerId: OWNER,
+        createdBy: OWNER,
+        updatedBy: OWNER,
+        currentVersion: 0,
+        tags: [],
+        folderId: 'workout-folder',
+        provenance: null,
+      });
+      for (let index = 0; index < 9; index++) {
+        const exerciseId = `limit-exercise-${index}`;
+        const exercise = adminDb.collection('exerciseTemplates').doc(exerciseId);
+        await exercise.set({
+          ownerId: OWNER,
+          createdBy: OWNER,
+          currentVersion: 1,
+        });
+        await exercise.collection('exerciseVersions').doc('1').set({
+          versionNumber: 1,
+        });
+      }
+    });
+
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('foldered-nine');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const batch = db.batch();
+    batch.update(header, { currentVersion: 1, updatedBy: OWNER });
+    batch.set(version, {
+      versionNumber: 1,
+      storageFormat: 'exercisePrescriptionSubcollection',
+      prescriptionCount: 9,
+    });
+    for (let index = 0; index < 9; index++) {
+      batch.set(version.collection('exercisePrescriptions').doc(`${index}`), {
+        exerciseId: `limit-exercise-${index}`,
+        exerciseVersion: 1,
+        sortOrder: index,
+        exerciseName: `Exercise ${index}`,
+        prescription: { mode: 'reps' },
+      });
+    }
+    await assertSucceeds(batch.commit());
+  });
+
   it('denies publishing a foreign exercise pin', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       const adminDb = ctx.firestore();
@@ -718,7 +830,7 @@ describe('workoutTemplates', () => {
     const db = testEnv.authenticatedContext(OWNER).firestore();
     const header = db.collection('workoutTemplates').doc('foreign-pin');
     const batch = db.batch();
-    batch.update(header, { currentVersion: 1 });
+    batch.update(header, { currentVersion: 1, updatedBy: OWNER });
     batch.set(header.collection('workoutTemplateVersions').doc('1'), {
       versionNumber: 1,
       storageFormat: 'exercisePrescriptionSubcollection',
@@ -749,7 +861,7 @@ describe('workoutTemplates', () => {
     const db = testEnv.authenticatedContext(OWNER).firestore();
     const header = db.collection('workoutTemplates').doc('too-many');
     const batch = db.batch();
-    batch.update(header, { currentVersion: 1 });
+    batch.update(header, { currentVersion: 1, updatedBy: OWNER });
     batch.set(header.collection('workoutTemplateVersions').doc('1'), {
       versionNumber: 1,
       storageFormat: 'exercisePrescriptionSubcollection',
@@ -815,8 +927,80 @@ describe('workoutTemplates', () => {
     });
     const db = testEnv.authenticatedContext(OWNER).firestore();
     const ref = db.collection('workoutTemplates').doc('w4');
-    await assertSucceeds(ref.update({ name: 'Upper Strength' }));
+    await assertSucceeds(
+      ref.update({ name: 'Upper Strength', updatedBy: OWNER })
+    );
     await assertFails(ref.update({ ownerId: STRANGER }));
+  });
+
+  it('allows workout metadata at create and rejects later provenance changes', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const source = ctx.firestore()
+        .collection('workoutTemplates').doc('source');
+      await source.set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 2,
+      });
+      await source.collection('workoutTemplateVersions').doc('2').set({
+        versionNumber: 2,
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const ref = db.collection('workoutTemplates').doc('copied-workout');
+    await assertSucceeds(ref.set({
+      name: 'Copy',
+      workoutType: 'pull',
+      currentVersion: 0,
+      ownerId: OWNER,
+      tags: ['Pull'],
+      folderId: null,
+      provenance: {
+        sourceTemplateId: 'source',
+        sourceOwnerId: OWNER,
+        sourceVersion: 2,
+        copiedAt: serverTimestamp(),
+        copiedBy: OWNER,
+      },
+      createdBy: OWNER,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+      deletedAt: null,
+      deletedBy: null,
+    }));
+    await assertFails(ref.update({
+      provenance: null,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    }));
+  });
+
+  it('rejects forged copy provenance', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      db.collection('workoutTemplates').doc('forged-copy').set({
+        name: 'Forged',
+        workoutType: 'pull',
+        currentVersion: 0,
+        ownerId: OWNER,
+        tags: [],
+        folderId: null,
+        provenance: {
+          sourceTemplateId: 'missing-source',
+          sourceOwnerId: OWNER,
+          sourceVersion: 1,
+          copiedAt: serverTimestamp(),
+          copiedBy: OWNER,
+        },
+        createdBy: OWNER,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedBy: OWNER,
+        deletedAt: null,
+        deletedBy: null,
+      })
+    );
   });
 });
 
@@ -845,9 +1029,38 @@ describe('programs', () => {
     const db = testEnv.authenticatedContext(OWNER).firestore();
     await assertSucceeds(
       db.collection('programs').doc('p-new').set({
-        ownerId: OWNER, name: 'New', type: 'personal',
+        ownerId: OWNER,
+        name: 'New',
+        type: 'personal',
+        tags: [],
+        folderId: null,
+        provenance: null,
+        createdBy: OWNER,
+        updatedBy: OWNER,
       })
     );
+  });
+
+  it('keeps Stage 4 program create and update shapes compatible', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const ref = db.collection('programs').doc('legacy-program-write');
+    await assertSucceeds(ref.set({
+      ownerId: OWNER,
+      name: 'Legacy',
+      type: 'personal',
+      status: 'draft',
+      currentVersion: 0,
+      folderId: null,
+      createdBy: OWNER,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      deletedAt: null,
+      deletedBy: null,
+    }));
+    await assertSucceeds(ref.update({
+      name: 'Legacy Updated',
+      updatedAt: serverTimestamp(),
+    }));
   });
 
   it('denies creating program with someone else as owner', async () => {
@@ -867,17 +1080,104 @@ describe('programs', () => {
     );
   });
 
+  it('rejects foreign folders and provenance changes on programs', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await db.collection('programs').doc('organized').set({
+        ownerId: OWNER,
+        name: 'Organized',
+        type: 'personal',
+        tags: [],
+        folderId: null,
+        provenance: null,
+        createdBy: OWNER,
+        updatedBy: OWNER,
+      });
+      await db.collection('programFolders').doc('foreign-program-folder').set({
+        ownerId: STRANGER,
+        itemType: 'program',
+        name: 'Foreign',
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const ref = db.collection('programs').doc('organized');
+    await assertFails(ref.update({
+      folderId: 'foreign-program-folder',
+      updatedBy: OWNER,
+    }));
+    await assertFails(ref.update({
+      provenance: {
+        sourceTemplateId: 'source',
+        sourceOwnerId: OWNER,
+        sourceVersion: 1,
+        copiedAt: serverTimestamp(),
+        copiedBy: OWNER,
+      },
+      updatedBy: OWNER,
+    }));
+  });
+
+  it('denies advancing a program header without its next version', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('programs').doc('version-gap').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        updatedBy: OWNER,
+        currentVersion: 0,
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      db.collection('programs').doc('version-gap').update({
+        currentVersion: 2,
+        updatedBy: OWNER,
+      })
+    );
+  });
+
   it('allows enrolled athlete to read program versions', async () => {
     await seedProgramWithEnrollment();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       await ctx.firestore().collection('programs').doc(PROGRAM_ID)
         .collection('programVersions').doc('1').set({ workouts: [] });
     });
+
     const db = testEnv.authenticatedContext(ATHLETE).firestore();
     await assertSucceeds(
       db.collection('programs').doc(PROGRAM_ID)
         .collection('programVersions').doc('1').get()
     );
+  });
+
+  it('allows sequential program version creation and keeps it immutable', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('programs').doc('versioned-program').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        updatedBy: OWNER,
+        currentVersion: 0,
+        tags: [],
+        folderId: null,
+        provenance: null,
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('programs').doc('versioned-program');
+    const version = header.collection('programVersions').doc('1');
+    const batch = db.batch();
+    batch.set(version, {
+      versionNumber: 1,
+      publishedAt: serverTimestamp(),
+      entries: [],
+      changeNote: null,
+    });
+    batch.update(header, {
+      currentVersion: 1,
+      updatedBy: OWNER,
+    });
+    await assertSucceeds(batch.commit());
+    await assertFails(version.update({ changeNote: 'rewritten' }));
+    await assertFails(version.delete());
   });
 
   it('denies stranger from reading program versions', async () => {
@@ -911,9 +1211,31 @@ describe('programFolders', () => {
     const db = testEnv.authenticatedContext(OWNER).firestore();
     await assertSucceeds(
       db.collection('programFolders').doc('f-new').set({
-        ownerId: OWNER, name: 'New Folder',
+        ownerId: OWNER,
+        itemType: 'program',
+        name: 'New Folder',
+        createdBy: OWNER,
+        updatedBy: OWNER,
       })
     );
+  });
+
+  it('keeps untyped Stage 4 folder writes compatible', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const ref = db.collection('programFolders').doc('legacy-folder-write');
+    await assertSucceeds(ref.set({
+      ownerId: OWNER,
+      name: 'Legacy',
+      createdBy: OWNER,
+      createdAt: serverTimestamp(),
+      updatedBy: OWNER,
+      updatedAt: serverTimestamp(),
+    }));
+    await assertSucceeds(ref.update({
+      name: 'Legacy Updated',
+      updatedBy: OWNER,
+      updatedAt: serverTimestamp(),
+    }));
   });
 
   it('denies creating folder with someone else as owner', async () => {
@@ -941,7 +1263,11 @@ describe('programFolders', () => {
     await seedFolder();
     const db = testEnv.authenticatedContext(OWNER).firestore();
     await assertSucceeds(
-      db.collection('programFolders').doc(FOLDER_ID).update({ name: 'Power' })
+      db.collection('programFolders').doc(FOLDER_ID).update({
+        itemType: 'program',
+        name: 'Power',
+        updatedBy: OWNER,
+      })
     );
   });
 
@@ -961,11 +1287,63 @@ describe('programFolders', () => {
     );
   });
 
+  it('requires typed folders to be tombstoned before hard deletion', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('programFolders').doc('typed-folder').set({
+        ownerId: OWNER,
+        itemType: 'exercise',
+        name: 'Exercises',
+        createdBy: OWNER,
+        updatedBy: OWNER,
+        deletedAt: null,
+        deletedBy: null,
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const ref = db.collection('programFolders').doc('typed-folder');
+    await assertFails(ref.delete());
+    await assertSucceeds(ref.update({
+      deletedAt: serverTimestamp(),
+      deletedBy: OWNER,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    }));
+    await assertSucceeds(ref.delete());
+  });
+
   it('denies non-owner from deleting folder', async () => {
     await seedFolder();
     const db = testEnv.authenticatedContext(STRANGER).firestore();
     await assertFails(
       db.collection('programFolders').doc(FOLDER_ID).delete()
+    );
+  });
+
+  it('denies assigning a tombstoned folder', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await db.collection('programFolders').doc('deleted-folder').set({
+        ownerId: OWNER,
+        itemType: 'program',
+        name: 'Deleted',
+        deletedAt: new Date(),
+        deletedBy: OWNER,
+      });
+      await db.collection('programs').doc('folder-target').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        updatedBy: OWNER,
+        folderId: null,
+        tags: [],
+        provenance: null,
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      db.collection('programs').doc('folder-target').update({
+        folderId: 'deleted-folder',
+        updatedBy: OWNER,
+      })
     );
   });
 });

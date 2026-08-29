@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/exercise_picker.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
@@ -16,6 +17,7 @@ class WorkoutBuilderScreen extends ConsumerStatefulWidget {
   const WorkoutBuilderScreen({super.key, this.workoutId, this.copyFromId});
 
   final String? workoutId;
+
   /// When set, pre-populates the draft with exercises from this template.
   final String? copyFromId;
 
@@ -59,15 +61,19 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
     setState(() => _workoutType = template.workoutType);
 
     // If duplicating from another template, load its exercises
-    final sourceId = widget.copyFromId ?? widget.workoutId!;
-    final sourceTemplate = widget.copyFromId != null
-        ? await repo.getById(widget.copyFromId!)
-        : template;
-
-    if (sourceTemplate != null && sourceTemplate.hasPublishedVersion) {
+    final source = resolveLibraryEditorSource(
+      targetTemplateId: widget.workoutId!,
+      targetVersion: template.currentVersion,
+      routeSourceTemplateId: widget.copyFromId,
+      provenance: template.provenance,
+    );
+    final sourceVersion = source.version ??
+        (await repo.getById(source.templateId))?.currentVersion ??
+        0;
+    if (sourceVersion > 0) {
       final version = await repo.getVersion(
-        sourceId,
-        sourceTemplate.currentVersion,
+        source.templateId,
+        sourceVersion,
       );
       if (version != null && mounted) {
         ref.read(workoutDraftProvider.notifier).load(version.exercises);
@@ -218,9 +224,9 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
     if (uid == null) return;
 
     await ref.read(workoutTemplateRepositoryProvider).softDelete(
-      widget.workoutId!,
-      uid,
-    );
+          widget.workoutId!,
+          uid,
+        );
     if (mounted) context.pop();
   }
 
@@ -238,16 +244,16 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
       return;
     }
     ref.read(workoutDraftProvider.notifier).addExercise(
-      ExercisePrescription(
-        exerciseId: result.id,
-        exerciseVersion: result.version,
-        exerciseName: result.name,
-        sortOrder: exercises.length,
-        mode: ExerciseMode.reps,
-        sets: 3,
-        reps: '8-12',
-      ),
-    );
+          ExercisePrescription(
+            exerciseId: result.id,
+            exerciseVersion: result.version,
+            exerciseName: result.name,
+            sortOrder: exercises.length,
+            mode: ExerciseMode.reps,
+            sets: 3,
+            reps: '8-12',
+          ),
+        );
   }
 
   @override
@@ -342,9 +348,9 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
               itemCount: exercises.length,
               onReorder: (oldIndex, newIndex) {
                 ref.read(workoutDraftProvider.notifier).reorder(
-                  oldIndex,
-                  newIndex,
-                );
+                      oldIndex,
+                      newIndex,
+                    );
               },
               itemBuilder: (context, index) {
                 final exercise = exercises[index];
@@ -541,11 +547,9 @@ class _PrescriptionEditorState extends State<_PrescriptionEditor> {
       sets: int.tryParse(_setsController.text),
       reps: _repsController.text.isEmpty ? null : _repsController.text,
       durationSeconds: int.tryParse(_durationController.text),
-      weight:
-          _weightController.text.isEmpty ? null : _weightController.text,
+      weight: _weightController.text.isEmpty ? null : _weightController.text,
       restSeconds: int.tryParse(_restController.text),
-      notes:
-          _notesController.text.isEmpty ? null : _notesController.text,
+      notes: _notesController.text.isEmpty ? null : _notesController.text,
     ));
   }
 
@@ -612,8 +616,7 @@ class _PrescriptionEditorState extends State<_PrescriptionEditor> {
               Expanded(
                 child: TextField(
                   controller: _restController,
-                  decoration:
-                      const InputDecoration(labelText: 'Rest (sec)'),
+                  decoration: const InputDecoration(labelText: 'Rest (sec)'),
                   keyboardType: TextInputType.number,
                 ),
               ),

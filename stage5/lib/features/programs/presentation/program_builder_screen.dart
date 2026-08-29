@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
 import 'package:stage5/features/programs/domain/program.dart';
 import 'package:stage5/features/programs/presentation/enrollment_providers.dart';
 import 'package:stage5/features/programs/presentation/program_providers.dart';
@@ -22,6 +23,7 @@ class ProgramBuilderScreen extends ConsumerStatefulWidget {
   const ProgramBuilderScreen({super.key, this.programId, this.copyFromId});
 
   final String? programId;
+
   /// When set, pre-populates the draft with workouts from this program.
   final String? copyFromId;
 
@@ -73,15 +75,19 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
     });
 
     // If copying from another program, load its workouts
-    final sourceId = widget.copyFromId ?? widget.programId!;
-    final sourceProgram = widget.copyFromId != null
-        ? await repo.getById(widget.copyFromId!)
-        : program;
-
-    if (sourceProgram != null && sourceProgram.currentVersion > 0) {
+    final source = resolveLibraryEditorSource(
+      targetTemplateId: widget.programId!,
+      targetVersion: program.currentVersion,
+      routeSourceTemplateId: widget.copyFromId,
+      provenance: program.provenance,
+    );
+    final sourceVersion = source.version ??
+        (await repo.getById(source.templateId))?.currentVersion ??
+        0;
+    if (sourceVersion > 0) {
       final version = await repo.getVersion(
-        sourceId,
-        sourceProgram.currentVersion,
+        source.templateId,
+        sourceVersion,
       );
       if (version != null && mounted) {
         ref.read(programDraftProvider.notifier).load(version.entries);
@@ -205,14 +211,14 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
 
     final workouts = ref.read(programDraftProvider);
     ref.read(programDraftProvider.notifier).addWorkout(
-      ProgramScheduleEntry(
-        workoutTemplateId: result.id,
-        workoutTemplateVersion: result.currentVersion,
-        dayOffset: offset,
-        sortOrder: workouts.length,
-        workoutName: result.name,
-      ),
-    );
+          ProgramScheduleEntry(
+            workoutTemplateId: result.id,
+            workoutTemplateVersion: result.currentVersion,
+            dayOffset: offset,
+            sortOrder: workouts.length,
+            workoutName: result.name,
+          ),
+        );
   }
 
   /// Picks a workout then generates entries across recurring day offsets.
@@ -435,8 +441,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
                 }
               : null,
           onRemove: isOwner
-              ? () =>
-                  ref.read(programDraftProvider.notifier).removeAt(idx)
+              ? () => ref.read(programDraftProvider.notifier).removeAt(idx)
               : null,
         ),
       );
@@ -526,8 +531,9 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
     // Block assignable → personal if athletes are enrolled
     if (newType == ProgramType.personal) {
       final enrollmentRepo = ref.read(enrollmentRepositoryProvider);
-      final enrollments =
-          await enrollmentRepo.watchEnrollments(widget.programId!, ownerId: uid).first;
+      final enrollments = await enrollmentRepo
+          .watchEnrollments(widget.programId!, ownerId: uid)
+          .first;
       if (enrollments.isNotEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -555,8 +561,9 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
       final uid = ref.read(authStateProvider).value?.uid;
       if (uid == null) return;
       final enrollmentRepo = ref.read(enrollmentRepositoryProvider);
-      final enrollments =
-          await enrollmentRepo.watchEnrollments(widget.programId!, ownerId: uid).first;
+      final enrollments = await enrollmentRepo
+          .watchEnrollments(widget.programId!, ownerId: uid)
+          .first;
       if (enrollments.isNotEmpty && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -592,9 +599,9 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
     if (uid == null) return;
 
     await ref.read(programRepositoryProvider).softDelete(
-      widget.programId!,
-      uid,
-    );
+          widget.programId!,
+          uid,
+        );
     if (mounted) context.pop();
   }
 
@@ -905,8 +912,7 @@ class _RecurrenceGeneratorDialogState
                   value: _startWeek,
                   items: [
                     for (var w = 0; w < 26; w++)
-                      DropdownMenuItem(
-                          value: w, child: Text('Week ${w + 1}')),
+                      DropdownMenuItem(value: w, child: Text('Week ${w + 1}')),
                   ],
                   onChanged: (v) {
                     if (v != null) setState(() => _startWeek = v);

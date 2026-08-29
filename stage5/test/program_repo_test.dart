@@ -2,6 +2,8 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stage5/core/enums.dart';
+import 'package:stage5/features/library/data/library_folder_repository.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
 import 'package:stage5/features/programs/data/program_repository.dart';
 import 'package:stage5/features/programs/domain/program.dart';
 
@@ -25,8 +27,7 @@ void main() {
 
       expect(id, isNotEmpty);
 
-      final doc =
-          await fakeFirestore.collection('programs').doc(id).get();
+      final doc = await fakeFirestore.collection('programs').doc(id).get();
       expect(doc.exists, isTrue);
       expect(doc.data()!['name'], '8-Week Strength');
       expect(doc.data()!['description'], 'Progressive overload');
@@ -34,6 +35,9 @@ void main() {
       expect(doc.data()!['type'], 'assignable');
       expect(doc.data()!['status'], 'draft');
       expect(doc.data()!['currentVersion'], 0);
+      expect(doc.data()!['tags'], isEmpty);
+      expect(doc.data()!['folderId'], isNull);
+      expect(doc.data()!['provenance'], isNull);
     });
 
     test('getById returns program', () async {
@@ -209,7 +213,8 @@ void main() {
 
       final programs = await repo.watchAll('coach1').first;
       expect(programs.length, 2);
-      expect(programs.map((p) => p.name), containsAll(['Program A', 'Program B']));
+      expect(
+          programs.map((p) => p.name), containsAll(['Program A', 'Program B']));
     });
 
     test('watchAll excludes soft-deleted programs', () async {
@@ -392,6 +397,10 @@ void main() {
       expect(copy.type, ProgramType.assignable);
       expect(copy.isDraft, isTrue);
       expect(copy.currentVersion, 0);
+      expect(copy.provenance!.sourceTemplateId, sourceId);
+      expect(copy.provenance!.sourceOwnerId, 'coach1');
+      expect(copy.provenance!.sourceVersion, 1);
+      expect(copy.provenance!.copiedBy, 'coach1');
     });
 
     test('publishVersion preserves workoutName', () async {
@@ -461,8 +470,7 @@ void main() {
       );
     });
 
-    test('getLatestEntries returns workouts from latest version',
-        () async {
+    test('getLatestEntries returns workouts from latest version', () async {
       final id = await repo.create(
         name: 'Refs Test',
         type: ProgramType.assignable,
@@ -494,8 +502,7 @@ void main() {
       expect(refs[1].workoutTemplateId, 'wt2');
     });
 
-    test('getLatestEntries returns empty for unpublished program',
-        () async {
+    test('getLatestEntries returns empty for unpublished program', () async {
       final id = await repo.create(
         name: 'No Version',
         type: ProgramType.assignable,
@@ -525,9 +532,15 @@ void main() {
         userId: 'coach1',
       );
 
-      await repo.setFolder(id: id, folderId: 'folder1', userId: 'coach1');
+      final folders = LibraryFolderRepository(
+        firestore: fakeFirestore,
+        itemType: LibraryItemType.program,
+      );
+      final folderId = await folders.create(name: 'Programs', userId: 'coach1');
+
+      await repo.setFolder(id: id, folderId: folderId, userId: 'coach1');
       var program = await repo.getById(id);
-      expect(program!.folderId, 'folder1');
+      expect(program!.folderId, folderId);
 
       await repo.setFolder(id: id, folderId: null, userId: 'coach1');
       program = await repo.getById(id);
@@ -544,6 +557,44 @@ void main() {
         () => repo.setFolder(id: id, folderId: 'f1', userId: 'intruder'),
         throwsStateError,
       );
+    });
+
+    test('setFolder rejects a foreign folder', () async {
+      final id = await repo.create(
+        name: 'Foldered',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+      final folders = LibraryFolderRepository(
+        firestore: fakeFirestore,
+        itemType: LibraryItemType.program,
+      );
+      final folderId = await folders.create(name: 'Foreign', userId: 'coach2');
+
+      expect(
+        () => repo.setFolder(
+          id: id,
+          folderId: folderId,
+          userId: 'coach1',
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('legacy headers default missing library metadata safely', () async {
+      await fakeFirestore.collection('programs').doc('legacy').set({
+        'name': 'Legacy',
+        'ownerId': 'coach1',
+        'type': 'assignable',
+        'status': 'draft',
+        'currentVersion': 0,
+        'createdBy': 'coach1',
+      });
+
+      final program = await repo.getById('legacy');
+      expect(program!.tags, isEmpty);
+      expect(program.folderId, isNull);
+      expect(program.provenance, isNull);
     });
 
     test('publishVersion round-trips dayOffset', () async {

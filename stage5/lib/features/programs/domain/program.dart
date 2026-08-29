@@ -1,6 +1,7 @@
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/domain/foundation_models.dart';
 import 'package:stage5/features/load/domain/load_model.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
 
 /// A workout program with versioned structure.
 ///
@@ -11,7 +12,7 @@ import 'package:stage5/features/load/domain/load_model.dart';
 /// Programs may customize load computation via [typeWeightOverrides]
 /// (per-type weight adjustments) and [loadStrategyId] (alternative
 /// calculation formula).
-class Program with Auditable {
+class Program with Auditable implements LibraryItem {
   Program({
     required this.id,
     required this.name,
@@ -24,7 +25,9 @@ class Program with Auditable {
     required this.updatedAt,
     required this.updatedBy,
     this.description,
+    this.tags = const [],
     this.folderId,
+    this.provenance,
     this.typeWeightOverrides,
     this.loadStrategyId,
     this.deletedAt,
@@ -38,12 +41,16 @@ class Program with Auditable {
   final ProgramType type;
   final ProgramStatus status;
   final int currentVersion;
+  @override
+  final List<String> tags;
 
   /// Optional folder grouping for owner organization.
   ///
   /// When null, the program is treated as "Uncategorized". Folders are
   /// flat (no nesting) and owner-scoped — see [ProgramFolder].
   final String? folderId;
+  @override
+  final TemplateProvenance? provenance;
 
   /// Per-program type weight overrides for load computation.
   ///
@@ -99,7 +106,9 @@ class Program with Auditable {
     ProgramType? type,
     ProgramStatus? status,
     int? currentVersion,
+    List<String>? tags,
     String? folderId,
+    TemplateProvenance? provenance,
     Map<WorkoutType, int>? typeWeightOverrides,
     String? loadStrategyId,
     DateTime? createdAt,
@@ -117,7 +126,9 @@ class Program with Auditable {
       type: type ?? this.type,
       status: status ?? this.status,
       currentVersion: currentVersion ?? this.currentVersion,
+      tags: tags ?? this.tags,
       folderId: folderId ?? this.folderId,
+      provenance: provenance ?? this.provenance,
       typeWeightOverrides: typeWeightOverrides ?? this.typeWeightOverrides,
       loadStrategyId: loadStrategyId ?? this.loadStrategyId,
       createdAt: createdAt ?? this.createdAt,
@@ -149,6 +160,11 @@ class Program with Auditable {
     if (updatedBy.isEmpty) {
       throw ArgumentError('updatedBy cannot be empty');
     }
+    validateLibraryMetadata(
+      tags: tags,
+      folderId: folderId,
+      provenance: provenance,
+    );
 
     if (typeWeightOverrides != null) {
       LoadModel.validateTypeWeightOverrides(typeWeightOverrides!);
@@ -281,62 +297,4 @@ class ProgramScheduleEntry {
 ///
 /// Folders have no nesting. A program references at most one folder via
 /// [Program.folderId]; a null reference means "Uncategorized".
-class ProgramFolder {
-  ProgramFolder({
-    required this.id,
-    required this.ownerId,
-    required this.name,
-    required this.createdAt,
-    required this.createdBy,
-    required this.updatedAt,
-    required this.updatedBy,
-  });
-
-  final String id;
-  final String ownerId;
-  final String name;
-  final DateTime createdAt;
-  final String createdBy;
-  final DateTime updatedAt;
-  final String updatedBy;
-
-  /// Creates a copy with the given fields replaced.
-  ProgramFolder copyWith({
-    String? id,
-    String? ownerId,
-    String? name,
-    DateTime? createdAt,
-    String? createdBy,
-    DateTime? updatedAt,
-    String? updatedBy,
-  }) {
-    return ProgramFolder(
-      id: id ?? this.id,
-      ownerId: ownerId ?? this.ownerId,
-      name: name ?? this.name,
-      createdAt: createdAt ?? this.createdAt,
-      createdBy: createdBy ?? this.createdBy,
-      updatedAt: updatedAt ?? this.updatedAt,
-      updatedBy: updatedBy ?? this.updatedBy,
-    );
-  }
-
-  /// Validates folder fields.
-  void validate() {
-    if (id.isEmpty) {
-      throw ArgumentError('id cannot be empty');
-    }
-    if (ownerId.isEmpty) {
-      throw ArgumentError('ownerId cannot be empty');
-    }
-    if (name.isEmpty) {
-      throw ArgumentError('name cannot be empty');
-    }
-    if (createdBy.isEmpty) {
-      throw ArgumentError('createdBy cannot be empty');
-    }
-    if (updatedBy.isEmpty) {
-      throw ArgumentError('updatedBy cannot be empty');
-    }
-  }
-}
+typedef ProgramFolder = LibraryFolder;

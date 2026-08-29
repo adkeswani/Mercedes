@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stage5/features/exercises/data/exercise_template_repository.dart';
 import 'package:stage5/features/exercises/domain/exercise_template.dart';
+import 'package:stage5/features/library/data/library_folder_repository.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
 
 void main() {
   late FakeFirebaseFirestore firestore;
@@ -126,6 +128,9 @@ void main() {
           await firestore.collection('exerciseTemplates').doc(id).get();
       expect(header.data()!['ownerId'], 'coach1');
       expect(header.data()!['currentVersion'], 1);
+      expect(header.data()!['tags'], isEmpty);
+      expect(header.data()!['folderId'], isNull);
+      expect(header.data()!['provenance'], isNull);
       expect(header.data()!.containsKey('name'), isFalse);
 
       final rawVersion =
@@ -245,6 +250,89 @@ void main() {
       expect(archived!.isDeleted, isTrue);
       expect(archived.name, 'Archived');
     });
+
+    test('updates owner-scoped organization without publishing a version',
+        () async {
+      final folders = LibraryFolderRepository(
+        firestore: firestore,
+        itemType: LibraryItemType.exercise,
+      );
+      final folderId = await folders.create(name: 'Strength', userId: 'coach1');
+      final id = await repository.create(
+        name: 'Squat',
+        description: 'Description',
+        instructions: 'Instructions',
+        userId: 'coach1',
+      );
+
+      await repository.updateOrganization(
+        id: id,
+        tags: const [' Strength ', 'Lower', 'strength'],
+        folderId: folderId,
+        userId: 'coach1',
+      );
+
+      final exercise = await repository.getById(id);
+      expect(exercise!.tags, ['Strength', 'Lower']);
+      expect(exercise.folderId, folderId);
+      expect(exercise.currentVersion, 1);
+    });
+
+    test('rejects foreign and wrong-type folders', () async {
+      final foreign = LibraryFolderRepository(
+        firestore: firestore,
+        itemType: LibraryItemType.exercise,
+      );
+      final wrongType = LibraryFolderRepository(
+        firestore: firestore,
+        itemType: LibraryItemType.workout,
+      );
+      final foreignId = await foreign.create(name: 'Foreign', userId: 'coach2');
+      final wrongTypeId =
+          await wrongType.create(name: 'Workout', userId: 'coach1');
+      final id = await repository.create(
+        name: 'Squat',
+        description: 'Description',
+        instructions: 'Instructions',
+        userId: 'coach1',
+      );
+
+      for (final folderId in [foreignId, wrongTypeId]) {
+        expect(
+          () => repository.updateOrganization(
+            id: id,
+            tags: const [],
+            folderId: folderId,
+            userId: 'coach1',
+          ),
+          throwsStateError,
+        );
+      }
+    });
+
+    test('copy creates version 1 with immutable source provenance', () async {
+      final sourceId = await repository.create(
+        name: 'Squat',
+        description: 'Description',
+        instructions: 'Instructions',
+        tags: const ['Strength'],
+        userId: 'coach1',
+      );
+
+      final copyId = await repository.copyExercise(
+        sourceId: sourceId,
+        userId: 'coach1',
+      );
+      final copy = await repository.getById(copyId);
+
+      expect(copy!.name, 'Squat (Copy)');
+      expect(copy.currentVersion, 1);
+      expect(copy.tags, ['Strength']);
+      expect(copy.provenance!.sourceTemplateId, sourceId);
+      expect(copy.provenance!.sourceOwnerId, 'coach1');
+      expect(copy.provenance!.sourceVersion, 1);
+      expect(copy.provenance!.copiedBy, 'coach1');
+    });
   });
 
   group('legacy compatibility and backfill', () {
@@ -275,6 +363,9 @@ void main() {
       expect(exercise.currentVersion, 1);
       expect(exercise.version.versionNumber, 1);
       expect(exercise.name, 'Legacy Squat');
+      expect(exercise.tags, isEmpty);
+      expect(exercise.folderId, isNull);
+      expect(exercise.provenance, isNull);
       expect(
         exercise.measurementConfiguration.primary,
         ExerciseMeasurementType.weight,
@@ -373,8 +464,7 @@ void main() {
         'currentVersion': 1,
         'deletedAt': null,
       });
-      final version =
-          workout.collection('workoutTemplateVersions').doc('1');
+      final version = workout.collection('workoutTemplateVersions').doc('1');
       await version.set({
         'versionNumber': 1,
         'storageFormat': 'exercisePrescriptionSubcollection',

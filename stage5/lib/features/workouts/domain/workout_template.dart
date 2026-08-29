@@ -1,5 +1,6 @@
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/domain/foundation_models.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
 
 const maxExercisePrescriptionsPerWorkoutVersion = 9;
 
@@ -9,7 +10,7 @@ const maxExercisePrescriptionsPerWorkoutVersion = 9;
 /// [WorkoutTemplateVersion] sub-document. Old versions are never mutated.
 ///
 /// A newly created template has [currentVersion] = 0 (no published versions).
-class WorkoutTemplate with Auditable {
+class WorkoutTemplate with Auditable implements LibraryItem {
   WorkoutTemplate({
     required this.id,
     required this.ownerId,
@@ -20,6 +21,9 @@ class WorkoutTemplate with Auditable {
     required this.createdBy,
     required this.updatedAt,
     required this.updatedBy,
+    this.tags = const [],
+    this.folderId,
+    this.provenance,
     this.deletedAt,
     this.deletedBy,
   });
@@ -29,6 +33,12 @@ class WorkoutTemplate with Auditable {
   final String name;
   final WorkoutType workoutType;
   final int currentVersion;
+  @override
+  final List<String> tags;
+  @override
+  final String? folderId;
+  @override
+  final TemplateProvenance? provenance;
   @override
   final DateTime createdAt;
   @override
@@ -55,6 +65,9 @@ class WorkoutTemplate with Auditable {
     String? name,
     WorkoutType? workoutType,
     int? currentVersion,
+    List<String>? tags,
+    String? folderId,
+    TemplateProvenance? provenance,
     DateTime? createdAt,
     String? createdBy,
     DateTime? updatedAt,
@@ -68,6 +81,9 @@ class WorkoutTemplate with Auditable {
       name: name ?? this.name,
       workoutType: workoutType ?? this.workoutType,
       currentVersion: currentVersion ?? this.currentVersion,
+      tags: tags ?? this.tags,
+      folderId: folderId ?? this.folderId,
+      provenance: provenance ?? this.provenance,
       createdAt: createdAt ?? this.createdAt,
       createdBy: createdBy ?? this.createdBy,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -97,6 +113,11 @@ class WorkoutTemplate with Auditable {
     if (updatedBy.isEmpty) {
       throw ArgumentError('updatedBy cannot be empty');
     }
+    validateLibraryMetadata(
+      tags: tags,
+      folderId: folderId,
+      provenance: provenance,
+    );
     Auditable.validateTimestamps(
       createdAt: createdAt,
       updatedAt: updatedAt,

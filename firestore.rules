@@ -52,6 +52,141 @@ service cloud.firestore {
       return 'currentVersion' in data ? data.currentVersion : 0;
     }
 
+    function libraryFolderType(data) {
+      return 'itemType' in data ? data.itemType : 'program';
+    }
+
+    function hasValidTags(data) {
+      return !('tags' in data)
+             || (data.tags is list && data.tags.size() <= 20);
+    }
+
+    function hasValidProvenance(data) {
+      return !('provenance' in data)
+             || data.provenance == null
+             || (data.provenance is map
+                 && data.provenance.keys().hasOnly([
+                      'sourceTemplateId', 'sourceOwnerId', 'sourceVersion',
+                      'copiedAt', 'copiedBy'
+                    ])
+                 && data.provenance.sourceTemplateId is string
+                 && data.provenance.sourceTemplateId.size() > 0
+                 && data.provenance.sourceOwnerId is string
+                 && data.provenance.sourceOwnerId.size() > 0
+                 && data.provenance.sourceVersion is int
+                 && data.provenance.sourceVersion >= 0
+                 && data.provenance.copiedAt is timestamp
+                 && data.provenance.copiedBy is string
+                 && data.provenance.copiedBy.size() > 0);
+    }
+
+    function hasValidProvenanceSource(data, itemType) {
+      return !('provenance' in data)
+             || data.provenance == null
+             || (itemType == 'exercise'
+                 && exists(
+                      /databases/$(database)/documents/exerciseTemplates/$(data.provenance.sourceTemplateId)
+                    )
+                 && data.provenance.sourceOwnerId == templateOwner(
+                      get(
+                        /databases/$(database)/documents/exerciseTemplates/$(data.provenance.sourceTemplateId)
+                      ).data
+                    )
+                 && ((templateVersion(
+                        get(
+                          /databases/$(database)/documents/exerciseTemplates/$(data.provenance.sourceTemplateId)
+                        ).data
+                      ) == 0
+                      && data.provenance.sourceVersion == 1)
+                     || exists(
+                          /databases/$(database)/documents/exerciseTemplates/$(data.provenance.sourceTemplateId)/exerciseVersions/$(data.provenance.sourceVersion)
+                        )))
+             || (itemType == 'workout'
+                 && exists(
+                      /databases/$(database)/documents/workoutTemplates/$(data.provenance.sourceTemplateId)
+                    )
+                 && data.provenance.sourceOwnerId == templateOwner(
+                      get(
+                        /databases/$(database)/documents/workoutTemplates/$(data.provenance.sourceTemplateId)
+                      ).data
+                    )
+                 && ((templateVersion(
+                        get(
+                          /databases/$(database)/documents/workoutTemplates/$(data.provenance.sourceTemplateId)
+                        ).data
+                      ) == 0
+                      && data.provenance.sourceVersion == 0)
+                     || exists(
+                          /databases/$(database)/documents/workoutTemplates/$(data.provenance.sourceTemplateId)/workoutTemplateVersions/$(data.provenance.sourceVersion)
+                        )))
+             || (itemType == 'program'
+                 && exists(
+                      /databases/$(database)/documents/programs/$(data.provenance.sourceTemplateId)
+                    )
+                 && data.provenance.sourceOwnerId
+                    == get(
+                         /databases/$(database)/documents/programs/$(data.provenance.sourceTemplateId)
+                       ).data.ownerId
+                 && ((templateVersion(
+                        get(
+                          /databases/$(database)/documents/programs/$(data.provenance.sourceTemplateId)
+                        ).data
+                      ) == 0
+                      && data.provenance.sourceVersion == 0)
+                     || exists(
+                          /databases/$(database)/documents/programs/$(data.provenance.sourceTemplateId)/programVersions/$(data.provenance.sourceVersion)
+                        )));
+    }
+
+    function preservesProvenance() {
+      return (!('provenance' in resource.data)
+              && (!('provenance' in request.resource.data)
+                  || request.resource.data.provenance == null))
+             || (('provenance' in resource.data)
+                 && ('provenance' in request.resource.data)
+                 && request.resource.data.provenance
+                    == resource.data.provenance);
+    }
+
+    function hasValidLibraryFolder(data, itemType) {
+      return !('folderId' in data)
+             || data.folderId == null
+             || (data.folderId is string
+                 && data.folderId.size() > 0
+                 && exists(
+                      /databases/$(database)/documents/programFolders/$(data.folderId)
+                    )
+                 && get(
+                      /databases/$(database)/documents/programFolders/$(data.folderId)
+                    ).data.ownerId == request.auth.uid
+                 && (!('deletedAt' in get(
+                        /databases/$(database)/documents/programFolders/$(data.folderId)
+                      ).data)
+                     || get(
+                          /databases/$(database)/documents/programFolders/$(data.folderId)
+                        ).data.deletedAt == null)
+                 && libraryFolderType(
+                      get(
+                        /databases/$(database)/documents/programFolders/$(data.folderId)
+                      ).data
+                    ) == itemType);
+    }
+
+    function hasValidLibraryMetadata(data, itemType) {
+      return hasValidTags(data)
+             && hasValidProvenance(data)
+             && hasValidProvenanceSource(data, itemType)
+             && hasValidLibraryFolder(data, itemType);
+    }
+
+    function hasValidLibraryMetadataUpdate(data, itemType) {
+      return hasValidTags(data)
+             && hasValidProvenance(data)
+             && (!request.resource.data.diff(resource.data).affectedKeys()
+                    .hasAny(['folderId'])
+                 || hasValidLibraryFolder(data, itemType));
+    }
+
     function publishesNextExerciseVersion(templateId) {
       let nextVersion = templateVersion(resource.data) + 1;
       return request.resource.data.currentVersion == nextVersion
@@ -113,6 +248,14 @@ service cloud.firestore {
              && existsAfter(
                /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(nextVersion)
              );
+    }
+
+    function publishesNextProgramVersion(programId) {
+      let nextVersion = templateVersion(resource.data) + 1;
+      return request.resource.data.currentVersion == nextVersion
+             && existsAfter(
+                  /databases/$(database)/documents/programs/$(programId)/programVersions/$(nextVersion)
+                );
     }
 
     function isOwnedExerciseVersion(exerciseId, versionNumber) {
@@ -282,10 +425,21 @@ service cloud.firestore {
       allow create: if isSignedIn()
                      && request.resource.data.keys().hasOnly([
                           'ownerId', 'currentVersion', 'createdBy', 'createdAt',
-                          'updatedAt', 'updatedBy', 'deletedAt', 'deletedBy'
+                          'updatedAt', 'updatedBy', 'deletedAt', 'deletedBy',
+                          'tags', 'folderId', 'provenance'
                         ])
                      && request.resource.data.ownerId == request.auth.uid
                      && request.resource.data.createdBy == request.auth.uid
+                     && request.resource.data.updatedBy == request.auth.uid
+                     && hasValidLibraryMetadata(
+                         request.resource.data, 'exercise'
+                        )
+                     && (!('provenance' in request.resource.data)
+                        || request.resource.data.provenance == null
+                        || (request.resource.data.provenance.copiedBy
+                              == request.auth.uid
+                            && request.resource.data.provenance.copiedAt
+                               == request.time))
                      && request.resource.data.currentVersion == 1
                      && existsAfter(
                           /databases/$(database)/documents/exerciseTemplates/$(exerciseId)/exerciseVersions/1
@@ -301,14 +455,19 @@ service cloud.firestore {
                            'description', 'instructions', 'videoUrl',
                            'mediaUrls', 'exerciseType',
                            'measurementConfiguration',
-                           'gradingConfiguration'
+                           'gradingConfiguration', 'tags', 'folderId',
+                           'provenance'
                          ])
+                    && preservesProvenance()
+                    && hasValidLibraryMetadataUpdate(
+                         request.resource.data, 'exercise'
+                       )
                     && ((templateVersion(request.resource.data)
-                           == templateVersion(resource.data)
+                          == templateVersion(resource.data)
                          && request.resource.data.diff(resource.data)
-                              .affectedKeys().hasOnly([
+                             .affectedKeys().hasOnly([
                                 'ownerId', 'updatedAt', 'updatedBy',
-                                'deletedAt', 'deletedBy'
+                                'deletedAt', 'deletedBy', 'tags', 'folderId'
                               ]))
                         || publishesNextExerciseVersion(exerciseId)
                         || publishesLegacyExerciseEdit(exerciseId))
@@ -378,10 +537,28 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
                       && request.resource.data.ownerId == request.auth.uid
-                      && request.resource.data.createdBy == request.auth.uid;
+                      && request.resource.data.createdBy == request.auth.uid
+                      && (!('updatedBy' in request.resource.data)
+                          || request.resource.data.updatedBy
+                             == request.auth.uid)
+                      && hasValidLibraryMetadata(
+                           request.resource.data, 'workout'
+                         )
+                      && (!('provenance' in request.resource.data)
+                          || request.resource.data.provenance == null
+                          || (request.resource.data.provenance.copiedBy
+                                == request.auth.uid
+                              && request.resource.data.provenance.copiedAt
+                                 == request.time));
       allow update: if isSignedIn()
                     && templateOwner(resource.data) == request.auth.uid
                     && preservesTemplateOwnership()
+                    && (!('updatedBy' in request.resource.data)
+                        || request.resource.data.updatedBy == request.auth.uid)
+                    && preservesProvenance()
+                    && hasValidLibraryMetadataUpdate(
+                         request.resource.data, 'workout'
+                       )
                     && (templateVersion(request.resource.data)
                           == templateVersion(resource.data)
                         || publishesNextWorkoutVersion(templateId));
@@ -460,9 +637,34 @@ service cloud.firestore {
                     && (resource.data.ownerId == request.auth.uid
                         || isEnrolledActive(programId));
       allow create: if isSignedIn()
-                      && request.resource.data.ownerId == request.auth.uid;
-      allow update, delete: if isSignedIn()
-                              && resource.data.ownerId == request.auth.uid;
+                      && request.resource.data.ownerId == request.auth.uid
+                      && request.resource.data.createdBy == request.auth.uid
+                      && (!('updatedBy' in request.resource.data)
+                          || request.resource.data.updatedBy
+                             == request.auth.uid)
+                      && hasValidLibraryMetadata(
+                           request.resource.data, 'program'
+                         )
+                      && (!('provenance' in request.resource.data)
+                          || request.resource.data.provenance == null
+                          || (request.resource.data.provenance.copiedBy
+                                == request.auth.uid
+                              && request.resource.data.provenance.copiedAt
+                                 == request.time));
+      allow update: if isSignedIn()
+                    && resource.data.ownerId == request.auth.uid
+                    && request.resource.data.ownerId == resource.data.ownerId
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && (!('updatedBy' in request.resource.data)
+                        || request.resource.data.updatedBy == request.auth.uid)
+                    && preservesProvenance()
+                    && hasValidLibraryMetadataUpdate(
+                         request.resource.data, 'program'
+                       )
+                    && (templateVersion(request.resource.data)
+                          == templateVersion(resource.data)
+                        || publishesNextProgramVersion(programId));
+      allow delete: if false;
 
       // Program versions (subcollection)
       match /programVersions/{versionNumber} {
@@ -470,14 +672,29 @@ service cloud.firestore {
                       && (get(/databases/$(database)/documents/programs/$(programId)).data.ownerId
                           == request.auth.uid
                           || isEnrolledActive(programId));
-        allow write: if isSignedIn()
-                       && get(/databases/$(database)/documents/programs/$(programId)).data.ownerId
-                          == request.auth.uid;
+        allow create: if isSignedIn()
+                       && get(
+                            /databases/$(database)/documents/programs/$(programId)
+                          ).data.ownerId == request.auth.uid
+                       && versionNumber
+                          == string(request.resource.data.versionNumber)
+                       && request.resource.data.versionNumber >= 1
+                       && templateVersion(
+                            get(
+                              /databases/$(database)/documents/programs/$(programId)
+                            ).data
+                          ) + 1 == request.resource.data.versionNumber
+                       && getAfter(
+                            /databases/$(database)/documents/programs/$(programId)
+                          ).data.currentVersion
+                          == request.resource.data.versionNumber;
+        allow update, delete: if false;
       }
     }
 
-    // ── Program Folders ──
-    // Owner-scoped organizational folders for programs.
+    // ── Library Folders ──
+    // Owner- and template-type-scoped folders. The legacy collection name is
+    // retained so existing program folder IDs remain stable.
     // Read: owner only.
     // Create: self (ownerId must match auth uid).
     // Update/delete: owner only.
@@ -486,9 +703,56 @@ service cloud.firestore {
       allow read: if isSignedIn()
                     && resource.data.ownerId == request.auth.uid;
       allow create: if isSignedIn()
-                      && request.resource.data.ownerId == request.auth.uid;
-      allow update, delete: if isSignedIn()
-                              && resource.data.ownerId == request.auth.uid;
+                      && request.resource.data.keys().hasOnly([
+                           'ownerId', 'itemType', 'name', 'createdBy',
+                           'createdAt', 'updatedBy', 'updatedAt', 'deletedAt',
+                           'deletedBy'
+                         ])
+                      && request.resource.data.ownerId == request.auth.uid
+                      && (!('createdBy' in request.resource.data)
+                          || request.resource.data.createdBy
+                             == request.auth.uid)
+                      && (!('updatedBy' in request.resource.data)
+                          || request.resource.data.updatedBy
+                             == request.auth.uid)
+                      && (!('itemType' in request.resource.data)
+                          || request.resource.data.itemType
+                             in ['exercise', 'workout', 'program'])
+                      && request.resource.data.name is string
+                      && request.resource.data.name.size() > 0;
+      allow update: if isSignedIn()
+                    && resource.data.ownerId == request.auth.uid
+                    && request.resource.data.ownerId == resource.data.ownerId
+                    && (!('createdBy' in resource.data)
+                        || request.resource.data.createdBy
+                           == resource.data.createdBy)
+                    && (!('updatedBy' in request.resource.data)
+                        || request.resource.data.updatedBy == request.auth.uid)
+                    && ((!('itemType' in request.resource.data)
+                         && !('itemType' in resource.data))
+                        || request.resource.data.itemType
+                           == libraryFolderType(resource.data))
+                    && ((request.resource.data.diff(resource.data)
+                           .affectedKeys().hasOnly([
+                             'itemType', 'name', 'updatedBy', 'updatedAt'
+                           ])
+                         && ((!('deletedAt' in resource.data)
+                              && !('deletedAt' in request.resource.data))
+                             || request.resource.data.deletedAt
+                                == resource.data.deletedAt))
+                        || (request.resource.data.diff(resource.data)
+                              .affectedKeys().hasOnly([
+                                'itemType', 'updatedBy', 'updatedAt',
+                                'deletedAt', 'deletedBy'
+                              ])
+                            && request.resource.data.deletedAt == request.time
+                            && request.resource.data.deletedBy
+                               == request.auth.uid));
+      allow delete: if isSignedIn()
+                    && resource.data.ownerId == request.auth.uid
+                    && (!('itemType' in resource.data)
+                        || (resource.data.deletedAt != null
+                            && resource.data.deletedBy == request.auth.uid));
     }
 
     // ── Enrollments ──

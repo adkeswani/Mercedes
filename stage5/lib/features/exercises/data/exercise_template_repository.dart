@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:stage5/features/exercises/domain/exercise_template.dart';
+import 'package:stage5/features/library/data/library_serialization.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
 
 enum ExerciseBackfillResult { backfilled, notNeeded }
 
@@ -106,7 +108,16 @@ class ExerciseTemplateRepository {
       primary: ExerciseMeasurementType.repetitions,
     ),
     ExerciseGradingConfiguration? gradingConfiguration,
+    List<String> tags = const [],
+    String? folderId,
+    TemplateProvenance? provenance,
   }) async {
+    final normalizedTags = normalizeLibraryTags(tags);
+    await _validateCreationMetadata(
+      userId: userId,
+      folderId: folderId,
+      provenance: provenance,
+    );
     final docRef = _collection.doc();
     final version = ExerciseVersion(
       versionNumber: 1,
@@ -127,6 +138,12 @@ class ExerciseTemplateRepository {
     batch.set(docRef, {
       'ownerId': userId,
       'currentVersion': 1,
+      'tags': normalizedTags,
+      'folderId': folderId,
+      'provenance': provenanceToMap(
+        provenance,
+        copiedAt: FieldValue.serverTimestamp(),
+      ),
       'createdBy': userId,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -140,6 +157,64 @@ class ExerciseTemplateRepository {
     );
     await batch.commit();
     return docRef.id;
+  }
+
+  /// Creates a new logical exercise with version 1 copied from [sourceId].
+  Future<String> copyExercise({
+    required String sourceId,
+    required String userId,
+  }) async {
+    final source = await getById(sourceId);
+    if (source == null) {
+      throw StateError('Source exercise $sourceId not found');
+    }
+    final now = DateTime.now();
+    return create(
+      name: '${source.name} (Copy)',
+      description: source.description,
+      instructions: source.instructions,
+      userId: userId,
+      videoUrl: source.videoUrl,
+      mediaUrls: source.mediaUrls,
+      exerciseType: source.exerciseType,
+      measurementConfiguration: source.measurementConfiguration,
+      gradingConfiguration: source.gradingConfiguration,
+      tags: source.tags,
+      folderId: source.ownerId == userId ? source.folderId : null,
+      provenance: TemplateProvenance(
+        sourceTemplateId: source.id,
+        sourceOwnerId: source.ownerId,
+        sourceVersion: source.version.versionNumber,
+        copiedAt: now,
+        copiedBy: userId,
+      ),
+    );
+  }
+
+  /// Updates stable owner organization without publishing a content version.
+  Future<void> updateOrganization({
+    required String id,
+    required List<String> tags,
+    required String? folderId,
+    required String userId,
+  }) async {
+    await _verifyOwnership(id, userId);
+    final normalizedTags = normalizeLibraryTags(tags);
+    if (folderId != null) {
+      await verifyLibraryFolderOwnership(
+        firestore: _firestore,
+        folderId: folderId,
+        itemType: LibraryItemType.exercise,
+        userId: userId,
+      );
+    }
+    await _collection.doc(id).update({
+      'ownerId': userId,
+      'tags': normalizedTags,
+      'folderId': folderId,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': userId,
+    });
   }
 
   /// Publishes changed execution content as the next immutable version.
@@ -355,6 +430,9 @@ class ExerciseTemplateRepository {
       ownerId: _ownerOf(data),
       currentVersion: currentVersion,
       version: version,
+      tags: libraryTagsFromMap(data['tags']),
+      folderId: data['folderId'] as String?,
+      provenance: provenanceFromMap(data['provenance']),
       createdBy: data['createdBy'] as String? ?? '',
       createdAt: _toDateTime(data['createdAt']),
       updatedAt: _toDateTime(data['updatedAt']),
@@ -493,6 +571,26 @@ class ExerciseTemplateRepository {
       'measurementConfiguration': FieldValue.delete(),
       'gradingConfiguration': FieldValue.delete(),
     };
+  }
+
+  Future<void> _validateCreationMetadata({
+    required String userId,
+    required String? folderId,
+    required TemplateProvenance? provenance,
+  }) async {
+    if (userId.isEmpty) throw ArgumentError('userId cannot be empty');
+    provenance?.validate();
+    if (provenance != null && provenance.copiedBy != userId) {
+      throw StateError('Copy provenance must identify its owner as copiedBy');
+    }
+    if (folderId != null) {
+      await verifyLibraryFolderOwnership(
+        firestore: _firestore,
+        folderId: folderId,
+        itemType: LibraryItemType.exercise,
+        userId: userId,
+      );
+    }
   }
 
   static List<String> _stringList(dynamic value) =>

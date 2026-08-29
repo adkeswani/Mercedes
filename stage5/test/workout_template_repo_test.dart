@@ -3,6 +3,8 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stage5/core/enums.dart';
+import 'package:stage5/features/library/data/library_folder_repository.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
 import 'package:stage5/features/workouts/data/workout_template_repository.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 
@@ -110,6 +112,9 @@ void main() {
       expect(doc.data()!['currentVersion'], 0);
       expect(doc.data()!['createdBy'], 'user1');
       expect(doc.data()!['ownerId'], 'user1');
+      expect(doc.data()!['tags'], isEmpty);
+      expect(doc.data()!['folderId'], isNull);
+      expect(doc.data()!['provenance'], isNull);
     });
 
     test('getById returns template', () async {
@@ -259,6 +264,31 @@ void main() {
       expect(version.exercises.length, 2);
       expect(version.exercises[0].exerciseName, 'Campus Board');
       expect(version.exercises[1].exerciseName, 'Limit Bouldering');
+    });
+
+    test('updates owner-scoped organization without publishing', () async {
+      final folders = LibraryFolderRepository(
+        firestore: fakeFirestore,
+        itemType: LibraryItemType.workout,
+      );
+      final folderId = await folders.create(name: 'Power', userId: 'user1');
+      final id = await repo.create(
+        name: 'Power Session',
+        workoutType: WorkoutType.power,
+        userId: 'user1',
+      );
+
+      await repo.updateOrganization(
+        id: id,
+        tags: const [' Power ', 'Climbing', 'power'],
+        folderId: folderId,
+        userId: 'user1',
+      );
+
+      final workout = await repo.getById(id);
+      expect(workout!.tags, ['Power', 'Climbing']);
+      expect(workout.folderId, folderId);
+      expect(workout.currentVersion, 0);
     });
 
     test('publishVersion increments from existing version', () async {
@@ -448,6 +478,9 @@ void main() {
       final template = await repo.getById('legacy');
 
       expect(template!.ownerId, 'user1');
+      expect(template.tags, isEmpty);
+      expect(template.folderId, isNull);
+      expect(template.provenance, isNull);
     });
 
     test('update throws when caller is not creator', () async {
@@ -520,6 +553,10 @@ void main() {
       expect(copy.workoutType, WorkoutType.push);
       expect(copy.currentVersion, 0);
       expect(copy.hasPublishedVersion, isFalse);
+      expect(copy.provenance!.sourceTemplateId, sourceId);
+      expect(copy.provenance!.sourceOwnerId, 'user1');
+      expect(copy.provenance!.sourceVersion, 0);
+      expect(copy.provenance!.copiedBy, 'user1');
     });
 
     test('duplicateTemplate throws for non-existent source', () async {
