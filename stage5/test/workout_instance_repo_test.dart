@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -26,6 +27,30 @@ void main() {
       'type': type,
       'status': 'published',
       'currentVersion': 1,
+    });
+    final workout = fakeFirestore.collection('workoutTemplates').doc('wt1');
+    await workout.set({
+      'ownerId': ownerId,
+      'createdBy': ownerId,
+      'currentVersion': 1,
+    });
+    await workout.collection('workoutTemplateVersions').doc('1').set({
+      'versionNumber': 1,
+      'publishedAt': DateTime(2026, 1, 1),
+      'exercises': [
+        {
+          'exerciseId': 'ex1',
+          'exerciseVersion': 1,
+          'sortOrder': 0,
+          'mode': 'reps',
+        },
+        {
+          'exerciseId': 'ex2',
+          'exerciseVersion': 1,
+          'sortOrder': 1,
+          'mode': 'time',
+        },
+      ],
     });
     for (final athleteId in ['athlete1', 'athlete2']) {
       await fakeFirestore
@@ -227,10 +252,12 @@ void main() {
 
         await repo.completeWorkout(
           instanceId: id,
+          athleteId: 'athlete1',
           rpe: 7,
           durationMinutes: 55,
           actuals: [
             ExerciseActual(
+              slotId: 'legacy-slot-0',
               exerciseId: 'ex1',
               mode: ExerciseMode.reps,
               sets: 3,
@@ -249,8 +276,17 @@ void main() {
         expect(doc.data()!['durationMinutes'], 55);
         expect(doc.data()!['loadPoints'], 20.0);
         expect(doc.data()!['athleteNotes'], 'Felt strong');
-        expect(doc.data()!['actuals'], isA<List>());
-        expect((doc.data()!['actuals'] as List).length, 1);
+        expect(doc.data()!['actuals'], isNull);
+        expect(
+          doc.data()!['actualsStorageFormat'],
+          'slotResultsSubcollection',
+        );
+        expect(doc.data()!['actualSlotIds'], ['legacy-slot-0']);
+        final result = await doc.reference
+            .collection('slotResults')
+            .doc('legacy-slot-0')
+            .get();
+        expect(result.data()!['exerciseId'], 'ex1');
       });
 
       test('completed instance is retrievable', () async {
@@ -260,6 +296,7 @@ void main() {
 
         await repo.completeWorkout(
           instanceId: id,
+          athleteId: 'athlete1',
           rpe: 8,
           durationMinutes: 45,
           actuals: [],
@@ -281,6 +318,7 @@ void main() {
 
         await repo.completeWorkout(
           instanceId: id,
+          athleteId: 'athlete1',
           rpe: 6,
           durationMinutes: 40,
           actuals: [],
@@ -289,10 +327,12 @@ void main() {
 
         await repo.updateCompletion(
           instanceId: id,
+          athleteId: 'athlete1',
           rpe: 8,
           durationMinutes: 55,
           actuals: [
             ExerciseActual(
+              slotId: 'legacy-slot-0',
               exerciseId: 'ex1',
               mode: ExerciseMode.reps,
               sets: 4,
@@ -321,6 +361,7 @@ void main() {
 
         await repo.completeWorkout(
           instanceId: id,
+          athleteId: 'athlete1',
           rpe: 5,
           durationMinutes: 30,
           actuals: [],
@@ -330,6 +371,7 @@ void main() {
 
         await repo.updateCompletion(
           instanceId: id,
+          athleteId: 'athlete1',
           rpe: 9,
           durationMinutes: 60,
           actuals: [],
@@ -338,6 +380,416 @@ void main() {
         final after = await repo.getById(id);
         expect(after!.status, before!.status);
         expect(after.completedAt, before.completedAt);
+      });
+
+      test('metadata-only edits preserve existing slot results', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+        await repo.completeWorkout(
+          instanceId: id,
+          athleteId: 'athlete1',
+          rpe: 6,
+          durationMinutes: 40,
+          actuals: [
+            ExerciseActual(
+              slotId: 'legacy-slot-0',
+              exerciseId: 'ex1',
+              mode: ExerciseMode.reps,
+              sets: 3,
+              reps: '10',
+            ),
+          ],
+        );
+
+        await repo.updateCompletion(
+          instanceId: id,
+          athleteId: 'athlete1',
+          rpe: 8,
+          durationMinutes: 50,
+          athleteNotes: 'Summary only',
+        );
+
+        final instance = await repo.getById(id);
+        expect(instance!.actualsBySlot.keys, ['legacy-slot-0']);
+        expect(instance.actualsBySlot['legacy-slot-0']!.reps, '10');
+      });
+    });
+
+    group('slot-keyed completion compatibility', () {
+      test('rejects completion by a user who does not own the instance',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+
+        expect(
+          () => repo.completeWorkout(
+            instanceId: id,
+            athleteId: 'intruder',
+            rpe: 7,
+            durationMinutes: 45,
+            actuals: const [],
+          ),
+          throwsStateError,
+        );
+      });
+
+      test('rejects a result that does not match a pinned workout slot',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+
+        expect(
+          () => repo.completeWorkout(
+            instanceId: id,
+            athleteId: 'athlete1',
+            rpe: 7,
+            durationMinutes: 45,
+            actuals: [
+              ExerciseActual(
+                slotId: 'not-a-workout-slot',
+                exerciseId: 'ex1',
+                mode: ExerciseMode.reps,
+              ),
+            ],
+          ),
+          throwsStateError,
+        );
+      });
+
+      test('resolves an omitted legacy slot ID when exercise is unambiguous',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+
+        await repo.completeWorkout(
+          instanceId: id,
+          athleteId: 'athlete1',
+          rpe: 7,
+          durationMinutes: 45,
+          actuals: [
+            ExerciseActual(
+              exerciseId: 'ex1',
+              mode: ExerciseMode.reps,
+              sets: 3,
+              reps: '10',
+            ),
+          ],
+        );
+
+        final result = await fakeFirestore
+            .collection('workoutInstances')
+            .doc(id)
+            .collection('slotResults')
+            .doc('legacy-slot-0')
+            .get();
+        expect(result.exists, isTrue);
+      });
+
+      test('rejects an omitted slot ID for a repeated exercise', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await fakeFirestore
+            .collection('workoutTemplates')
+            .doc('wt1')
+            .collection('workoutTemplateVersions')
+            .doc('1')
+            .update({
+          'exercises': [
+            {
+              'exerciseId': 'ex1',
+              'sortOrder': 0,
+              'mode': 'reps',
+            },
+            {
+              'exerciseId': 'ex1',
+              'sortOrder': 1,
+              'mode': 'amrap',
+            },
+          ],
+        });
+        final id = await assignWorkout();
+
+        await expectLater(
+          repo.completeWorkout(
+            instanceId: id,
+            athleteId: 'athlete1',
+            rpe: 7,
+            durationMinutes: 45,
+            actuals: [
+              ExerciseActual(
+                exerciseId: 'ex1',
+                mode: ExerciseMode.reps,
+              ),
+            ],
+          ),
+          throwsStateError,
+        );
+      });
+
+      test('does not complete an instance after its status changes', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+        await fakeFirestore.collection('workoutInstances').doc(id).update({
+          'status': WorkoutInstanceStatus.cancelled.name,
+        });
+
+        await expectLater(
+          repo.completeWorkout(
+            instanceId: id,
+            athleteId: 'athlete1',
+            rpe: 7,
+            durationMinutes: 45,
+            actuals: const [],
+          ),
+          throwsStateError,
+        );
+        expect(
+            (await repo.getById(id))!.status, WorkoutInstanceStatus.cancelled);
+      });
+
+      test('migrates legacy actuals to the matching stable slot', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+        await fakeFirestore.collection('workoutInstances').doc(id).update({
+          'actualsStorageFormat': FieldValue.delete(),
+          'actualSlotIds': FieldValue.delete(),
+          'actualsBySlot': FieldValue.delete(),
+          'actuals': [
+            {
+              'exerciseId': 'ex1',
+              'mode': 'reps',
+              'sets': 3,
+              'reps': '10',
+            },
+          ],
+        });
+
+        final count = await repo.migrateLegacyActualsToSlotIds(
+          instanceId: id,
+          athleteId: 'athlete1',
+        );
+
+        expect(count, 1);
+        final migrated =
+            await fakeFirestore.collection('workoutInstances').doc(id).get();
+        expect(migrated.data()!['actuals'], isNull);
+        expect(migrated.data()!['actualSlotIds'], ['legacy-slot-0']);
+        expect(
+          migrated.data()!['actualsStorageFormat'],
+          'slotResultsSubcollection',
+        );
+        final instance = await repo.getById(id);
+        expect(instance!.actualsBySlot['legacy-slot-0']!.exerciseId, 'ex1');
+      });
+
+      test('reads and migrates Stage 4 actuals on a newly shaped instance',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+        await fakeFirestore.collection('workoutInstances').doc(id).update({
+          'status': WorkoutInstanceStatus.completed.name,
+          'actuals': [
+            {
+              'exerciseId': 'ex1',
+              'mode': 'reps',
+              'sets': 3,
+              'reps': '10',
+            },
+          ],
+        });
+
+        final before = await repo.getById(id);
+        expect(before!.actualsBySlot['legacy-slot-0']!.sets, 3);
+
+        final count = await repo.migrateLegacyActualsToSlotIds(
+          instanceId: id,
+          athleteId: 'athlete1',
+        );
+
+        expect(count, 1);
+        final after = await repo.getById(id);
+        expect(after!.actualsBySlot['legacy-slot-0']!.reps, '10');
+      });
+
+      test('uses persisted order for gapped legacy prescription results',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final versionRef = fakeFirestore
+            .collection('workoutTemplates')
+            .doc('wt1')
+            .collection('workoutTemplateVersions')
+            .doc('1');
+        await versionRef.update({
+          'exercises': FieldValue.delete(),
+          'storageFormat': 'exercisePrescriptionSubcollection',
+          'prescriptionCount': 1,
+        });
+        await versionRef.collection('exercisePrescriptions').doc('5').set({
+          'exerciseId': 'ex1',
+          'exerciseVersion': 1,
+          'sortOrder': 5,
+          'prescription': {'mode': 'reps'},
+        });
+        final id = await assignWorkout();
+
+        await repo.completeWorkout(
+          instanceId: id,
+          athleteId: 'athlete1',
+          rpe: 7,
+          durationMinutes: 45,
+          actuals: [
+            ExerciseActual(
+              slotId: 'legacy-slot-5',
+              exerciseId: 'ex1',
+              mode: ExerciseMode.reps,
+              sets: 3,
+              reps: '5',
+            ),
+          ],
+        );
+
+        final result = await fakeFirestore
+            .collection('workoutInstances')
+            .doc(id)
+            .collection('slotResults')
+            .doc('legacy-slot-5')
+            .get();
+        expect(result.data()!['slotOrder'], 5);
+      });
+
+      test('refuses to guess a partial result for a repeated exercise',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        await fakeFirestore
+            .collection('workoutTemplates')
+            .doc('wt1')
+            .collection('workoutTemplateVersions')
+            .doc('1')
+            .update({
+          'exercises': [
+            {
+              'exerciseId': 'ex1',
+              'sortOrder': 0,
+              'mode': 'reps',
+            },
+            {
+              'exerciseId': 'ex1',
+              'sortOrder': 1,
+              'mode': 'amrap',
+            },
+          ],
+        });
+        final id = await assignWorkout();
+        await fakeFirestore.collection('workoutInstances').doc(id).update({
+          'actualsStorageFormat': FieldValue.delete(),
+          'actualSlotIds': FieldValue.delete(),
+          'actualsBySlot': FieldValue.delete(),
+          'actuals': [
+            {'exerciseId': 'ex1', 'mode': 'reps'},
+          ],
+        });
+
+        expect(
+          () => repo.migrateLegacyActualsToSlotIds(
+            instanceId: id,
+            athleteId: 'athlete1',
+          ),
+          throwsStateError,
+        );
+      });
+
+      test('rejects excess legacy results with StateError', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+        await fakeFirestore.collection('workoutInstances').doc(id).update({
+          'actualsStorageFormat': FieldValue.delete(),
+          'actualSlotIds': FieldValue.delete(),
+          'actualsBySlot': FieldValue.delete(),
+          'actuals': [
+            {'exerciseId': 'ex1', 'mode': 'reps'},
+            {'exerciseId': 'ex1', 'mode': 'reps'},
+          ],
+        });
+
+        await expectLater(
+          repo.migrateLegacyActualsToSlotIds(
+            instanceId: id,
+            athleteId: 'athlete1',
+          ),
+          throwsStateError,
+        );
+      });
+
+      test('malformed legacy result values fail explicitly', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+        await fakeFirestore.collection('workoutInstances').doc(id).update({
+          'actualsStorageFormat': FieldValue.delete(),
+          'actualSlotIds': FieldValue.delete(),
+          'actualsBySlot': {'legacy-slot-0': 'not-a-map'},
+        });
+
+        await expectLater(repo.getById(id), throwsStateError);
+      });
+
+      test('legacy list actuals remain readable before migration', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+        await fakeFirestore.collection('workoutInstances').doc(id).update({
+          'actualsStorageFormat': FieldValue.delete(),
+          'actualSlotIds': FieldValue.delete(),
+          'actualsBySlot': FieldValue.delete(),
+          'actuals': [
+            {'exerciseId': 'ex1', 'mode': 'reps'},
+            {'exerciseId': 'ex2', 'mode': 'time'},
+          ],
+        });
+
+        final instance = await repo.getById(id);
+
+        expect(instance!.actualsBySlot.keys, [
+          'legacy-slot-0',
+          'legacy-slot-1',
+        ]);
+      });
+
+      test('completion replacement removes undeclared stored results',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+        final instanceRef =
+            fakeFirestore.collection('workoutInstances').doc(id);
+        await instanceRef.collection('slotResults').doc('orphan').set({
+          'exerciseId': 'ex1',
+          'mode': 'reps',
+          'slotOrder': 0,
+        });
+
+        await repo.completeWorkout(
+          instanceId: id,
+          athleteId: 'athlete1',
+          rpe: 7,
+          durationMinutes: 45,
+          actuals: const [],
+        );
+
+        expect(
+          (await instanceRef.collection('slotResults').get()).docs,
+          isEmpty,
+        );
       });
     });
 
@@ -352,6 +804,7 @@ void main() {
         final count = await repo.cancelFutureInstances(
           programId: 'prog1',
           athleteId: 'athlete1',
+          ownerId: 'coach1',
         );
 
         expect(count, 2);
@@ -372,6 +825,7 @@ void main() {
         // Complete the first one
         await repo.completeWorkout(
           instanceId: id1,
+          athleteId: 'athlete1',
           rpe: 7,
           durationMinutes: 50,
           actuals: [],
@@ -380,6 +834,7 @@ void main() {
         final count = await repo.cancelFutureInstances(
           programId: 'prog1',
           athleteId: 'athlete1',
+          ownerId: 'coach1',
         );
 
         expect(count, 1); // Only the scheduled one
@@ -406,6 +861,7 @@ void main() {
         await repo.cancelFutureInstances(
           programId: 'prog1',
           athleteId: 'athlete1',
+          ownerId: 'coach1',
         );
 
         final other = await repo.getById(otherId);
@@ -508,10 +964,12 @@ void main() {
 
         await repo.completeWorkout(
           instanceId: id,
+          athleteId: 'athlete1',
           rpe: 9,
           durationMinutes: 60,
           actuals: [
             ExerciseActual(
+              slotId: 'legacy-slot-0',
               exerciseId: 'ex1',
               mode: ExerciseMode.reps,
               sets: 4,
@@ -521,6 +979,7 @@ void main() {
               notes: 'Pause at bottom',
             ),
             ExerciseActual(
+              slotId: 'legacy-slot-1',
               exerciseId: 'ex2',
               mode: ExerciseMode.time,
               durationSeconds: 30,
@@ -759,6 +1218,7 @@ void main() {
 
         final cancelled = await repo.cancelRecurrence(
           recurrenceRootId: rootDoc.id,
+          ownerId: 'coach1',
         );
 
         expect(cancelled, 4); // All 4 instances
@@ -799,6 +1259,7 @@ void main() {
 
         await repo.completeWorkout(
           instanceId: rootDoc.id,
+          athleteId: 'athlete1',
           rpe: 7,
           durationMinutes: 45,
           actuals: [],
@@ -806,6 +1267,7 @@ void main() {
 
         final cancelled = await repo.cancelRecurrence(
           recurrenceRootId: rootDoc.id,
+          ownerId: 'coach1',
         );
 
         // 3 instances: Jun 15 (root, completed), Jun 22, Jun 29
@@ -1015,6 +1477,7 @@ void main() {
 
         final cancelled = await repo.cancelProgramAssignment(
           programAssignmentId: result.assignmentId,
+          ownerId: 'coach1',
         );
         expect(cancelled, 2);
 
@@ -1076,8 +1539,8 @@ void main() {
       });
 
       test(
-          'deleteIncompleteProgramAssignment skips instances not owned by '
-          'caller', () async {
+          'deleteIncompleteProgramAssignment rejects a caller that does not '
+          'own the instances', () async {
         await createProgram('prog1');
         await enrollAthlete('prog1', 'athlete1');
         await createWorkoutTemplate('wt1', 'push');
@@ -1097,11 +1560,13 @@ void main() {
           assignedBy: 'coach1',
         );
 
-        final deleted = await repo.deleteIncompleteProgramAssignment(
-          programAssignmentId: result.assignmentId,
-          ownerId: 'intruder',
+        await expectLater(
+          repo.deleteIncompleteProgramAssignment(
+            programAssignmentId: result.assignmentId,
+            ownerId: 'intruder',
+          ),
+          throwsStateError,
         );
-        expect(deleted, 0);
         final remaining = await fakeFirestore
             .collection('workoutInstances')
             .where('programAssignmentId', isEqualTo: result.assignmentId)
@@ -1124,10 +1589,21 @@ void main() {
         await createProgram('prog1');
         await enrollAthlete('prog1', 'athlete1');
         final id = await assignWorkout(scheduledDate: '2026-06-05');
+        final resultRef = fakeFirestore
+            .collection('workoutInstances')
+            .doc(id)
+            .collection('slotResults')
+            .doc('legacy-slot-0');
+        await resultRef.set({
+          'exerciseId': 'ex1',
+          'slotOrder': 0,
+          'mode': 'reps',
+        });
 
         await repo.deleteInstance(instanceId: id, ownerId: 'coach1');
 
         expect(await repo.getById(id), isNull);
+        expect((await resultRef.get()).exists, isFalse);
       });
 
       test('deleteInstance throws when caller did not assign it', () async {

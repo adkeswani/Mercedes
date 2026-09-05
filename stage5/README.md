@@ -11,7 +11,12 @@ Implemented in this slice:
   states.
 - Explicit `ownerId` fields for exercise and workout templates.
 - Stable logical exercise headers with immutable execution-content versions.
-- Workout prescriptions that pin both the logical exercise ID and version.
+- Immutable typed workout blocks for standard exercise work, timed intervals,
+  circuits, and climbing routes.
+- Stable exercise-slot IDs that pin both the logical exercise ID and immutable
+  exercise version for every occurrence.
+- Workout completion actuals keyed by slot ID so repeated exercises are
+  unambiguous.
 - Shared stable tags, type-scoped flat folders, and immutable copy provenance
   for exercise, workout, and program headers.
 - A common library metadata/folder abstraction used by all three template
@@ -31,11 +36,26 @@ Compatibility behavior:
   excludes personal self-enrollments, tolerates missing or later-changed program
   headers, and never reactivates an explicitly ended relationship. Migration
   failures stay within the roster instead of blocking sign-in.
-- Existing workout prescriptions without `exerciseVersion` resolve as version
-  1; all newly published prescriptions use immutable, rule-validated
-  subdocuments with an explicit version pin.
-- Workout versions currently support up to nine prescriptions so every pin can
-  be validated within Firestore's multi-document rules access limit.
+- Existing array-backed and prescription-subcollection workout versions resolve
+  as standard exercise blocks. Missing exercise versions resolve as version 1,
+  and deterministic legacy slot IDs use array position or the persisted
+  prescription order so old occurrences remain stable without rewriting
+  immutable versions.
+- New typed versions stage an immutable manifest plus stable-ID block and slot
+  children, then atomically seal the complete snapshot and advance the template
+  header. Firestore rules validate manifest ID uniqueness, block cardinality,
+  completeness, and each owner-scoped exercise-version pin.
+- Workout versions currently support up to nine blocks and nine exercise slots.
+- Existing list-backed completion actuals remain readable. Athlete-owned
+  migration maps unique exercises, and complete repeated-exercise result sets,
+  to pinned slot IDs; ambiguous partial repeated-exercise results are rejected
+  rather than guessed.
+- New and edited completions persist immutable-addressed
+  `slotResults/{slotId}` documents. Repository ownership checks require the
+  instance athlete, completion transitions are transactional, and Firestore
+  rules require every result to match both the parent result index and pinned
+  workout slot. Legacy synthesized slot IDs and Stage 4 list writes remain
+  readable and migratable.
 - Existing exercise and workout documents without `ownerId` derive ownership
   from `createdBy`; owner mutations backfill `ownerId`.
 - Owner library queries remain keyed by `createdBy` so existing Stage 4
@@ -55,5 +75,5 @@ Compatibility behavior:
   `itemType` discriminator and cannot be assigned across owners or types.
 - Copy operations atomically record source template ID, source owner, pinned
   source version, timestamp, and copier. Provenance cannot be changed later.
-- Typed workout blocks, subscriptions, and later implementation-sequence
-  entities remain deferred.
+- Athlete program instances, subscriptions, propagation, and full scheduled
+  workout materialization remain deferred to later implementation steps.

@@ -76,7 +76,7 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
         sourceVersion,
       );
       if (version != null && mounted) {
-        ref.read(workoutDraftProvider.notifier).load(version.exercises);
+        ref.read(workoutDraftProvider.notifier).load(version.blocks);
       }
     }
   }
@@ -149,8 +149,8 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;
 
-    final exercises = ref.read(workoutDraftProvider);
-    if (exercises.isEmpty) {
+    final blocks = ref.read(workoutDraftProvider);
+    if (blocks.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Add at least one exercise first')),
       );
@@ -165,7 +165,7 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
       final repo = ref.read(workoutTemplateRepositoryProvider);
       final version = await repo.publishVersion(
         templateId: widget.workoutId!,
-        exercises: exercises,
+        blocks: blocks,
         userId: uid,
       );
 
@@ -234,8 +234,10 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
     final result = await showExercisePicker(context, ref);
     if (result == null) return;
 
-    final exercises = ref.read(workoutDraftProvider);
-    if (exercises.length >= maxExercisePrescriptionsPerWorkoutVersion) {
+    final blocks = ref.read(workoutDraftProvider);
+    final slotCount =
+        blocks.fold<int>(0, (count, block) => count + block.slots.length);
+    if (slotCount >= maxExercisePrescriptionsPerWorkoutVersion) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('A workout supports up to 9 exercises')),
@@ -243,12 +245,15 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
       }
       return;
     }
+    final repo = ref.read(workoutTemplateRepositoryProvider);
     ref.read(workoutDraftProvider.notifier).addExercise(
-          ExercisePrescription(
+          blockId: repo.generateWorkoutBlockId(),
+          slot: ExerciseSlot(
+            slotId: repo.generateExerciseSlotId(),
             exerciseId: result.id,
             exerciseVersion: result.version,
             exerciseName: result.name,
-            sortOrder: exercises.length,
+            sortOrder: 0,
             mode: ExerciseMode.reps,
             sets: 3,
             reps: '8-12',
@@ -263,7 +268,7 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
       _loadExisting();
     }
 
-    final exercises = ref.watch(workoutDraftProvider);
+    final blocks = ref.watch(workoutDraftProvider);
 
     // New template — show creation form
     if (!widget.isEditing) {
@@ -334,7 +339,7 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
               ),
             ],
           ),
-          if (exercises.isEmpty)
+          if (blocks.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 32),
               child: Center(
@@ -345,7 +350,7 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
             ReorderableListView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: exercises.length,
+              itemCount: blocks.length,
               onReorder: (oldIndex, newIndex) {
                 ref.read(workoutDraftProvider.notifier).reorder(
                       oldIndex,
@@ -353,12 +358,10 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
                     );
               },
               itemBuilder: (context, index) {
-                final exercise = exercises[index];
-                return _ExerciseCard(
-                  key: ValueKey(
-                    '${exercise.exerciseId}_${exercise.sortOrder}',
-                  ),
-                  exercise: exercise,
+                final block = blocks[index];
+                return _WorkoutBlockCard(
+                  key: ValueKey(block.blockId),
+                  block: block,
                   index: index,
                 );
               },
@@ -415,17 +418,31 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
 }
 
 /// Card for a single exercise in the builder's reorderable list.
-class _ExerciseCard extends ConsumerWidget {
-  const _ExerciseCard({
+class _WorkoutBlockCard extends ConsumerWidget {
+  const _WorkoutBlockCard({
     required super.key,
-    required this.exercise,
+    required this.block,
     required this.index,
   });
 
-  final ExercisePrescription exercise;
+  final WorkoutBlock block;
   final int index;
 
   String get _prescriptionSummary {
+    if (block is TimedIntervalBlock) {
+      final interval = block as TimedIntervalBlock;
+      return '${interval.rounds} rounds · ${interval.workSeconds}s work · '
+          '${interval.restSeconds}s rest';
+    }
+    if (block is CircuitBlock) {
+      final circuit = block as CircuitBlock;
+      return '${circuit.rounds} rounds · ${circuit.slots.length} exercises';
+    }
+    if (block is ClimbingRouteBlock) {
+      final route = block as ClimbingRouteBlock;
+      return '${route.grade} · ${route.color}';
+    }
+    final exercise = (block as StandardExerciseBlock).exercise;
     final parts = <String>[];
     parts.add(exercise.mode.name);
     if (exercise.sets != null) parts.add('${exercise.sets} sets');
@@ -439,13 +456,18 @@ class _ExerciseCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isStandard = block is StandardExerciseBlock;
+    final exercise =
+        isStandard ? (block as StandardExerciseBlock).exercise : null;
     return Card(
       child: ListTile(
         leading: ReorderableDragStartListener(
           index: index,
           child: const Icon(Icons.drag_handle),
         ),
-        title: Text(exercise.exerciseName ?? exercise.exerciseId),
+        title: Text(
+          exercise?.exerciseName ?? block.title ?? block.type.name,
+        ),
         subtitle: Text(_prescriptionSummary),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -453,7 +475,8 @@ class _ExerciseCard extends ConsumerWidget {
             IconButton(
               icon: const Icon(Icons.edit),
               tooltip: 'Edit prescription',
-              onPressed: () => _editPrescription(context, ref),
+              onPressed:
+                  isStandard ? () => _editPrescription(context, ref) : null,
             ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
@@ -469,13 +492,16 @@ class _ExerciseCard extends ConsumerWidget {
   }
 
   void _editPrescription(BuildContext context, WidgetRef ref) {
+    final exercise = (block as StandardExerciseBlock).exercise;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (context) => _PrescriptionEditor(
         prescription: exercise,
         onSave: (updated) {
-          ref.read(workoutDraftProvider.notifier).updateAt(index, updated);
+          ref
+              .read(workoutDraftProvider.notifier)
+              .updateExerciseAt(index, updated);
           Navigator.of(context).pop();
         },
       ),

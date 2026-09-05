@@ -170,6 +170,7 @@ void main() {
         workoutType: WorkoutType.pull,
         actuals: [
           ExerciseActual(
+            slotId: 'squat-heavy-slot',
             exerciseId: 'ex1',
             mode: ExerciseMode.reps,
             sets: 3,
@@ -181,7 +182,41 @@ void main() {
         updatedAt: DateTime(2026, 4, 15),
       );
       expect(instance.actuals.length, 1);
+      expect(instance.actualsBySlot.keys, ['squat-heavy-slot']);
       expect(() => instance.validate(), returnsNormally);
+    });
+
+    test('constructor rejects duplicate implicit actual slot IDs', () {
+      expect(
+        () => WorkoutInstance(
+          id: 'wi1',
+          programId: 'prog1',
+          athleteId: 'athlete1',
+          workoutTemplateId: 'wt1',
+          workoutTemplateVersion: 1,
+          scheduledDate: '2026-04-15',
+          assignedBy: 'coach1',
+          assignedAt: DateTime(2026, 4, 1),
+          status: WorkoutInstanceStatus.completed,
+          completedAt: DateTime(2026, 4, 15),
+          rpe: 7,
+          durationMinutes: 55,
+          workoutType: WorkoutType.pull,
+          actuals: [
+            ExerciseActual(
+              exerciseId: 'ex1',
+              mode: ExerciseMode.reps,
+            ),
+            ExerciseActual(
+              exerciseId: 'ex1',
+              mode: ExerciseMode.amrap,
+            ),
+          ],
+          createdAt: DateTime(2026, 4, 1),
+          updatedAt: DateTime(2026, 4, 15),
+        ),
+        throwsArgumentError,
+      );
     });
 
     test('effectiveLoadPoints returns computed when no override', () {
@@ -284,6 +319,7 @@ void main() {
   group('ExerciseActual', () {
     test('constructor', () {
       final actual = ExerciseActual(
+        slotId: 'slot-1',
         exerciseId: 'ex1',
         mode: ExerciseMode.reps,
         sets: 3,
@@ -293,11 +329,13 @@ void main() {
         notes: 'Felt strong',
       );
       expect(actual.exerciseId, 'ex1');
+      expect(actual.slotId, 'slot-1');
       expect(actual.mode, ExerciseMode.reps);
     });
 
     test('validate throws on empty exerciseId', () {
       final actual = ExerciseActual(
+        slotId: 'slot-1',
         exerciseId: '',
         mode: ExerciseMode.reps,
       );
@@ -306,6 +344,7 @@ void main() {
 
     test('validate throws on sets < 1', () {
       final actual = ExerciseActual(
+        slotId: 'slot-1',
         exerciseId: 'ex1',
         mode: ExerciseMode.reps,
         sets: 0,
@@ -315,6 +354,7 @@ void main() {
 
     test('validate throws on negative durationSeconds', () {
       final actual = ExerciseActual(
+        slotId: 'slot-1',
         exerciseId: 'ex1',
         mode: ExerciseMode.time,
         durationSeconds: -1,

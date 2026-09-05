@@ -1,5 +1,21 @@
 import 'package:stage5/core/enums.dart';
 
+Map<String, ExerciseActual> _actualsToSlotMap(
+  List<ExerciseActual> actuals,
+) {
+  final result = <String, ExerciseActual>{};
+  for (final actual in actuals) {
+    if (result.containsKey(actual.slotId)) {
+      throw ArgumentError(
+        'Exercise actual slot IDs must be unique; '
+        '${actual.slotId} is ambiguous',
+      );
+    }
+    result[actual.slotId] = actual;
+  }
+  return result;
+}
+
 /// A specific workout assigned to an athlete on a date.
 ///
 /// Created from a workout template at schedule time. Tracks completion,
@@ -35,9 +51,11 @@ class WorkoutInstance {
     this.recurrence,
     this.isRecurrenceRoot = false,
     this.recurrenceRootId,
-    this.actuals = const [],
+    Map<String, ExerciseActual>? actualsBySlot,
+    List<ExerciseActual>? actuals,
     this.athleteNotes,
-  });
+  })  : assert(actualsBySlot == null || actuals == null),
+        actualsBySlot = actualsBySlot ?? _actualsToSlotMap(actuals ?? const []);
 
   final String id;
   final String programId;
@@ -98,7 +116,9 @@ class WorkoutInstance {
   final Recurrence? recurrence;
   final bool isRecurrenceRoot;
   final String? recurrenceRootId;
-  final List<ExerciseActual> actuals;
+  final Map<String, ExerciseActual> actualsBySlot;
+
+  List<ExerciseActual> get actuals => actualsBySlot.values.toList();
   final String? athleteNotes;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -198,7 +218,11 @@ class WorkoutInstance {
 
     recurrence?.validate();
 
-    for (final actual in actuals) {
+    for (final entry in actualsBySlot.entries) {
+      final actual = entry.value;
+      if (entry.key != actual.slotId) {
+        throw ArgumentError('Actual result keys must match their slotId');
+      }
       actual.validate();
     }
   }
@@ -212,13 +236,17 @@ class ExerciseActual {
   ExerciseActual({
     required this.exerciseId,
     required this.mode,
+    String? slotId,
     this.sets,
     this.reps,
     this.durationSeconds,
     this.weight,
     this.restSeconds,
     this.notes,
-  });
+  })  : slotId = slotId ?? 'legacy-result-$exerciseId',
+        hasExplicitSlotId = slotId != null;
+  final String slotId;
+  final bool hasExplicitSlotId;
   final String exerciseId;
   final ExerciseMode mode;
   final int? sets;
@@ -230,6 +258,12 @@ class ExerciseActual {
 
   /// Validates actual fields.
   void validate() {
+    if (slotId.isEmpty) {
+      throw ArgumentError('slotId cannot be empty');
+    }
+    if (slotId.contains('/')) {
+      throw ArgumentError('slotId cannot contain "/"');
+    }
     if (exerciseId.isEmpty) {
       throw ArgumentError('exerciseId cannot be empty');
     }

@@ -153,6 +153,14 @@
         { "fieldPath": "programAssignmentId", "order": "ASCENDING" },
         { "fieldPath": "assignedBy", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "workoutInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programAssignmentId", "order": "ASCENDING" },
+        { "fieldPath": "programOwnerId", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

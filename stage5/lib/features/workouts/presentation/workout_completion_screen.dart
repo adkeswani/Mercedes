@@ -33,7 +33,7 @@ class _WorkoutCompletionScreenState
   bool _didLoad = false;
   bool _isEditing = false;
   bool _isAthlete = false;
-  List<ExercisePrescription> _exercises = [];
+  List<ExerciseSlot> _exercises = [];
 
   @override
   void dispose() {
@@ -60,7 +60,7 @@ class _WorkoutCompletionScreenState
 
       setState(() {
         _instance = instance;
-        _exercises = workoutVersion?.exercises ?? [];
+        _exercises = workoutVersion?.exerciseSlots ?? [];
         _isAthlete = isAthlete;
         if (instance.isCompleted) {
           _isEditing = true;
@@ -76,12 +76,16 @@ class _WorkoutCompletionScreenState
     setState(() => _isLoading = true);
     try {
       final repo = ref.read(workoutInstanceRepositoryProvider);
+      final athleteId = ref.read(authStateProvider).value?.uid;
+      if (athleteId == null) {
+        throw StateError('A signed-in athlete is required');
+      }
       if (_isEditing) {
         await repo.updateCompletion(
           instanceId: widget.instanceId,
+          athleteId: athleteId,
           rpe: _rpe,
           durationMinutes: _durationMinutes,
-          actuals: [],
           athleteNotes: _notesController.text.trim().isEmpty
               ? null
               : _notesController.text.trim(),
@@ -89,6 +93,7 @@ class _WorkoutCompletionScreenState
       } else {
         await repo.completeWorkout(
           instanceId: widget.instanceId,
+          athleteId: athleteId,
           rpe: _rpe,
           durationMinutes: _durationMinutes,
           actuals: [],
@@ -384,7 +389,7 @@ class _WorkoutCompletionScreenState
     );
   }
 
-  String _prescriptionSummary(ExercisePrescription exercise) {
+  String _prescriptionSummary(ExerciseSlot exercise) {
     final parts = <String>[];
     parts.add(exercise.mode.name);
     if (exercise.sets != null) parts.add('${exercise.sets} sets');

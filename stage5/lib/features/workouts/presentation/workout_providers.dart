@@ -66,19 +66,29 @@ final programWorkoutOptionsProvider =
 
 /// Local draft state for the workout builder.
 ///
-/// Holds the exercise prescriptions being edited before publishing.
+/// Holds typed workout blocks being edited before publishing.
 /// Reset when entering the builder, persisted only on publish.
-class WorkoutDraftNotifier extends StateNotifier<List<ExercisePrescription>> {
+class WorkoutDraftNotifier extends StateNotifier<List<WorkoutBlock>> {
   WorkoutDraftNotifier() : super([]);
 
   /// Replaces the entire draft (e.g. when loading from existing version).
-  void load(List<ExercisePrescription> exercises) {
-    state = List.of(exercises);
+  void load(List<WorkoutBlock> blocks) {
+    state = List.of(blocks);
   }
 
-  /// Adds an exercise to the draft.
-  void addExercise(ExercisePrescription prescription) {
-    state = [...state, prescription];
+  /// Adds a standard exercise block to the draft.
+  void addExercise({
+    required ExerciseSlot slot,
+    required String blockId,
+  }) {
+    state = [
+      ...state,
+      StandardExerciseBlock(
+        blockId: blockId,
+        sortOrder: state.length,
+        exercise: slot.copyWith(sortOrder: 0),
+      ),
+    ];
   }
 
   /// Removes the exercise at [index].
@@ -87,15 +97,24 @@ class WorkoutDraftNotifier extends StateNotifier<List<ExercisePrescription>> {
     updated.removeAt(index);
     // Reassign sort orders to keep them contiguous
     state = [
-      for (var i = 0; i < updated.length; i++)
-        updated[i].copyWith(sortOrder: i),
+      for (var i = 0; i < updated.length; i++) updated[i].copyWithSortOrder(i),
     ];
   }
 
-  /// Updates the exercise at [index].
-  void updateAt(int index, ExercisePrescription prescription) {
+  /// Updates the slot in a standard exercise block.
+  void updateExerciseAt(int index, ExerciseSlot slot) {
     final updated = List.of(state);
-    updated[index] = prescription;
+    final block = updated[index];
+    if (block is! StandardExerciseBlock) {
+      throw StateError('Only standard exercise blocks are editable here');
+    }
+    updated[index] = StandardExerciseBlock(
+      blockId: block.blockId,
+      sortOrder: block.sortOrder,
+      exercise: slot.copyWith(sortOrder: 0),
+      title: block.title,
+      notes: block.notes,
+    );
     state = updated;
   }
 
@@ -107,8 +126,7 @@ class WorkoutDraftNotifier extends StateNotifier<List<ExercisePrescription>> {
     updated.insert(newIndex, item);
     // Reassign sort orders
     state = [
-      for (var i = 0; i < updated.length; i++)
-        updated[i].copyWith(sortOrder: i),
+      for (var i = 0; i < updated.length; i++) updated[i].copyWithSortOrder(i),
     ];
   }
 
@@ -120,7 +138,6 @@ class WorkoutDraftNotifier extends StateNotifier<List<ExercisePrescription>> {
 
 /// Provider for the workout builder draft state.
 final workoutDraftProvider =
-    StateNotifierProvider<WorkoutDraftNotifier, List<ExercisePrescription>>(
-        (ref) {
+    StateNotifierProvider<WorkoutDraftNotifier, List<WorkoutBlock>>((ref) {
   return WorkoutDraftNotifier();
 });

@@ -5,7 +5,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/programs/data/enrollment_repository.dart';
 import 'package:stage5/features/relationships/data/trainer_client_relationship_repository.dart';
+import 'package:stage5/features/workouts/data/workout_template_repository.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
+import 'package:stage5/features/workouts/domain/workout_template.dart';
 
 /// Firestore repository for workout instance management.
 ///
@@ -186,7 +188,9 @@ class WorkoutInstanceRepository {
       'recurrence': null,
       'isRecurrenceRoot': false,
       'recurrenceRootId': null,
-      'actuals': [],
+      'actualsStorageFormat': 'slotResultsSubcollection',
+      'actualSlotIds': <String>[],
+      'actuals': <Map<String, dynamic>>[],
       'athleteNotes': null,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -270,7 +274,9 @@ class WorkoutInstanceRepository {
       'recurrence': recurrenceMap,
       'isRecurrenceRoot': true,
       'recurrenceRootId': null,
-      'actuals': [],
+      'actualsStorageFormat': 'slotResultsSubcollection',
+      'actualSlotIds': <String>[],
+      'actuals': <Map<String, dynamic>>[],
       'athleteNotes': null,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -305,7 +311,9 @@ class WorkoutInstanceRepository {
         'recurrence': recurrenceMap,
         'isRecurrenceRoot': false,
         'recurrenceRootId': rootRef.id,
-        'actuals': [],
+        'actualsStorageFormat': 'slotResultsSubcollection',
+        'actualSlotIds': <String>[],
+        'actuals': <Map<String, dynamic>>[],
         'athleteNotes': null,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -448,7 +456,9 @@ class WorkoutInstanceRepository {
         'recurrence': null,
         'isRecurrenceRoot': false,
         'recurrenceRootId': null,
-        'actuals': [],
+        'actualsStorageFormat': 'slotResultsSubcollection',
+        'actualSlotIds': <String>[],
+        'actuals': <Map<String, dynamic>>[],
         'athleteNotes': null,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -468,21 +478,27 @@ class WorkoutInstanceRepository {
   /// instances cancelled.
   Future<int> cancelProgramAssignment({
     required String programAssignmentId,
+    required String ownerId,
   }) async {
-    final snapshot = await _collection
-        .where('programAssignmentId', isEqualTo: programAssignmentId)
-        .where('status', isEqualTo: WorkoutInstanceStatus.scheduled.name)
-        .get();
+    final assignmentDocs = await _ownedAssignmentDocs(
+      programAssignmentId: programAssignmentId,
+      ownerId: ownerId,
+    );
+    final targets = assignmentDocs
+        .where(
+          (doc) => doc.data()['status'] == WorkoutInstanceStatus.scheduled.name,
+        )
+        .toList();
 
     final batch = _firestore.batch();
-    for (final doc in snapshot.docs) {
+    for (final doc in targets) {
       batch.update(doc.reference, {
         'status': WorkoutInstanceStatus.cancelled.name,
         'updatedAt': FieldValue.serverTimestamp(),
       });
     }
-    if (snapshot.docs.isNotEmpty) await batch.commit();
-    return snapshot.docs.length;
+    if (targets.isNotEmpty) await batch.commit();
+    return targets.length;
   }
 
   /// Permanently deletes the still-incomplete instances of a program
@@ -500,21 +516,79 @@ class WorkoutInstanceRepository {
     required String programAssignmentId,
     required String ownerId,
   }) async {
-    final snapshot = await _collection
-        .where('programAssignmentId', isEqualTo: programAssignmentId)
-        .where('assignedBy', isEqualTo: ownerId)
-        .get();
-
-    final targets = snapshot.docs
+    final assignmentDocs = await _ownedAssignmentDocs(
+      programAssignmentId: programAssignmentId,
+      ownerId: ownerId,
+    );
+    final targets = assignmentDocs
         .where(
             (d) => d.data()['status'] != WorkoutInstanceStatus.completed.name)
         .toList();
-    final batch = _firestore.batch();
-    for (final doc in targets) {
-      batch.delete(doc.reference);
-    }
-    if (targets.isNotEmpty) await batch.commit();
+    await _deleteInstancesWithResults(targets);
     return targets.length;
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _ownedAssignmentDocs({
+    required String programAssignmentId,
+    required String ownerId,
+  }) async {
+    Future<QuerySnapshot<Map<String, dynamic>>> query(String ownerField) {
+      return _collection
+          .where('programAssignmentId', isEqualTo: programAssignmentId)
+          .where(ownerField, isEqualTo: ownerId)
+          .get();
+    }
+
+    final snapshots = await Future.wait([
+      query('programOwnerId'),
+      query('assignedBy'),
+    ]);
+    final byId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{
+      for (final snapshot in snapshots)
+        for (final doc in snapshot.docs) doc.id: doc,
+    };
+    if (byId.isEmpty) {
+      throw StateError(
+        'User $ownerId does not own assignment $programAssignmentId',
+      );
+    }
+    for (final doc in byId.values) {
+      final data = doc.data();
+      if (data['programOwnerId'] != ownerId && data['assignedBy'] != ownerId) {
+        throw StateError(
+          'User $ownerId does not own assignment $programAssignmentId',
+        );
+      }
+    }
+    return byId.values.toList();
+  }
+
+  Future<void> _deleteInstancesWithResults(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> instances,
+  ) async {
+    var batch = _firestore.batch();
+    var operationCount = 0;
+
+    Future<void> commitIfNeeded({bool force = false}) async {
+      if (operationCount == 0 || (!force && operationCount < 450)) return;
+      await batch.commit();
+      batch = _firestore.batch();
+      operationCount = 0;
+    }
+
+    for (final instance in instances) {
+      final results = await instance.reference.collection('slotResults').get();
+      for (final result in results.docs) {
+        batch.delete(result.reference);
+        operationCount++;
+        await commitIfNeeded();
+      }
+      batch.delete(instance.reference);
+      operationCount++;
+      await commitIfNeeded();
+    }
+    await commitIfNeeded(force: true);
   }
 
   /// Permanently deletes a single workout instance.
@@ -532,7 +606,14 @@ class WorkoutInstanceRepository {
     if (instance.assignedBy != ownerId && instance.athleteId != ownerId) {
       throw StateError('User $ownerId did not assign instance $instanceId');
     }
-    await _collection.doc(instanceId).delete();
+    final instanceRef = _collection.doc(instanceId);
+    final results = await instanceRef.collection('slotResults').get();
+    final batch = _firestore.batch();
+    for (final result in results.docs) {
+      batch.delete(result.reference);
+    }
+    batch.delete(instanceRef);
+    await batch.commit();
   }
 
   /// Cancels all future scheduled instances in a recurrence group.
@@ -541,6 +622,7 @@ class WorkoutInstanceRepository {
   /// itself) that are still scheduled, and cancels them.
   Future<int> cancelRecurrence({
     required String recurrenceRootId,
+    required String ownerId,
   }) async {
     // Cancel children
     final childSnapshot = await _collection
@@ -550,6 +632,27 @@ class WorkoutInstanceRepository {
 
     // Also check the root itself
     final rootDoc = await _collection.doc(recurrenceRootId).get();
+    if (!rootDoc.exists || rootDoc.data() == null) {
+      throw StateError('Recurrence $recurrenceRootId not found');
+    }
+    final rootData = rootDoc.data()!;
+    if (rootData['assignedBy'] != ownerId &&
+        rootData['programOwnerId'] != ownerId &&
+        rootData['athleteId'] != ownerId) {
+      throw StateError(
+          'User $ownerId does not own recurrence $recurrenceRootId');
+    }
+    for (final doc in childSnapshot.docs) {
+      final data = doc.data();
+      if (data['assignedBy'] != ownerId &&
+          data['programOwnerId'] != ownerId &&
+          data['athleteId'] != ownerId) {
+        throw StateError(
+          'Workout instance ownership mismatch in recurrence '
+          '$recurrenceRootId',
+        );
+      }
+    }
 
     final batch = _firestore.batch();
     var count = 0;
@@ -581,6 +684,7 @@ class WorkoutInstanceRepository {
   /// RPE, duration, and per-exercise actuals.
   Future<void> completeWorkout({
     required String instanceId,
+    required String athleteId,
     required int rpe,
     required int durationMinutes,
     required List<ExerciseActual> actuals,
@@ -588,41 +692,83 @@ class WorkoutInstanceRepository {
     String? loadStrategyId,
     String? athleteNotes,
   }) async {
-    await _collection.doc(instanceId).update({
-      'status': WorkoutInstanceStatus.completed.name,
-      'completedAt': FieldValue.serverTimestamp(),
-      'rpe': rpe,
-      'durationMinutes': durationMinutes,
-      'loadPoints': loadPoints,
-      'loadStrategyId': loadStrategyId,
-      'athleteNotes': athleteNotes,
-      'actuals': actuals.map(_actualToMap).toList(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    final actualsBySlot = await _prepareSlotResults(
+      instanceId: instanceId,
+      actuals: actuals,
+    );
+    await _writeCompletion(
+      instanceId: instanceId,
+      athleteId: athleteId,
+      requiredStatus: WorkoutInstanceStatus.scheduled,
+      actualsBySlot: actualsBySlot,
+      parentFields: {
+        'status': WorkoutInstanceStatus.completed.name,
+        'completedAt': FieldValue.serverTimestamp(),
+        'rpe': rpe,
+        'durationMinutes': durationMinutes,
+        'loadPoints': loadPoints,
+        'loadStrategyId': loadStrategyId,
+        'athleteNotes': athleteNotes,
+      },
+    );
   }
 
   /// Updates completion data on an already-completed workout instance.
   ///
-  /// Allows the athlete or program owner to revise RPE, duration, notes,
-  /// and per-exercise actuals after initial completion.
+  /// Allows the athlete to revise RPE, duration, notes, and per-slot actuals
+  /// after initial completion.
   Future<void> updateCompletion({
     required String instanceId,
+    required String athleteId,
     required int rpe,
     required int durationMinutes,
-    required List<ExerciseActual> actuals,
+    List<ExerciseActual>? actuals,
     double? loadPoints,
     String? loadStrategyId,
     String? athleteNotes,
   }) async {
-    await _collection.doc(instanceId).update({
-      'rpe': rpe,
-      'durationMinutes': durationMinutes,
-      'loadPoints': loadPoints,
-      'loadStrategyId': loadStrategyId,
-      'athleteNotes': athleteNotes,
-      'actuals': actuals.map(_actualToMap).toList(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    if (actuals == null) {
+      final instanceRef = _collection.doc(instanceId);
+      await _firestore.runTransaction((transaction) async {
+        final snapshot = await transaction.get(instanceRef);
+        if (!snapshot.exists || snapshot.data() == null) {
+          throw StateError('Instance $instanceId not found');
+        }
+        final data = snapshot.data()!;
+        if (data['athleteId'] != athleteId) {
+          throw StateError('User $athleteId does not own instance $instanceId');
+        }
+        if (data['status'] != WorkoutInstanceStatus.completed.name) {
+          throw StateError('Instance $instanceId must be completed');
+        }
+        transaction.update(instanceRef, {
+          'rpe': rpe,
+          'durationMinutes': durationMinutes,
+          'loadPoints': loadPoints,
+          'loadStrategyId': loadStrategyId,
+          'athleteNotes': athleteNotes,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      });
+      return;
+    }
+    final actualsBySlot = await _prepareSlotResults(
+      instanceId: instanceId,
+      actuals: actuals,
+    );
+    await _writeCompletion(
+      instanceId: instanceId,
+      athleteId: athleteId,
+      requiredStatus: WorkoutInstanceStatus.completed,
+      actualsBySlot: actualsBySlot,
+      parentFields: {
+        'rpe': rpe,
+        'durationMinutes': durationMinutes,
+        'loadPoints': loadPoints,
+        'loadStrategyId': loadStrategyId,
+        'athleteNotes': athleteNotes,
+      },
+    );
   }
 
   /// Cancels all future scheduled workout instances for a program-athlete pair.
@@ -632,7 +778,13 @@ class WorkoutInstanceRepository {
   Future<int> cancelFutureInstances({
     required String programId,
     required String athleteId,
+    required String ownerId,
   }) async {
+    final program =
+        await _firestore.collection('programs').doc(programId).get();
+    if (!program.exists || program.data()?['ownerId'] != ownerId) {
+      throw StateError('User $ownerId is not the owner of program $programId');
+    }
     final snapshot = await _collection
         .where('programId', isEqualTo: programId)
         .where('athleteId', isEqualTo: athleteId)
@@ -664,8 +816,7 @@ class WorkoutInstanceRepository {
         .where('scheduledDate', isLessThanOrEqualTo: endDate)
         .orderBy('scheduledDate')
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => _fromMap(doc.data(), doc.id)).toList());
+        .asyncMap(_instancesFromSnapshot);
   }
 
   /// Streams workout instances for a specific program-athlete pair.
@@ -692,9 +843,10 @@ class WorkoutInstanceRepository {
         isLessThanOrEqualTo: endDate,
       );
     }
-    return query.orderBy('scheduledDate', descending: true).snapshots().map(
-        (snapshot) =>
-            snapshot.docs.map((doc) => _fromMap(doc.data(), doc.id)).toList());
+    return query
+        .orderBy('scheduledDate', descending: true)
+        .snapshots()
+        .asyncMap(_instancesFromSnapshot);
   }
 
   /// Streams every instance in [ownerId]'s programs for [athleteId].
@@ -715,8 +867,7 @@ class WorkoutInstanceRepository {
         .where('scheduledDate', isLessThanOrEqualTo: endDate)
         .orderBy('scheduledDate')
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => _fromMap(doc.data(), doc.id)).toList());
+        .asyncMap(_instancesFromSnapshot);
 
     late StreamController<List<WorkoutInstance>> controller;
     StreamSubscription<List<WorkoutInstance>>? ownerSubscription;
@@ -864,12 +1015,48 @@ class WorkoutInstanceRepository {
   Future<WorkoutInstance?> getById(String id) async {
     final doc = await _collection.doc(id).get();
     if (!doc.exists || doc.data() == null) return null;
-    return _fromMap(doc.data()!, doc.id);
+    return _fromDocument(doc);
   }
 
   // -- Serialization helpers --
 
-  WorkoutInstance _fromMap(Map<String, dynamic> data, String id) {
+  Future<List<WorkoutInstance>> _instancesFromSnapshot(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    return Future.wait(snapshot.docs.map(_fromDocument));
+  }
+
+  Future<WorkoutInstance> _fromDocument(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    final data = doc.data()!;
+    final declaredSlotIds = data['actualSlotIds'];
+    final Map<String, ExerciseActual> actualsBySlot;
+    if (data['actualsStorageFormat'] == 'slotResultsSubcollection' &&
+        declaredSlotIds is List &&
+        declaredSlotIds.isNotEmpty) {
+      final slotIds = declaredSlotIds.whereType<String>().toList();
+      if (slotIds.length != declaredSlotIds.length) {
+        throw StateError('Actual slot IDs must be strings');
+      }
+      actualsBySlot = await _readSlotResults(
+        doc.reference,
+        slotIds: slotIds,
+      );
+    } else if (data['actualsStorageFormat'] == 'slotResultsSubcollection' &&
+        declaredSlotIds is! List) {
+      actualsBySlot = await _readSlotResults(doc.reference);
+    } else {
+      actualsBySlot = _parseActualsBySlot(data);
+    }
+    return _fromMap(data, doc.id, actualsBySlot: actualsBySlot);
+  }
+
+  WorkoutInstance _fromMap(
+    Map<String, dynamic> data,
+    String id, {
+    required Map<String, ExerciseActual> actualsBySlot,
+  }) {
     return WorkoutInstance(
       id: id,
       programId: data['programId'] as String? ?? '',
@@ -902,7 +1089,7 @@ class WorkoutInstanceRepository {
           : null,
       isRecurrenceRoot: data['isRecurrenceRoot'] as bool? ?? false,
       recurrenceRootId: data['recurrenceRootId'] as String?,
-      actuals: _parseActuals(data['actuals']),
+      actualsBySlot: actualsBySlot,
       athleteNotes: data['athleteNotes'] as String?,
       createdAt: _toDateTime(data['createdAt']),
       updatedAt: _toDateTime(data['updatedAt']),
@@ -922,16 +1109,74 @@ class WorkoutInstanceRepository {
     };
   }
 
-  List<ExerciseActual> _parseActuals(dynamic data) {
-    if (data == null) return [];
-    if (data is! List) return [];
-    return data
-        .map((item) => _actualFromMap(item as Map<String, dynamic>))
-        .toList();
+  Future<Map<String, ExerciseActual>> _readSlotResults(
+    DocumentReference<Map<String, dynamic>> instanceRef, {
+    List<String>? slotIds,
+  }) async {
+    if (slotIds != null) {
+      final documents = await Future.wait(
+        slotIds.map((slotId) =>
+            instanceRef.collection('slotResults').doc(slotId).get()),
+      );
+      final results = <String, ExerciseActual>{};
+      for (final document in documents) {
+        if (!document.exists || document.data() == null) {
+          throw StateError('Missing result for slot ${document.id}');
+        }
+        results[document.id] = _actualFromMap(
+          document.data()!,
+          slotId: document.id,
+        );
+      }
+      return results;
+    }
+    final snapshot = await instanceRef.collection('slotResults').get();
+    return {
+      for (final doc in snapshot.docs)
+        doc.id: _actualFromMap(doc.data(), slotId: doc.id),
+    };
   }
 
-  ExerciseActual _actualFromMap(Map<String, dynamic> data) {
+  Map<String, ExerciseActual> _parseActualsBySlot(
+    Map<String, dynamic> data,
+  ) {
+    final current = data['actualsBySlot'];
+    if (current is Map<String, dynamic>) {
+      final parsed = <String, ExerciseActual>{};
+      for (final entry in current.entries) {
+        if (entry.value is! Map) {
+          throw StateError('Slot result ${entry.key} must be a map');
+        }
+        parsed[entry.key] = _actualFromMap(
+          Map<String, dynamic>.from(entry.value as Map),
+          slotId: entry.key,
+        );
+      }
+      return parsed;
+    }
+    final legacy = data['actuals'];
+    if (legacy is! List) return {};
+    final parsed = <String, ExerciseActual>{};
+    for (var index = 0; index < legacy.length; index++) {
+      final raw = legacy[index];
+      if (raw is! Map) {
+        throw StateError('Legacy actual at index $index must be a map');
+      }
+      final slotId = legacyExerciseSlotId(index);
+      parsed[slotId] = _actualFromMap(
+        Map<String, dynamic>.from(raw),
+        slotId: slotId,
+      );
+    }
+    return parsed;
+  }
+
+  ExerciseActual _actualFromMap(
+    Map<String, dynamic> data, {
+    required String slotId,
+  }) {
     return ExerciseActual(
+      slotId: slotId,
       exerciseId: data['exerciseId'] as String? ?? '',
       mode: _parseExerciseMode(data['mode'] as String?),
       sets: data['sets'] as int?,
@@ -941,6 +1186,237 @@ class WorkoutInstanceRepository {
       restSeconds: data['restSeconds'] as int?,
       notes: data['notes'] as String?,
     );
+  }
+
+  Future<Map<String, dynamic>> _prepareSlotResults({
+    required String instanceId,
+    required List<ExerciseActual> actuals,
+  }) async {
+    final instance = await getById(instanceId);
+    if (instance == null) {
+      throw StateError('Instance $instanceId not found');
+    }
+    final version =
+        await WorkoutTemplateRepository(firestore: _firestore).getVersion(
+      instance.workoutTemplateId,
+      instance.workoutTemplateVersion,
+    );
+    if (version == null) {
+      throw StateError(
+        'Workout ${instance.workoutTemplateId} version '
+        '${instance.workoutTemplateVersion} not found',
+      );
+    }
+    final slotsById = <String, ({ExerciseSlot slot, int slotOrder})>{
+      for (var index = 0; index < version.exerciseSlots.length; index++)
+        version.exerciseSlots[index].slotId: (
+          slot: version.exerciseSlots[index],
+          slotOrder: version.exerciseSlots[index].legacyStorageOrder ?? index,
+        ),
+    };
+    final result = <String, dynamic>{};
+    for (final actual in actuals) {
+      actual.validate();
+      var resolvedSlotId = actual.slotId;
+      var pinned = slotsById[resolvedSlotId];
+      if (!actual.hasExplicitSlotId) {
+        final matchingSlots = slotsById.entries
+            .where((entry) => entry.value.slot.exerciseId == actual.exerciseId)
+            .toList();
+        if (matchingSlots.length != 1) {
+          throw StateError(
+            matchingSlots.isEmpty
+                ? 'Exercise ${actual.exerciseId} is not part of workout '
+                    'instance $instanceId'
+                : 'Exercise ${actual.exerciseId} occurs more than once; '
+                    'a stable slot ID is required',
+          );
+        }
+        resolvedSlotId = matchingSlots.single.key;
+        pinned = matchingSlots.single.value;
+      }
+      if (pinned == null) {
+        throw StateError(
+          'Slot $resolvedSlotId is not part of workout instance $instanceId',
+        );
+      }
+      if (pinned.slot.exerciseId != actual.exerciseId) {
+        throw StateError(
+          'Actual for slot $resolvedSlotId references the wrong exercise',
+        );
+      }
+      if (result.containsKey(resolvedSlotId)) {
+        throw ArgumentError('Only one actual is allowed per exercise slot');
+      }
+      result[resolvedSlotId] = {
+        ..._actualToMap(actual),
+        'slotOrder': pinned.slotOrder,
+      };
+    }
+    return result;
+  }
+
+  Future<void> _writeCompletion({
+    required String instanceId,
+    required String athleteId,
+    required WorkoutInstanceStatus requiredStatus,
+    required Map<String, dynamic> actualsBySlot,
+    required Map<String, dynamic> parentFields,
+  }) async {
+    final instanceRef = _collection.doc(instanceId);
+    final storedResults = await instanceRef.collection('slotResults').get();
+    final storedSlotIds = storedResults.docs.map((doc) => doc.id).toSet();
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(instanceRef);
+      if (!snapshot.exists || snapshot.data() == null) {
+        throw StateError('Instance $instanceId not found');
+      }
+      final data = snapshot.data()!;
+      if (data['athleteId'] != athleteId) {
+        throw StateError('User $athleteId does not own instance $instanceId');
+      }
+      if (data['status'] != requiredStatus.name) {
+        throw StateError(
+          'Instance $instanceId must be ${requiredStatus.name}',
+        );
+      }
+
+      final previousSlotIds =
+          (data['actualSlotIds'] as List<dynamic>? ?? const [])
+              .whereType<String>();
+      for (final slotId in {...storedSlotIds, ...previousSlotIds}) {
+        transaction.delete(instanceRef.collection('slotResults').doc(slotId));
+      }
+      for (final entry in actualsBySlot.entries) {
+        transaction.set(
+          instanceRef.collection('slotResults').doc(entry.key),
+          entry.value as Map<String, dynamic>,
+        );
+      }
+      transaction.update(instanceRef, {
+        ...parentFields,
+        'actualsStorageFormat': 'slotResultsSubcollection',
+        'actualSlotIds': actualsBySlot.keys.toList(),
+        'actualsBySlot': FieldValue.delete(),
+        'actuals': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  /// Migrates legacy list-based actuals to stable workout slot IDs.
+  ///
+  /// Repeated exercises are migrated only when every repeated occurrence has
+  /// a result, so an ambiguous partial result is never guessed.
+  Future<int> migrateLegacyActualsToSlotIds({
+    required String instanceId,
+    required String athleteId,
+  }) async {
+    final doc = await _collection.doc(instanceId).get();
+    if (!doc.exists || doc.data() == null) {
+      throw StateError('Instance $instanceId not found');
+    }
+    final data = doc.data()!;
+    if (data['athleteId'] != athleteId) {
+      throw StateError('User $athleteId does not own instance $instanceId');
+    }
+    final actualSlotIds = data['actualSlotIds'];
+    final hasDeclaredSlotResults =
+        data['actualsStorageFormat'] == 'slotResultsSubcollection' &&
+            (actualSlotIds is! List || actualSlotIds.isNotEmpty);
+    if (data['actualsBySlot'] is Map || hasDeclaredSlotResults) {
+      return 0;
+    }
+    final legacy = data['actuals'];
+    if (legacy is! List || legacy.isEmpty) return 0;
+
+    final version =
+        await WorkoutTemplateRepository(firestore: _firestore).getVersion(
+      data['workoutTemplateId'] as String? ?? '',
+      data['workoutTemplateVersion'] as int? ?? 1,
+    );
+    if (version == null) {
+      throw StateError('Pinned workout version not found');
+    }
+    final slotsByExercise = <String, List<ExerciseSlot>>{};
+    for (final slot in version.exerciseSlots) {
+      slotsByExercise.putIfAbsent(slot.exerciseId, () => []).add(slot);
+    }
+    final actualMaps = <Map<String, dynamic>>[];
+    for (final raw in legacy) {
+      if (raw is! Map) {
+        throw StateError('Legacy actual entries must be maps');
+      }
+      actualMaps.add(Map<String, dynamic>.from(raw));
+    }
+    final actualCountByExercise = <String, int>{};
+    for (final actual in actualMaps) {
+      final exerciseId = actual['exerciseId'] as String? ?? '';
+      actualCountByExercise.update(exerciseId, (count) => count + 1,
+          ifAbsent: () => 1);
+    }
+    for (final entry in actualCountByExercise.entries) {
+      final slotCount = slotsByExercise[entry.key]?.length ?? 0;
+      if (slotCount == 0) {
+        throw StateError('Legacy actual references an unknown exercise');
+      }
+      if (entry.value > slotCount) {
+        throw StateError(
+          'Legacy results exceed the available slots for ${entry.key}',
+        );
+      }
+      if (slotCount > 1 && entry.value != slotCount) {
+        throw StateError(
+          'Legacy results for repeated exercise ${entry.key} are ambiguous',
+        );
+      }
+    }
+
+    final usedByExercise = <String, int>{};
+    final migrated = <String, dynamic>{};
+    for (final actualMap in actualMaps) {
+      final exerciseId = actualMap['exerciseId'] as String? ?? '';
+      final index = usedByExercise.update(
+        exerciseId,
+        (value) => value + 1,
+        ifAbsent: () => 0,
+      );
+      final slot = slotsByExercise[exerciseId]![index];
+      final actual = _actualFromMap(actualMap, slotId: slot.slotId);
+      migrated[slot.slotId] = {
+        ..._actualToMap(actual),
+        'slotOrder':
+            slot.legacyStorageOrder ?? version.exerciseSlots.indexOf(slot),
+      };
+    }
+    await _firestore.runTransaction((transaction) async {
+      final latest = await transaction.get(doc.reference);
+      if (!latest.exists || latest.data()?['athleteId'] != athleteId) {
+        throw StateError('User $athleteId does not own instance $instanceId');
+      }
+      final latestData = latest.data()!;
+      final latestSlotIds = latestData['actualSlotIds'];
+      final latestHasDeclaredSlotResults =
+          latestData['actualsStorageFormat'] == 'slotResultsSubcollection' &&
+              (latestSlotIds is! List || latestSlotIds.isNotEmpty);
+      if (latestData['actualsBySlot'] is Map || latestHasDeclaredSlotResults) {
+        throw StateError('Workout actuals were already migrated');
+      }
+      for (final entry in migrated.entries) {
+        transaction.set(
+          doc.reference.collection('slotResults').doc(entry.key),
+          entry.value as Map<String, dynamic>,
+        );
+      }
+      transaction.update(doc.reference, {
+        'actualsStorageFormat': 'slotResultsSubcollection',
+        'actualSlotIds': migrated.keys.toList(),
+        'actualsBySlot': FieldValue.delete(),
+        'actuals': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+    return migrated.length;
   }
 
   Recurrence _recurrenceFromMap(Map<String, dynamic> data) {

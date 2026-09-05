@@ -473,7 +473,7 @@ tests, and any required backfill tests before the next step depends on it.
 
 ### Stage 5 implementation status
 
-Sequence steps 1 through 3 are implemented in `stage5/`.
+Sequence steps 1 through 4 are implemented in `stage5/`.
 
 - Trainer-client relationships use deterministic
   `{trainerId}_{athleteId}` document IDs, retain ended relationships for audit,
@@ -527,8 +527,29 @@ Sequence steps 1 through 3 are implemented in `stage5/`.
 - Workout and program copies record the source's current version; copied
   exercises atomically materialize source content as version 1. Provenance is
   created with the copy and cannot be rewritten.
-- Typed workout blocks, program instances, and subscription behavior remain
-  deferred to their respective sequence steps.
+- Workout versions now store ordered typed blocks for standard exercise work,
+  timed intervals, circuits, and climbing routes. Each exercise occurrence has
+  a stable slot ID and continues to pin an immutable `exerciseId` plus
+  `exerciseVersion`.
+- New typed versions stage an immutable manifest plus stable-ID block and slot
+  children, then atomically seal the complete snapshot and advance the template
+  header. Earlier typed-subcollection snapshots, array-backed versions, and
+  prescription-subcollection versions remain readable; array slots use their
+  ordinal and prescription subcollections retain persisted sort order.
+  Immutable legacy versions are not rewritten.
+- New completion actuals are stored as `slotResults/{slotId}` documents and
+  completion transitions are transactional. Firestore rules atomically bind
+  each result to the parent result index and pinned workout slot. Existing
+  list-backed actuals, including Stage 4 writes to newly shaped instances,
+  remain readable and have an athlete-owned migration that maps safe unique or
+  complete repeated-exercise results to pinned slots. Ambiguous partial
+  repeated-exercise results are rejected rather than guessed.
+- The current builder continues to create and edit standard exercise blocks,
+  while preserving typed blocks loaded from storage. Rich authoring controls
+  for interval, circuit, and climbing payloads can be added without another
+  workout-version schema change.
+- Program instances, subscription behavior, propagation, and full scheduled
+  workout materialization remain deferred to their respective sequence steps.
 
 ## 12. Deferred Details
 

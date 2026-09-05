@@ -790,6 +790,462 @@ describe('workoutTemplates', () => {
     await assertSucceeds(batch.commit());
   });
 
+  it('allows the owner to atomically publish typed blocks and stable slots', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adminDb = ctx.firestore();
+      await adminDb.collection('workoutTemplates').doc('typed').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+      });
+      for (const exerciseId of ['e1', 'e2']) {
+        await adminDb.collection('exerciseTemplates').doc(exerciseId).set({
+          ownerId: OWNER,
+          createdBy: OWNER,
+          currentVersion: 1,
+        });
+        await adminDb.collection('exerciseTemplates').doc(exerciseId)
+          .collection('exerciseVersions').doc('1').set({ versionNumber: 1 });
+      }
+    });
+
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('typed');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const batch = db.batch();
+    const block = {
+      blockId: 'circuit-1',
+      type: 'circuit',
+      sortOrder: 0,
+      slotIds: ['slot-1', 'slot-2'],
+      slotStartOrder: 0,
+      slotCount: 2,
+      rounds: 4,
+      restBetweenRoundsSeconds: 60,
+    };
+    const slots = [{
+      slotId: 'slot-1',
+      blockId: 'circuit-1',
+      blockSortOrder: 0,
+      slotOrder: 0,
+      exerciseId: 'e1',
+      exerciseVersion: 1,
+      sortOrder: 0,
+      exerciseName: 'Squat',
+      prescription: { mode: 'reps', sets: 5, reps: '5' },
+    }, {
+      slotId: 'slot-2',
+      blockId: 'circuit-1',
+      blockSortOrder: 0,
+      slotOrder: 1,
+      exerciseId: 'e2',
+      exerciseVersion: 1,
+      sortOrder: 1,
+      exerciseName: 'Pull-up',
+      prescription: { mode: 'amrap' },
+    }];
+    batch.set(version, {
+      versionNumber: 1,
+      storageFormat: 'typedWorkoutBlocksV1',
+      publishState: 'draft',
+      ownerId: OWNER,
+      blockCount: 1,
+      slotCount: 2,
+      blockIds: ['circuit-1'],
+      slotIds: ['slot-1', 'slot-2'],
+      blocks: [block],
+      slots,
+    });
+    batch.set(version.collection('workoutBlocks').doc('circuit-1'), block);
+    batch.set(version.collection('exerciseSlots').doc('slot-1'), slots[0]);
+    batch.set(version.collection('exerciseSlots').doc('slot-2'), slots[1]);
+    await assertSucceeds(batch.commit());
+    const seal = db.batch();
+    seal.update(version, { publishState: 'published' });
+    seal.update(header, { currentVersion: 1, updatedBy: OWNER });
+    await assertSucceeds(seal.commit());
+  });
+
+  it('allows nine typed slots with distinct blocks and exercises', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adminDb = ctx.firestore();
+      await adminDb.collection('workoutTemplates').doc('typed-nine').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+      });
+      for (let index = 0; index < 9; index++) {
+        const exercise = adminDb.collection('exerciseTemplates')
+          .doc(`typed-exercise-${index}`);
+        await exercise.set({
+          ownerId: OWNER,
+          createdBy: OWNER,
+          currentVersion: 1,
+        });
+        await exercise.collection('exerciseVersions').doc('1').set({
+          versionNumber: 1,
+        });
+      }
+    });
+
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('typed-nine');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const batch = db.batch();
+    const blocks = Array.from({ length: 9 }, (_, index) => ({
+      blockId: `block-${index}`,
+      type: 'standardExercise',
+      sortOrder: index,
+      slotIds: [`slot-${index}`],
+      slotStartOrder: index,
+      slotCount: 1,
+    }));
+    const slots = Array.from({ length: 9 }, (_, index) => ({
+      slotId: `slot-${index}`,
+      blockId: `block-${index}`,
+      blockSortOrder: index,
+      slotOrder: index,
+      exerciseId: `typed-exercise-${index}`,
+      exerciseVersion: 1,
+      sortOrder: 0,
+      prescription: { mode: 'reps' },
+    }));
+    batch.set(version, {
+      versionNumber: 1,
+      storageFormat: 'typedWorkoutBlocksV1',
+      publishState: 'draft',
+      ownerId: OWNER,
+      blockCount: 9,
+      slotCount: 9,
+      blockIds: blocks.map((block) => block.blockId),
+      slotIds: slots.map((slot) => slot.slotId),
+      blocks,
+      slots,
+    });
+    for (let index = 0; index < 9; index++) {
+      batch.set(
+        version.collection('workoutBlocks').doc(`block-${index}`),
+        blocks[index]
+      );
+      batch.set(
+        version.collection('exerciseSlots').doc(`slot-${index}`),
+        slots[index]
+      );
+    }
+    await assertSucceeds(batch.commit());
+    const seal = db.batch();
+    seal.update(version, { publishState: 'published' });
+    seal.update(header, { currentVersion: 1, updatedBy: OWNER });
+    await assertSucceeds(seal.commit());
+  });
+
+  it('denies a valid typed block with a foreign exercise slot', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adminDb = ctx.firestore();
+      await adminDb.collection('workoutTemplates').doc('invalid-typed').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+      });
+      await adminDb.collection('exerciseTemplates').doc('foreign-typed').set({
+        ownerId: STRANGER,
+        createdBy: STRANGER,
+        currentVersion: 1,
+      });
+      await adminDb.collection('exerciseTemplates').doc('foreign-typed')
+        .collection('exerciseVersions').doc('1').set({ versionNumber: 1 });
+    });
+
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('invalid-typed');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const batch = db.batch();
+    const block = {
+      blockId: 'interval',
+      type: 'timedInterval',
+      sortOrder: 0,
+      slotIds: ['slot-foreign'],
+      slotStartOrder: 0,
+      slotCount: 1,
+      rounds: 5,
+      workSeconds: 30,
+      restSeconds: 30,
+    };
+    const slot = {
+      slotId: 'slot-foreign',
+      blockId: 'interval',
+      blockSortOrder: 0,
+      slotOrder: 0,
+      exerciseId: 'foreign-typed',
+      exerciseVersion: 1,
+      sortOrder: 0,
+      prescription: { mode: 'time' },
+    };
+    batch.set(version, {
+      versionNumber: 1,
+      storageFormat: 'typedWorkoutBlocksV1',
+      publishState: 'draft',
+      ownerId: OWNER,
+      blockCount: 1,
+      slotCount: 1,
+      blockIds: ['interval'],
+      slotIds: ['slot-foreign'],
+      blocks: [block],
+      slots: [slot],
+    });
+    batch.set(version.collection('workoutBlocks').doc('interval'), block);
+    batch.set(version.collection('exerciseSlots').doc('slot-foreign'), slot);
+    await assertFails(batch.commit());
+  });
+
+  it('denies a typed manifest with a nonexistent exercise pin', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutTemplates').doc('missing-pin')
+        .set({ ownerId: OWNER, createdBy: OWNER, currentVersion: 0 });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('missing-pin');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const block = {
+      blockId: 'standard',
+      type: 'standardExercise',
+      sortOrder: 0,
+      slotIds: ['missing-slot'],
+      slotStartOrder: 0,
+      slotCount: 1,
+    };
+    const slot = {
+      slotId: 'missing-slot',
+      blockId: 'standard',
+      blockSortOrder: 0,
+      slotOrder: 0,
+      exerciseId: 'does-not-exist',
+      exerciseVersion: 1,
+      sortOrder: 0,
+      prescription: { mode: 'reps' },
+    };
+    const batch = db.batch();
+    batch.set(version, {
+      versionNumber: 1,
+      storageFormat: 'typedWorkoutBlocksV1',
+      publishState: 'draft',
+      ownerId: OWNER,
+      blockCount: 1,
+      slotCount: 1,
+      blockIds: ['standard'],
+      slotIds: ['missing-slot'],
+      blocks: [block],
+      slots: [slot],
+    });
+    batch.set(version.collection('workoutBlocks').doc('standard'), block);
+    batch.set(version.collection('exerciseSlots').doc('missing-slot'), slot);
+    await assertFails(batch.commit());
+  });
+
+  it('denies duplicate stable IDs in a typed workout manifest', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutTemplates').doc('duplicates')
+        .set({ ownerId: OWNER, createdBy: OWNER, currentVersion: 0 });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('duplicates');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const batch = db.batch();
+    batch.set(version, {
+      versionNumber: 1,
+      storageFormat: 'typedWorkoutBlocksV1',
+      publishState: 'draft',
+      ownerId: OWNER,
+      blockCount: 2,
+      slotCount: 2,
+      blockIds: ['duplicate-block', 'duplicate-block'],
+      slotIds: ['duplicate-slot', 'duplicate-slot'],
+      blocks: [{}, {}],
+      slots: [{}, {}],
+    });
+    await assertFails(batch.commit());
+  });
+
+  it('keeps incomplete typed drafts private and prevents sealing', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutTemplates').doc('incomplete')
+        .set({ ownerId: OWNER, createdBy: OWNER, currentVersion: 0 });
+    });
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    const header = ownerDb.collection('workoutTemplates').doc('incomplete');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const block = {
+      blockId: 'standard',
+      type: 'standardExercise',
+      sortOrder: 0,
+      slotIds: ['slot-1'],
+      slotStartOrder: 0,
+      slotCount: 1,
+    };
+    const slot = {
+      slotId: 'slot-1',
+      blockId: 'standard',
+      blockSortOrder: 0,
+      slotOrder: 0,
+      exerciseId: 'e1',
+      exerciseVersion: 1,
+      sortOrder: 0,
+      prescription: { mode: 'reps' },
+    };
+    const draft = ownerDb.batch();
+    draft.set(version, {
+      versionNumber: 1,
+      storageFormat: 'typedWorkoutBlocksV1',
+      publishState: 'draft',
+      ownerId: OWNER,
+      blockCount: 1,
+      slotCount: 1,
+      blockIds: ['standard'],
+      slotIds: ['slot-1'],
+      blocks: [block],
+      slots: [slot],
+    });
+    draft.set(version.collection('workoutBlocks').doc('standard'), block);
+    await assertSucceeds(draft.commit());
+    await assertSucceeds(version.get());
+    const strangerVersion = testEnv.authenticatedContext(STRANGER)
+      .firestore().collection('workoutTemplates').doc('incomplete')
+      .collection('workoutTemplateVersions').doc('1');
+    await assertFails(strangerVersion.get());
+    await assertFails(
+      strangerVersion.collection('workoutBlocks').doc('standard').get()
+    );
+    await assertFails(
+      strangerVersion.collection('workoutBlocks').doc('standard').delete()
+    );
+
+    const seal = ownerDb.batch();
+    seal.update(version, { publishState: 'published' });
+    seal.update(header, { currentVersion: 1, updatedBy: OWNER });
+    await assertFails(seal.commit());
+
+    await assertFails(
+      version.collection('workoutBlocks').doc('standard').delete()
+    );
+    await assertFails(version.delete());
+    await assertSucceeds(version.update({ publishState: 'deleting' }));
+    await assertSucceeds(
+      version.collection('workoutBlocks').doc('standard').delete()
+    );
+    await assertSucceeds(version.update({ blocksCleared: true }));
+    await assertSucceeds(version.update({ slotsCleared: true }));
+    await assertSucceeds(version.delete());
+  });
+
+  it('denies overlapping block slot ranges in a typed draft', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutTemplates').doc('overlap')
+        .set({ ownerId: OWNER, createdBy: OWNER, currentVersion: 0 });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const version = db.collection('workoutTemplates').doc('overlap')
+      .collection('workoutTemplateVersions').doc('1');
+    const firstBlock = {
+      blockId: 'first',
+      type: 'standardExercise',
+      sortOrder: 0,
+      slotIds: ['slot-1'],
+      slotStartOrder: 0,
+      slotCount: 1,
+    };
+    const secondBlock = {
+      blockId: 'second',
+      type: 'standardExercise',
+      sortOrder: 1,
+      slotIds: ['slot-1'],
+      slotStartOrder: 0,
+      slotCount: 1,
+    };
+    const slot = {
+      slotId: 'slot-1',
+      blockId: 'first',
+      blockSortOrder: 0,
+      slotOrder: 0,
+      exerciseId: 'e1',
+      exerciseVersion: 1,
+      sortOrder: 0,
+      prescription: { mode: 'reps' },
+    };
+    const batch = db.batch();
+    batch.set(version, {
+      versionNumber: 1,
+      storageFormat: 'typedWorkoutBlocksV1',
+      publishState: 'draft',
+      ownerId: OWNER,
+      blockCount: 2,
+      slotCount: 1,
+      blockIds: ['first', 'second'],
+      slotIds: ['slot-1'],
+      blocks: [firstBlock, secondBlock],
+      slots: [slot],
+    });
+    batch.set(version.collection('workoutBlocks').doc('first'), firstBlock);
+    batch.set(version.collection('workoutBlocks').doc('second'), secondBlock);
+    batch.set(version.collection('exerciseSlots').doc('slot-1'), slot);
+    await assertFails(batch.commit());
+  });
+
+  it('denies implicit version 1 for an explicit zero-version exercise', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adminDb = ctx.firestore();
+      await adminDb.collection('exerciseTemplates').doc('zero-version').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+      });
+      await adminDb.collection('workoutTemplates').doc('zero-pin').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('zero-pin');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const batch = db.batch();
+    batch.update(header, { currentVersion: 1, updatedBy: OWNER });
+    batch.set(version, {
+      versionNumber: 1,
+      storageFormat: 'exercisePrescriptionSubcollection',
+      prescriptionCount: 1,
+    });
+    batch.set(version.collection('exercisePrescriptions').doc('0'), {
+      exerciseId: 'zero-version',
+      exerciseVersion: 1,
+      sortOrder: 0,
+      prescription: { mode: 'reps' },
+    });
+    await assertFails(batch.commit());
+  });
+
+  it('prevents typed workout blocks and slots from update or delete', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const version = ctx.firestore().collection('workoutTemplates')
+        .doc('immutable-typed').collection('workoutTemplateVersions').doc('1');
+      await version.collection('workoutBlocks').doc('block-1').set({
+        blockId: 'block-1', type: 'standardExercise', sortOrder: 0,
+      });
+      await version.collection('exerciseSlots').doc('slot-1').set({
+        slotId: 'slot-1', blockId: 'block-1', exerciseId: 'e1',
+        exerciseVersion: 1, sortOrder: 0, prescription: { mode: 'reps' },
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const version = db.collection('workoutTemplates').doc('immutable-typed')
+      .collection('workoutTemplateVersions').doc('1');
+    await assertFails(
+      version.collection('workoutBlocks').doc('block-1').update({ rounds: 2 })
+    );
+    await assertFails(
+      version.collection('exerciseSlots').doc('slot-1').delete()
+    );
+  });
+
   it('allows nine exercise pins on a foldered workout', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       const adminDb = ctx.firestore();
@@ -1596,6 +2052,7 @@ describe('workoutInstances', () => {
         status: 'scheduled',
         scheduledDate: '2026-06-15',
         workoutTemplateId: 'w1',
+        workoutTemplateVersion: 1,
       });
     });
   }
@@ -1610,6 +2067,16 @@ describe('workoutInstances', () => {
         athleteId: ATHLETE,
         assignedBy: OWNER,
         status: 'scheduled',
+      })
+    );
+    await assertFails(
+      db.collection('workoutInstances').doc('inst-with-results').set({
+        programId: PROGRAM_ID,
+        programOwnerId: OWNER,
+        athleteId: ATHLETE,
+        assignedBy: OWNER,
+        status: 'scheduled',
+        actualSlotIds: ['forged-slot'],
       })
     );
   });
@@ -1741,6 +2208,27 @@ describe('workoutInstances', () => {
     );
   });
 
+  it('allows owner to query a program assignment by immutable owner', async () => {
+    await seedProgramWithEnrollment();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc('assignment-owned').set({
+        programId: PROGRAM_ID,
+        programOwnerId: OWNER,
+        programAssignmentId: 'assignment-1',
+        athleteId: ATHLETE,
+        assignedBy: ATHLETE,
+        status: 'scheduled',
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('workoutInstances')
+        .where('programAssignmentId', '==', 'assignment-1')
+        .where('programOwnerId', '==', OWNER)
+        .get()
+    );
+  });
+
   it('denies creating an instance with the wrong programOwnerId', async () => {
     await seedProgramWithEnrollment();
     const db = testEnv.authenticatedContext(ATHLETE).firestore();
@@ -1807,6 +2295,146 @@ describe('workoutInstances', () => {
     );
   });
 
+  it('allows a Stage 4 client to complete a newly shaped instance', async () => {
+    await seedInstance();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc(INSTANCE_ID)
+        .update({
+          actualsStorageFormat: 'slotResultsSubcollection',
+          actualSlotIds: [],
+          actuals: [],
+        });
+    });
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertSucceeds(
+      db.collection('workoutInstances').doc(INSTANCE_ID).update({
+        status: 'completed',
+        rpe: 7,
+        durationMinutes: 60,
+        actuals: [{
+          exerciseId: 'e1',
+          mode: 'reps',
+          sets: 5,
+          reps: '5',
+        }],
+      })
+    );
+  });
+
+  it('allows athlete completion actuals keyed by stable slot ID', async () => {
+    await seedInstance();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const version = ctx.firestore().collection('workoutTemplates').doc('w1')
+        .collection('workoutTemplateVersions').doc('1');
+      await version.set({
+        versionNumber: 1,
+        storageFormat: 'typedWorkoutBlocksV1',
+        blockCount: 1,
+        slotCount: 1,
+        slots: [{
+          slotId: 'slot-1',
+          exerciseId: 'e1',
+        }],
+      });
+      await version.collection('exerciseSlots').doc('0').set({
+        slotId: 'slot-1',
+        blockId: 'block-1',
+        blockSortOrder: 0,
+        slotOrder: 0,
+        exerciseId: 'e1',
+        exerciseVersion: 1,
+        sortOrder: 0,
+        prescription: { mode: 'reps' },
+      });
+    });
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    const instance = db.collection('workoutInstances').doc(INSTANCE_ID);
+    const batch = db.batch();
+    batch.update(instance, {
+      status: 'completed',
+      rpe: 7,
+      durationMinutes: 60,
+      actualsStorageFormat: 'slotResultsSubcollection',
+      actualSlotIds: ['slot-1'],
+      actuals: deleteField(),
+    });
+    batch.set(instance.collection('slotResults').doc('slot-1'), {
+      exerciseId: 'e1', slotOrder: 0, mode: 'reps', sets: 5, reps: '5',
+    });
+    await assertSucceeds(batch.commit());
+    await assertFails(
+      instance.collection('slotResults').doc('legacy-slot-0').set({
+        exerciseId: 'arbitrary',
+        slotOrder: 0,
+        mode: 'reps',
+      })
+    );
+    await assertFails(
+      instance.collection('slotResults').doc('slot-1').delete()
+    );
+    await assertFails(instance.update({ actualSlotIds: [] }));
+  });
+
+  it('requires parent and slot results to be updated atomically', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    const instance = db.collection('workoutInstances').doc(INSTANCE_ID);
+    await assertFails(
+      instance.collection('slotResults').doc('legacy-slot-0').set({
+        exerciseId: 'e1',
+        slotOrder: 0,
+        mode: 'reps',
+      })
+    );
+    await assertFails(
+      instance.update({
+        status: 'completed',
+        actualsStorageFormat: 'slotResultsSubcollection',
+        actualSlotIds: ['legacy-slot-0'],
+      })
+    );
+  });
+
+  it('rejects a malformed slot result payload', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertFails(
+      db.collection('workoutInstances').doc(INSTANCE_ID)
+        .collection('slotResults').doc('legacy-slot-0').set({
+        exerciseId: 'e1',
+        slotOrder: 0,
+        mode: 'unsupported',
+      })
+    );
+  });
+
+  it('prevents a typed instance from reverting to legacy list actuals', async () => {
+    await seedInstance();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc(INSTANCE_ID)
+        .update({ actualsBySlot: {} });
+    });
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertFails(
+      db.collection('workoutInstances').doc(INSTANCE_ID).update({
+        actuals: [{ exerciseId: 'e1', mode: 'reps' }],
+      })
+    );
+  });
+
+  it('denies a stranger from writing an athlete slot result', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(STRANGER).firestore();
+    await assertFails(
+      db.collection('workoutInstances').doc(INSTANCE_ID)
+        .collection('slotResults').doc('legacy-slot-0').set({
+        exerciseId: 'e1',
+        slotOrder: 0,
+        mode: 'reps',
+      })
+    );
+  });
+
   it('allows athlete to backfill the verified owner on a legacy instance', async () => {
     await seedInstance();
     const db = testEnv.authenticatedContext(ATHLETE).firestore();
@@ -1846,6 +2474,18 @@ describe('workoutInstances', () => {
     );
   });
 
+  it('denies athlete changes to immutable assignment and workout pins', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    const instance = db.collection('workoutInstances').doc(INSTANCE_ID);
+    await assertFails(instance.update({ athleteId: STRANGER }));
+    await assertFails(instance.update({
+      workoutTemplateId: 'forged',
+      workoutTemplateVersion: 99,
+    }));
+    await assertFails(instance.update({ programId: 'forged-program' }));
+  });
+
   it('allows owner to cancel instance', async () => {
     await seedInstance();
     const db = testEnv.authenticatedContext(OWNER).firestore();
@@ -1883,6 +2523,20 @@ describe('workoutInstances', () => {
       db.collection('workoutInstances').doc(INSTANCE_ID).update({
         workoutTemplateId: 'w2', workoutTemplateVersion: 2,
         workoutType: 'pull', updatedAt: new Date(),
+      })
+    );
+  });
+
+  it('denies owner scheduling changes after completion', async () => {
+    await seedInstance();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc(INSTANCE_ID)
+        .update({ status: 'completed' });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      db.collection('workoutInstances').doc(INSTANCE_ID).update({
+        scheduledDate: '2026-06-20',
       })
     );
   });

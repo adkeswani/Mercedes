@@ -1,8 +1,12 @@
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/domain/foundation_models.dart';
 import 'package:stage5/features/library/domain/library_metadata.dart';
+import 'package:stage5/features/workouts/domain/workout_block.dart';
 
-const maxExercisePrescriptionsPerWorkoutVersion = 9;
+export 'package:stage5/features/workouts/domain/workout_block.dart';
+
+const maxExercisePrescriptionsPerWorkoutVersion =
+    maxExerciseSlotsPerWorkoutVersion;
 
 /// Workout template header with versioning support.
 ///
@@ -135,26 +139,36 @@ class WorkoutTemplateVersion {
   WorkoutTemplateVersion({
     required this.versionNumber,
     required this.publishedAt,
-    required this.exercises,
+    List<WorkoutBlock>? blocks,
+    List<ExerciseSlot>? exercises,
     this.childWorkouts = const [],
-  });
+  })  : assert(blocks == null || exercises == null),
+        blocks = blocks ?? legacyStandardBlocksFromSlots(exercises ?? const []);
 
   final int versionNumber;
   final DateTime publishedAt;
-  final List<ExercisePrescription> exercises;
+  final List<WorkoutBlock> blocks;
   final List<ChildWorkoutRef> childWorkouts;
+
+  List<ExerciseSlot> get exerciseSlots => [
+        for (final block in blocks)
+          for (final slot in block.slots) slot,
+      ];
+
+  @Deprecated('Use blocks or exerciseSlots.')
+  List<ExerciseSlot> get exercises => exerciseSlots;
 
   /// Creates a copy with the given fields replaced.
   WorkoutTemplateVersion copyWith({
     int? versionNumber,
     DateTime? publishedAt,
-    List<ExercisePrescription>? exercises,
+    List<WorkoutBlock>? blocks,
     List<ChildWorkoutRef>? childWorkouts,
   }) {
     return WorkoutTemplateVersion(
       versionNumber: versionNumber ?? this.versionNumber,
       publishedAt: publishedAt ?? this.publishedAt,
-      exercises: exercises ?? this.exercises,
+      blocks: blocks ?? this.blocks,
       childWorkouts: childWorkouts ?? this.childWorkouts,
     );
   }
@@ -164,26 +178,48 @@ class WorkoutTemplateVersion {
     if (versionNumber < 1) {
       throw ArgumentError('versionNumber must be >= 1');
     }
-    if (exercises.length > maxExercisePrescriptionsPerWorkoutVersion) {
+    if (blocks.length > maxWorkoutBlocksPerVersion) {
       throw ArgumentError(
         'A workout version supports at most '
-        '$maxExercisePrescriptionsPerWorkoutVersion exercises',
+        '$maxWorkoutBlocksPerVersion blocks',
+      );
+    }
+    if (exerciseSlots.length > maxExerciseSlotsPerWorkoutVersion) {
+      throw ArgumentError(
+        'A workout version supports at most '
+        '$maxExerciseSlotsPerWorkoutVersion exercise slots',
       );
     }
 
-    for (final exercise in exercises) {
-      exercise.validate();
+    for (final block in blocks) {
+      block.validate();
     }
 
     for (final child in childWorkouts) {
       child.validate();
     }
 
-    // Validate sort order uniqueness within exercises
-    final exerciseSorts = exercises.map((e) => e.sortOrder).toSet();
-    if (exerciseSorts.length != exercises.length) {
+    final blockIds = blocks.map((block) => block.blockId).toSet();
+    if (blockIds.length != blocks.length) {
+      throw ArgumentError('Workout block IDs must be unique within a version');
+    }
+    final blockSorts = blocks.map((block) => block.sortOrder).toSet();
+    if (blockSorts.length != blocks.length) {
       throw ArgumentError(
-        'Exercise sortOrder values must be unique within a version',
+        'Workout block sortOrder values must be unique within a version',
+      );
+    }
+    for (var index = 0; index < blocks.length; index++) {
+      if (!blockSorts.contains(index)) {
+        throw ArgumentError(
+          'Workout block sortOrder values must be contiguous from 0',
+        );
+      }
+    }
+    final slotIds = exerciseSlots.map((slot) => slot.slotId).toSet();
+    if (slotIds.length != exerciseSlots.length) {
+      throw ArgumentError(
+        'Exercise slot IDs must be unique within a workout version',
       );
     }
 
@@ -193,93 +229,6 @@ class WorkoutTemplateVersion {
       throw ArgumentError(
         'Child workout sortOrder values must be unique within a version',
       );
-    }
-  }
-}
-
-/// An exercise slot within a workout template version.
-///
-/// Holds the exercise reference, display order, and prescription details
-/// (sets, reps, duration, weight, rest, notes).
-///
-/// [exerciseName] is denormalized at publish time for historical stability —
-/// even if the exercise template is later renamed or deleted, published
-/// versions retain the name as it was when published.
-class ExercisePrescription {
-  ExercisePrescription({
-    required this.exerciseId,
-    required this.sortOrder,
-    required this.mode,
-    this.exerciseVersion = 1,
-    this.exerciseName,
-    this.sets,
-    this.reps,
-    this.durationSeconds,
-    this.weight,
-    this.restSeconds,
-    this.notes,
-  });
-
-  final String exerciseId;
-  final int exerciseVersion;
-  final int sortOrder;
-  final ExerciseMode mode;
-  final String? exerciseName;
-  final int? sets;
-  final String? reps;
-  final int? durationSeconds;
-  final String? weight;
-  final int? restSeconds;
-  final String? notes;
-
-  /// Creates a copy with the given fields replaced.
-  ExercisePrescription copyWith({
-    String? exerciseId,
-    int? exerciseVersion,
-    int? sortOrder,
-    ExerciseMode? mode,
-    String? exerciseName,
-    int? sets,
-    String? reps,
-    int? durationSeconds,
-    String? weight,
-    int? restSeconds,
-    String? notes,
-  }) {
-    return ExercisePrescription(
-      exerciseId: exerciseId ?? this.exerciseId,
-      exerciseVersion: exerciseVersion ?? this.exerciseVersion,
-      sortOrder: sortOrder ?? this.sortOrder,
-      mode: mode ?? this.mode,
-      exerciseName: exerciseName ?? this.exerciseName,
-      sets: sets ?? this.sets,
-      reps: reps ?? this.reps,
-      durationSeconds: durationSeconds ?? this.durationSeconds,
-      weight: weight ?? this.weight,
-      restSeconds: restSeconds ?? this.restSeconds,
-      notes: notes ?? this.notes,
-    );
-  }
-
-  /// Validates prescription fields.
-  void validate() {
-    if (exerciseId.isEmpty) {
-      throw ArgumentError('exerciseId cannot be empty');
-    }
-    if (exerciseVersion < 1) {
-      throw ArgumentError('exerciseVersion must be >= 1');
-    }
-    if (sortOrder < 0) {
-      throw ArgumentError('sortOrder must be >= 0');
-    }
-    if (sets != null && sets! < 1) {
-      throw ArgumentError('sets must be >= 1 when provided');
-    }
-    if (durationSeconds != null && durationSeconds! < 1) {
-      throw ArgumentError('durationSeconds must be >= 1 when provided');
-    }
-    if (restSeconds != null && restSeconds! < 0) {
-      throw ArgumentError('restSeconds must be >= 0 when provided');
     }
   }
 }

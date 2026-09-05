@@ -266,6 +266,369 @@ void main() {
       expect(version.exercises[1].exerciseName, 'Limit Bouldering');
     });
 
+    test('typed blocks and stable slots round-trip through Firestore',
+        () async {
+      final id = await repo.create(
+        name: 'Mixed Session',
+        workoutType: WorkoutType.conditioning,
+        userId: 'user1',
+      );
+
+      await repo.publishVersion(
+        templateId: id,
+        blocks: [
+          TimedIntervalBlock(
+            blockId: 'interval-block',
+            sortOrder: 0,
+            slots: [
+              ExerciseSlot(
+                slotId: 'bike-slot',
+                exerciseId: 'ex1',
+                exerciseVersion: 4,
+                sortOrder: 0,
+                mode: ExerciseMode.time,
+                durationSeconds: 30,
+              ),
+            ],
+            rounds: 10,
+            workSeconds: 30,
+            restSeconds: 60,
+          ),
+          ClimbingRouteBlock(
+            blockId: 'route-block',
+            sortOrder: 1,
+            route: ExerciseSlot(
+              slotId: 'route-slot',
+              exerciseId: 'ex2',
+              sortOrder: 0,
+              mode: ExerciseMode.amrap,
+            ),
+            grade: 'V5',
+            color: 'Purple',
+            targetAttempts: 4,
+          ),
+        ],
+        userId: 'user1',
+      );
+
+      final versionDoc = await fakeFirestore
+          .collection('workoutTemplates')
+          .doc(id)
+          .collection('workoutTemplateVersions')
+          .doc('1')
+          .get();
+      expect(versionDoc.data()!['storageFormat'], 'typedWorkoutBlocksV1');
+      expect(versionDoc.data()!['blockCount'], 2);
+      expect(versionDoc.data()!['slotCount'], 2);
+
+      final version = await repo.getVersion(id, 1);
+      expect(version!.blocks[0], isA<TimedIntervalBlock>());
+      expect((version.blocks[0] as TimedIntervalBlock).rounds, 10);
+      expect(version.blocks[1], isA<ClimbingRouteBlock>());
+      expect((version.blocks[1] as ClimbingRouteBlock).grade, 'V5');
+      expect(version.exerciseSlots.map((slot) => slot.slotId), [
+        'bike-slot',
+        'route-slot',
+      ]);
+      expect(version.exerciseSlots.first.exerciseVersion, 4);
+    });
+
+    test('publishing canonicalizes valid unsorted blocks and slots', () async {
+      final id = await repo.create(
+        name: 'Unsorted Circuit',
+        workoutType: WorkoutType.conditioning,
+        userId: 'user1',
+      );
+
+      await repo.publishVersion(
+        templateId: id,
+        blocks: [
+          StandardExerciseBlock(
+            blockId: 'second-block',
+            sortOrder: 1,
+            exercise: ExerciseSlot(
+              slotId: 'second-slot',
+              exerciseId: 'ex2',
+              sortOrder: 0,
+              mode: ExerciseMode.reps,
+            ),
+          ),
+          CircuitBlock(
+            blockId: 'first-block',
+            sortOrder: 0,
+            slots: [
+              ExerciseSlot(
+                slotId: 'circuit-second',
+                exerciseId: 'ex2',
+                sortOrder: 1,
+                mode: ExerciseMode.reps,
+              ),
+              ExerciseSlot(
+                slotId: 'circuit-first',
+                exerciseId: 'ex1',
+                sortOrder: 0,
+                mode: ExerciseMode.reps,
+              ),
+            ],
+            rounds: 3,
+          ),
+        ],
+        userId: 'user1',
+      );
+
+      final version = await repo.getVersion(id, 1);
+      expect(version!.blocks.map((block) => block.blockId), [
+        'first-block',
+        'second-block',
+      ]);
+      expect(version.exerciseSlots.map((slot) => slot.slotId), [
+        'circuit-first',
+        'circuit-second',
+        'second-slot',
+      ]);
+      final versionRef = fakeFirestore
+          .collection('workoutTemplates')
+          .doc(id)
+          .collection('workoutTemplateVersions')
+          .doc('1');
+      expect(
+        (await versionRef.get()).data()!['slotIds'],
+        ['circuit-first', 'circuit-second', 'second-slot'],
+      );
+      expect(
+        (await versionRef.get()).data()!['slots'][0]['slotId'],
+        'circuit-first',
+      );
+    });
+
+    test('resumes and seals an interrupted matching typed draft', () async {
+      final id = await repo.create(
+        name: 'Resumable',
+        workoutType: WorkoutType.pull,
+        userId: 'user1',
+      );
+      final versionRef = fakeFirestore
+          .collection('workoutTemplates')
+          .doc(id)
+          .collection('workoutTemplateVersions')
+          .doc('1');
+      final block = {
+        'blockId': 'resume-block',
+        'type': 'standardExercise',
+        'sortOrder': 0,
+        'slotIds': ['resume-slot'],
+        'slotStartOrder': 0,
+        'slotCount': 1,
+        'title': null,
+        'notes': null,
+      };
+      final slot = {
+        'slotId': 'resume-slot',
+        'blockId': 'resume-block',
+        'blockSortOrder': 0,
+        'slotOrder': 0,
+        'exerciseId': 'ex1',
+        'exerciseVersion': 1,
+        'sortOrder': 0,
+        'exerciseName': null,
+        'prescription': {
+          'mode': 'reps',
+          'sets': 3,
+          'reps': '10',
+          'durationSeconds': null,
+          'weight': null,
+          'restSeconds': null,
+          'notes': null,
+        },
+      };
+      await versionRef.set({
+        'versionNumber': 1,
+        'publishedAt': DateTime(2026, 1, 1),
+        'storageFormat': 'typedWorkoutBlocksV1',
+        'publishState': 'draft',
+        'ownerId': 'user1',
+        'blockCount': 1,
+        'slotCount': 1,
+        'blockIds': ['resume-block'],
+        'slotIds': ['resume-slot'],
+        'blocks': [block],
+        'slots': [slot],
+        'childWorkouts': <Map<String, dynamic>>[],
+      });
+      await versionRef
+          .collection('workoutBlocks')
+          .doc('resume-block')
+          .set(block);
+      await versionRef.collection('exerciseSlots').doc('resume-slot').set(slot);
+
+      final published = await repo.publishVersion(
+        templateId: id,
+        userId: 'user1',
+        blocks: [
+          StandardExerciseBlock(
+            blockId: 'resume-block',
+            sortOrder: 0,
+            exercise: ExerciseSlot(
+              slotId: 'resume-slot',
+              exerciseId: 'ex1',
+              exerciseVersion: 1,
+              sortOrder: 0,
+              mode: ExerciseMode.reps,
+              sets: 3,
+              reps: '10',
+            ),
+          ),
+        ],
+      );
+
+      expect(published, 1);
+      expect((await versionRef.get()).data()!['publishState'], 'published');
+      expect(
+        (await fakeFirestore.collection('workoutTemplates').doc(id).get())
+            .data()!['currentVersion'],
+        1,
+      );
+    });
+
+    test('replaces an owned stale draft before publishing', () async {
+      final id = await repo.create(
+        name: 'Replace Draft',
+        workoutType: WorkoutType.pull,
+        userId: 'user1',
+      );
+      final versionRef = fakeFirestore
+          .collection('workoutTemplates')
+          .doc(id)
+          .collection('workoutTemplateVersions')
+          .doc('1');
+      await versionRef.set({
+        'versionNumber': 1,
+        'storageFormat': 'typedWorkoutBlocksV1',
+        'publishState': 'draft',
+        'ownerId': 'user1',
+        'blockCount': 0,
+        'slotCount': 0,
+        'blockIds': <String>[],
+        'slotIds': <String>[],
+        'blocks': <Map<String, dynamic>>[],
+        'slots': <Map<String, dynamic>>[],
+      });
+
+      await repo.publishVersion(
+        templateId: id,
+        userId: 'user1',
+        blocks: [
+          StandardExerciseBlock(
+            blockId: 'replacement-block',
+            sortOrder: 0,
+            exercise: ExerciseSlot(
+              slotId: 'replacement-slot',
+              exerciseId: 'ex1',
+              sortOrder: 0,
+              mode: ExerciseMode.reps,
+            ),
+          ),
+        ],
+      );
+
+      final data = (await versionRef.get()).data()!;
+      expect(data['publishState'], 'published');
+      expect(data['blockIds'], ['replacement-block']);
+      expect(data['slotIds'], ['replacement-slot']);
+    });
+
+    test('legacy array prescriptions read as deterministic standard blocks',
+        () async {
+      await fakeFirestore.collection('workoutTemplates').doc('legacy').set({
+        'ownerId': 'user1',
+        'createdBy': 'user1',
+        'currentVersion': 1,
+      });
+      await fakeFirestore
+          .collection('workoutTemplates')
+          .doc('legacy')
+          .collection('workoutTemplateVersions')
+          .doc('1')
+          .set({
+        'versionNumber': 1,
+        'publishedAt': DateTime(2024, 1, 1),
+        'exercises': [
+          {
+            'exerciseId': 'ex1',
+            'sortOrder': 5,
+            'mode': 'reps',
+            'sets': 3,
+            'reps': '5',
+          },
+          {
+            'exerciseId': 'ex1',
+            'sortOrder': 7,
+            'mode': 'amrap',
+            'durationSeconds': 60,
+          },
+        ],
+      });
+
+      final version = await repo.getVersion('legacy', 1);
+
+      expect(version!.blocks, everyElement(isA<StandardExerciseBlock>()));
+      expect(version.exerciseSlots.map((slot) => slot.slotId), [
+        'legacy-slot-0',
+        'legacy-slot-1',
+      ]);
+      expect(version.exerciseSlots.map((slot) => slot.exerciseId), [
+        'ex1',
+        'ex1',
+      ]);
+      expect(
+        version.exerciseSlots.map((slot) => slot.legacyStorageOrder),
+        [0, 1],
+      );
+    });
+
+    test('legacy prescription gaps preserve storage order for completion',
+        () async {
+      final versionRef = fakeFirestore
+          .collection('workoutTemplates')
+          .doc('legacy-subcollection')
+          .collection('workoutTemplateVersions')
+          .doc('1');
+      await fakeFirestore
+          .collection('workoutTemplates')
+          .doc('legacy-subcollection')
+          .set({
+        'ownerId': 'user1',
+        'createdBy': 'user1',
+        'currentVersion': 1,
+      });
+      await versionRef.set({
+        'versionNumber': 1,
+        'storageFormat': 'exercisePrescriptionSubcollection',
+        'prescriptionCount': 2,
+      });
+      await versionRef.collection('exercisePrescriptions').doc('5').set({
+        'exerciseId': 'ex1',
+        'sortOrder': 5,
+        'prescription': {'mode': 'reps'},
+      });
+      await versionRef.collection('exercisePrescriptions').doc('7').set({
+        'exerciseId': 'ex2',
+        'sortOrder': 7,
+        'prescription': {'mode': 'time'},
+      });
+
+      final version = await repo.getVersion('legacy-subcollection', 1);
+
+      expect(version!.exerciseSlots.map((slot) => slot.slotId), [
+        'legacy-slot-5',
+        'legacy-slot-7',
+      ]);
+      expect(
+        version.exerciseSlots.map((slot) => slot.legacyStorageOrder),
+        [5, 7],
+      );
+    });
+
     test('updates owner-scoped organization without publishing', () async {
       final folders = LibraryFolderRepository(
         firestore: fakeFirestore,

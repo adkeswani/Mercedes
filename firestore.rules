@@ -244,10 +244,18 @@ service cloud.firestore {
 
     function publishesNextWorkoutVersion(templateId) {
       let nextVersion = templateVersion(resource.data) + 1;
+      let version = getAfter(
+        /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(nextVersion)
+      );
       return request.resource.data.currentVersion == nextVersion
-             && existsAfter(
-               /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(nextVersion)
-             );
+             && version != null
+             && (!('publishState' in version.data)
+                 || (version.data.publishState == 'published'
+                     && hasAllTypedBlockChildren(
+                          templateId,
+                          string(nextVersion),
+                          version.data
+                        )));
     }
 
     function publishesNextProgramVersion(programId) {
@@ -263,10 +271,311 @@ service cloud.firestore {
         /databases/$(database)/documents/exerciseTemplates/$(exerciseId)
       ).data;
       return templateOwner(exercise) == request.auth.uid
-             && ((templateVersion(exercise) == 0 && versionNumber == 1)
-                 || exists(
-                      /databases/$(database)/documents/exerciseTemplates/$(exerciseId)/exerciseVersions/$(versionNumber)
-                    ));
+             && ((!('currentVersion' in exercise) && versionNumber == 1)
+                 || ('currentVersion' in exercise
+                     && exercise.currentVersion >= 1
+                     && versionNumber >= 1
+                     && versionNumber <= templateVersion(exercise)));
+    }
+
+    function hasValidWorkoutBlock(data) {
+      return data.keys().hasOnly([
+               'blockId', 'type', 'sortOrder', 'title', 'notes', 'rounds',
+               'workSeconds', 'restSeconds', 'restBetweenRoundsSeconds',
+               'grade', 'color', 'targetAttempts', 'slotIds',
+               'slotStartOrder', 'slotCount'
+             ])
+             && data.blockId is string
+             && data.blockId.size() > 0
+             && data.sortOrder is int
+             && data.sortOrder >= 0
+             && data.slotIds is list
+             && data.slotIds.size() >= 1
+             && data.slotIds.size() <= 9
+             && data.slotIds.toSet().size() == data.slotIds.size()
+             && data.slotStartOrder is int
+             && data.slotStartOrder >= 0
+             && data.slotCount == data.slotIds.size()
+             && data.type in [
+                  'standardExercise', 'timedInterval', 'circuit',
+                  'climbingRoute'
+                ]
+             && (!(data.type in ['standardExercise', 'climbingRoute'])
+                 || data.slotCount == 1)
+             && (data.type != 'timedInterval'
+                 || (data.rounds is int
+                     && data.rounds >= 1
+                     && data.workSeconds is int
+                     && data.workSeconds >= 1
+                     && data.restSeconds is int
+                     && data.restSeconds >= 0))
+             && (data.type != 'circuit'
+                 || (data.rounds is int
+                     && data.rounds >= 1
+                     && data.restBetweenRoundsSeconds is int
+                     && data.restBetweenRoundsSeconds >= 0))
+             && (data.type != 'climbingRoute'
+                 || (data.grade is string
+                     && data.grade.size() > 0
+                     && data.color is string
+                     && data.color.size() > 0
+                     && (!('targetAttempts' in data)
+                         || data.targetAttempts == null
+                         || (data.targetAttempts is int
+                             && data.targetAttempts >= 1))));
+    }
+
+    function hasValidWorkoutSlot(data) {
+      return data.keys().hasOnly([
+               'slotId', 'blockId', 'exerciseId', 'exerciseVersion',
+               'sortOrder', 'exerciseName', 'prescription',
+               'blockSortOrder', 'slotOrder'
+             ])
+             && data.slotId is string
+             && data.slotId.size() > 0
+             && data.blockId is string
+             && data.blockId.size() > 0
+             && data.blockSortOrder is int
+             && data.blockSortOrder >= 0
+             && data.slotOrder is int
+             && data.slotOrder >= 0
+             && data.sortOrder is int
+             && data.sortOrder >= 0
+             && data.exerciseId is string
+             && data.exerciseId.size() > 0
+             && data.exerciseVersion is int
+             && data.exerciseVersion >= 1
+             && data.prescription is map;
+    }
+
+    function hasValidTypedWorkoutVersion(data) {
+      return data.blockCount is int
+             && data.blockCount >= 0
+             && data.blockCount <= 9
+             && data.slotCount is int
+             && data.slotCount >= 0
+             && data.slotCount <= 9
+             && data.blockIds is list
+             && data.blockIds.size() == data.blockCount
+             && data.blockIds.toSet().size() == data.blockIds.size()
+             && data.slotIds is list
+             && data.slotIds.size() == data.slotCount
+             && data.slotIds.toSet().size() == data.slotIds.size()
+             && data.blocks is list
+             && data.blocks.size() == data.blockCount
+             && data.slots is list
+             && data.slots.size() == data.slotCount
+             && (data.blockCount != 0 || data.slotCount == 0);
+    }
+
+    function hasTypedBlockChild(templateId, versionNumber, data, index) {
+      return data.blockCount <= index
+             || existsAfter(
+                  /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)/workoutBlocks/$(data.blockIds[index])
+                );
+    }
+
+    function hasTypedSlotChild(templateId, versionNumber, data, index) {
+      return data.slotCount <= index
+             || existsAfter(
+                  /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)/exerciseSlots/$(data.slotIds[index])
+                );
+    }
+
+    function hasAllTypedBlockChildren(templateId, versionNumber, data) {
+      return hasTypedBlockChild(templateId, versionNumber, data, 0)
+             && hasTypedBlockChild(templateId, versionNumber, data, 1)
+             && hasTypedBlockChild(templateId, versionNumber, data, 2)
+             && hasTypedBlockChild(templateId, versionNumber, data, 3)
+             && hasTypedBlockChild(templateId, versionNumber, data, 4)
+             && hasTypedBlockChild(templateId, versionNumber, data, 5)
+             && hasTypedBlockChild(templateId, versionNumber, data, 6)
+             && hasTypedBlockChild(templateId, versionNumber, data, 7)
+             && hasTypedBlockChild(templateId, versionNumber, data, 8);
+    }
+
+    function hasAllTypedSlotChildren(templateId, versionNumber, data) {
+      return hasTypedSlotChild(templateId, versionNumber, data, 0)
+             && hasTypedSlotChild(templateId, versionNumber, data, 1)
+             && hasTypedSlotChild(templateId, versionNumber, data, 2)
+             && hasTypedSlotChild(templateId, versionNumber, data, 3)
+             && hasTypedSlotChild(templateId, versionNumber, data, 4)
+             && hasTypedSlotChild(templateId, versionNumber, data, 5)
+             && hasTypedSlotChild(templateId, versionNumber, data, 6)
+             && hasTypedSlotChild(templateId, versionNumber, data, 7)
+             && hasTypedSlotChild(templateId, versionNumber, data, 8);
+    }
+
+    function hasNoTypedBlockChild(templateId, versionNumber, data, index) {
+      return data.blockCount <= index
+             || !existsAfter(
+                  /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)/workoutBlocks/$(data.blockIds[index])
+                );
+    }
+
+    function hasNoTypedSlotChild(templateId, versionNumber, data, index) {
+      return data.slotCount <= index
+             || !existsAfter(
+                  /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)/exerciseSlots/$(data.slotIds[index])
+                );
+    }
+
+    function hasNoTypedBlockChildren(templateId, versionNumber, data) {
+      return hasNoTypedBlockChild(templateId, versionNumber, data, 0)
+             && hasNoTypedBlockChild(templateId, versionNumber, data, 1)
+             && hasNoTypedBlockChild(templateId, versionNumber, data, 2)
+             && hasNoTypedBlockChild(templateId, versionNumber, data, 3)
+             && hasNoTypedBlockChild(templateId, versionNumber, data, 4)
+             && hasNoTypedBlockChild(templateId, versionNumber, data, 5)
+             && hasNoTypedBlockChild(templateId, versionNumber, data, 6)
+             && hasNoTypedBlockChild(templateId, versionNumber, data, 7)
+             && hasNoTypedBlockChild(templateId, versionNumber, data, 8);
+    }
+
+    function hasNoTypedSlotChildren(templateId, versionNumber, data) {
+      return hasNoTypedSlotChild(templateId, versionNumber, data, 0)
+             && hasNoTypedSlotChild(templateId, versionNumber, data, 1)
+             && hasNoTypedSlotChild(templateId, versionNumber, data, 2)
+             && hasNoTypedSlotChild(templateId, versionNumber, data, 3)
+             && hasNoTypedSlotChild(templateId, versionNumber, data, 4)
+             && hasNoTypedSlotChild(templateId, versionNumber, data, 5)
+             && hasNoTypedSlotChild(templateId, versionNumber, data, 6)
+             && hasNoTypedSlotChild(templateId, versionNumber, data, 7)
+             && hasNoTypedSlotChild(templateId, versionNumber, data, 8);
+    }
+
+    function blockSlotMatchesManifest(version, block, index) {
+      return block.slotCount <= index
+             || (block.slotStartOrder + index < version.slotCount
+                 && block.slotIds[index]
+                    == version.slotIds[block.slotStartOrder + index]);
+    }
+
+    function hasValidBlockManifestRange(version, block) {
+      return block.sortOrder < version.blockCount
+             && version.blockIds[block.sortOrder] == block.blockId
+             && (block.sortOrder != 0 || block.slotStartOrder == 0)
+             && (block.sortOrder == 0
+                 || block.slotStartOrder
+                    == version.blocks[block.sortOrder - 1].slotStartOrder
+                       + version.blocks[block.sortOrder - 1].slotCount)
+             && (block.sortOrder != version.blockCount - 1
+                 || block.slotStartOrder + block.slotCount
+                    == version.slotCount)
+             && blockSlotMatchesManifest(version, block, 0)
+             && blockSlotMatchesManifest(version, block, 1)
+             && blockSlotMatchesManifest(version, block, 2)
+             && blockSlotMatchesManifest(version, block, 3)
+             && blockSlotMatchesManifest(version, block, 4)
+             && blockSlotMatchesManifest(version, block, 5)
+             && blockSlotMatchesManifest(version, block, 6)
+             && blockSlotMatchesManifest(version, block, 7)
+             && blockSlotMatchesManifest(version, block, 8);
+    }
+
+    function canReadWorkoutVersionChild(templateId, versionNumber) {
+      let version = get(
+        /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+      ).data;
+      return isSignedIn()
+             && (!('publishState' in version)
+                 || version.publishState == 'published'
+                 || version.ownerId == request.auth.uid);
+    }
+
+    function canDeleteDraftWorkoutVersionChild(templateId, versionNumber) {
+      let version = get(
+        /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+      ).data;
+      return isSignedIn()
+             && version.storageFormat == 'typedWorkoutBlocksV1'
+             && version.publishState == 'deleting'
+             && version.ownerId == request.auth.uid
+             && templateVersion(
+                  get(
+                    /databases/$(database)/documents/workoutTemplates/$(templateId)
+                  ).data
+                ) + 1 == version.versionNumber;
+    }
+
+    function workoutInstanceData(instanceId) {
+      return get(
+        /databases/$(database)/documents/workoutInstances/$(instanceId)
+      ).data;
+    }
+
+    function workoutVersionData(instanceId) {
+      let instance = workoutInstanceData(instanceId);
+      return get(
+        /databases/$(database)/documents/workoutTemplates/$(instance.workoutTemplateId)/workoutTemplateVersions/$(instance.workoutTemplateVersion)
+      ).data;
+    }
+
+    function hasValidResultSlot(instanceId, slotId, data) {
+      let instance = workoutInstanceData(instanceId);
+      let version = workoutVersionData(instanceId);
+      return (version.storageFormat == 'typedWorkoutBlocksV1'
+              && version.slots is list
+              && data.slotOrder < version.slots.size()
+              && version.slots[data.slotOrder].slotId == slotId
+              && version.slots[data.slotOrder].exerciseId == data.exerciseId)
+             || (version.storageFormat == 'typedWorkoutBlocksV1'
+              && !('slots' in version)
+              && exists(
+                   /databases/$(database)/documents/workoutTemplates/$(instance.workoutTemplateId)/workoutTemplateVersions/$(instance.workoutTemplateVersion)/exerciseSlots/$(data.slotOrder)
+                 )
+              && get(
+                   /databases/$(database)/documents/workoutTemplates/$(instance.workoutTemplateId)/workoutTemplateVersions/$(instance.workoutTemplateVersion)/exerciseSlots/$(data.slotOrder)
+                 ).data.slotId == slotId
+              && get(
+                   /databases/$(database)/documents/workoutTemplates/$(instance.workoutTemplateId)/workoutTemplateVersions/$(instance.workoutTemplateVersion)/exerciseSlots/$(data.slotOrder)
+                 ).data.exerciseId == data.exerciseId)
+             || (version.storageFormat
+                    == 'exercisePrescriptionSubcollection'
+                 && exists(
+                      /databases/$(database)/documents/workoutTemplates/$(instance.workoutTemplateId)/workoutTemplateVersions/$(instance.workoutTemplateVersion)/exercisePrescriptions/$(data.slotOrder)
+                    )
+                 && slotId == 'legacy-slot-' + string(data.slotOrder)
+                 && get(
+                      /databases/$(database)/documents/workoutTemplates/$(instance.workoutTemplateId)/workoutTemplateVersions/$(instance.workoutTemplateVersion)/exercisePrescriptions/$(data.slotOrder)
+                    ).data.exerciseId == data.exerciseId)
+             || (!('storageFormat' in version)
+                 && version.exercises is list
+                 && data.slotOrder < version.exercises.size()
+                 && slotId == 'legacy-slot-' + string(data.slotOrder)
+                 && version.exercises[data.slotOrder].exerciseId
+                    == data.exerciseId);
+    }
+
+    function hasValidSlotResult(data) {
+      return data.keys().hasOnly([
+               'exerciseId', 'mode', 'sets', 'reps', 'durationSeconds',
+               'weight', 'restSeconds', 'notes', 'slotOrder'
+             ])
+             && data.exerciseId is string
+             && data.exerciseId.size() > 0
+             && data.slotOrder is int
+             && data.slotOrder >= 0
+             && data.mode in ['reps', 'time', 'amrap']
+             && (!('sets' in data)
+                 || data.sets == null
+                 || (data.sets is int && data.sets >= 1))
+             && (!('reps' in data)
+                 || data.reps == null
+                 || data.reps is string)
+             && (!('durationSeconds' in data)
+                 || data.durationSeconds == null
+                 || (data.durationSeconds is int
+                     && data.durationSeconds >= 0))
+             && (!('weight' in data)
+                 || data.weight == null
+                 || data.weight is string)
+             && (!('restSeconds' in data)
+                 || data.restSeconds == null
+                 || (data.restSeconds is int && data.restSeconds >= 0))
+             && (!('notes' in data)
+                 || data.notes == null
+                 || data.notes is string);
     }
 
     function isProgramAssignable(programId) {
@@ -294,6 +603,102 @@ service cloud.firestore {
              || (('programOwnerId' in resource.data)
                 && request.resource.data.programOwnerId
                    == resource.data.programOwnerId);
+    }
+
+    function isProgramOwnerBackfill() {
+      return !('programOwnerId' in resource.data)
+             && request.resource.data.diff(resource.data)
+                 .affectedKeys().hasOnly(['programOwnerId'])
+             && hasValidProgramOwner(request.resource.data);
+    }
+
+    function isAthleteCompletionUpdate() {
+      let changed =
+        request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly([
+               'status', 'completedAt', 'rpe', 'durationMinutes',
+               'loadPoints', 'loadStrategyId', 'athleteNotes',
+               'actualsStorageFormat', 'actualSlotIds', 'actualsBySlot',
+               'actuals', 'updatedAt'
+             ])
+             && request.resource.data.status == 'completed'
+             && resource.data.status in ['scheduled', 'completed'];
+    }
+
+    function isOwnerSchedulingUpdate() {
+      return resource.data.status == 'scheduled'
+             && request.resource.data.status in ['scheduled', 'cancelled']
+             && request.resource.data.diff(resource.data)
+                 .affectedKeys().hasOnly([
+                   'status', 'scheduledDate', 'workoutTemplateId',
+                   'workoutTemplateVersion', 'workoutType', 'updatedAt'
+                 ]);
+    }
+
+    function hasDeclaredSlotResult(instanceId, data, index) {
+      return data.actualSlotIds.size() <= index
+             || existsAfter(
+                 /databases/$(database)/documents/workoutInstances/$(instanceId)/slotResults/$(data.actualSlotIds[index])
+                );
+    }
+
+    function hasCompleteDeclaredSlotResults(instanceId, data) {
+      return data.actualsStorageFormat == 'slotResultsSubcollection'
+             && data.actualSlotIds is list
+             && data.actualSlotIds.size() <= 9
+             && data.actualSlotIds.toSet().size()
+                == data.actualSlotIds.size()
+             && hasDeclaredSlotResult(instanceId, data, 0)
+             && hasDeclaredSlotResult(instanceId, data, 1)
+             && hasDeclaredSlotResult(instanceId, data, 2)
+             && hasDeclaredSlotResult(instanceId, data, 3)
+             && hasDeclaredSlotResult(instanceId, data, 4)
+             && hasDeclaredSlotResult(instanceId, data, 5)
+             && hasDeclaredSlotResult(instanceId, data, 6)
+             && hasDeclaredSlotResult(instanceId, data, 7)
+             && hasDeclaredSlotResult(instanceId, data, 8)
+             && hasRemovedOldSlotResult(instanceId, data, 0)
+             && hasRemovedOldSlotResult(instanceId, data, 1)
+             && hasRemovedOldSlotResult(instanceId, data, 2)
+             && hasRemovedOldSlotResult(instanceId, data, 3)
+             && hasRemovedOldSlotResult(instanceId, data, 4)
+             && hasRemovedOldSlotResult(instanceId, data, 5)
+             && hasRemovedOldSlotResult(instanceId, data, 6)
+             && hasRemovedOldSlotResult(instanceId, data, 7)
+             && hasRemovedOldSlotResult(instanceId, data, 8);
+    }
+
+    function hasRemovedOldSlotResult(instanceId, data, index) {
+      return !('actualSlotIds' in resource.data)
+             || resource.data.actualSlotIds.size() <= index
+             || data.actualSlotIds.hasAny([
+                  resource.data.actualSlotIds[index]
+                ])
+             || !existsAfter(
+                  /databases/$(database)/documents/workoutInstances/$(instanceId)/slotResults/$(resource.data.actualSlotIds[index])
+                );
+    }
+
+    function hasValidLegacyActualsChange(instanceId) {
+      let changed =
+        request.resource.data.diff(resource.data).affectedKeys();
+      return !changed.hasAny(['actuals'])
+             || (request.resource.data.actuals is list
+                 && request.resource.data.actuals.size() <= 9
+                 && !('actualsBySlot' in resource.data)
+                 && (!('actualSlotIds' in resource.data)
+                     || resource.data.actualSlotIds.size() == 0))
+             || (!('actuals' in request.resource.data)
+                 && request.resource.data.actualsStorageFormat
+                    == 'slotResultsSubcollection'
+                 && ((resource.data.actuals is list
+                      && resource.data.actuals.size() == 0)
+                     || (request.resource.data.actualSlotIds is list
+                         && request.resource.data.actualSlotIds.size() > 0
+                         && hasCompleteDeclaredSlotResults(
+                              instanceId,
+                              request.resource.data
+                            ))));
     }
 
     // ── Users ──
@@ -567,7 +972,10 @@ service cloud.firestore {
 
       // Workout template versions (subcollection)
       match /workoutTemplateVersions/{versionNumber} {
-        allow read: if isSignedIn();
+        allow read: if isSignedIn()
+                    && (!('publishState' in resource.data)
+                        || resource.data.publishState == 'published'
+                        || resource.data.ownerId == request.auth.uid);
         allow create: if isSignedIn()
                        && templateOwner(
                            get(/databases/$(database)/documents/workoutTemplates/$(templateId)).data)
@@ -575,22 +983,207 @@ service cloud.firestore {
                        && versionNumber
                           == string(request.resource.data.versionNumber)
                        && request.resource.data.versionNumber >= 1
-                       && request.resource.data.storageFormat
-                          == 'exercisePrescriptionSubcollection'
                        && !('exercises' in request.resource.data)
-                       && request.resource.data.prescriptionCount is int
-                       && request.resource.data.prescriptionCount >= 0
-                       && request.resource.data.prescriptionCount <= 9
+                       && ((request.resource.data.storageFormat
+                              == 'exercisePrescriptionSubcollection'
+                            && request.resource.data.prescriptionCount is int
+                            && request.resource.data.prescriptionCount >= 0
+                            && request.resource.data.prescriptionCount <= 9
+                            && getAfter(
+                                 /databases/$(database)/documents/workoutTemplates/$(templateId)
+                               ).data.currentVersion
+                               == request.resource.data.versionNumber)
+                           || (request.resource.data.storageFormat
+                                == 'typedWorkoutBlocksV1'
+                               && hasValidTypedWorkoutVersion(
+                                    request.resource.data
+                                  )
+                               && request.resource.data.ownerId
+                                  == request.auth.uid
+                               && request.resource.data.publishState == 'draft'
+                               && getAfter(
+                                    /databases/$(database)/documents/workoutTemplates/$(templateId)
+                                  ).data.currentVersion
+                                  == templateVersion(
+                                       get(
+                                         /databases/$(database)/documents/workoutTemplates/$(templateId)
+                                       ).data
+                                     )))
                        && templateVersion(
                             get(
                               /databases/$(database)/documents/workoutTemplates/$(templateId)
                             ).data
-                          ) + 1 == request.resource.data.versionNumber
-                       && getAfter(
-                            /databases/$(database)/documents/workoutTemplates/$(templateId)
-                          ).data.currentVersion
-                          == request.resource.data.versionNumber;
-        allow update, delete: if false;
+                          ) + 1 == request.resource.data.versionNumber;
+        allow update: if isSignedIn()
+                      && resource.data.storageFormat
+                         == 'typedWorkoutBlocksV1'
+                      && resource.data.ownerId == request.auth.uid
+                      && ((resource.data.publishState == 'draft'
+                           && request.resource.data.publishState == 'published'
+                           && request.resource.data.diff(resource.data)
+                                .affectedKeys().hasOnly(['publishState'])
+                           && getAfter(
+                                /databases/$(database)/documents/workoutTemplates/$(templateId)
+                              ).data.currentVersion
+                              == request.resource.data.versionNumber
+                           && hasAllTypedSlotChildren(
+                                templateId,
+                                versionNumber,
+                                request.resource.data
+                              ))
+                          || (resource.data.publishState == 'draft'
+                              && request.resource.data.publishState
+                                 == 'deleting'
+                              && request.resource.data.diff(resource.data)
+                                   .affectedKeys().hasOnly(['publishState'])
+                              && templateVersion(
+                                   get(
+                                     /databases/$(database)/documents/workoutTemplates/$(templateId)
+                                   ).data
+                                 ) + 1
+                                 == resource.data.versionNumber)
+                          || (resource.data.publishState == 'deleting'
+                              && request.resource.data.publishState
+                                 == 'deleting'
+                              && 'blocksCleared' in request.resource.data
+                              && request.resource.data.blocksCleared == true
+                              && request.resource.data.diff(resource.data)
+                                   .affectedKeys().hasOnly(['blocksCleared'])
+                              && hasNoTypedBlockChildren(
+                                   templateId,
+                                   versionNumber,
+                                   request.resource.data
+                                 ))
+                          || (resource.data.publishState == 'deleting'
+                              && request.resource.data.publishState
+                                 == 'deleting'
+                              && 'slotsCleared' in request.resource.data
+                              && request.resource.data.slotsCleared == true
+                              && request.resource.data.diff(resource.data)
+                                   .affectedKeys().hasOnly(['slotsCleared'])
+                              && hasNoTypedSlotChildren(
+                                   templateId,
+                                   versionNumber,
+                                   request.resource.data
+                                 )));
+        allow delete: if isSignedIn()
+                      && resource.data.storageFormat
+                         == 'typedWorkoutBlocksV1'
+                      && resource.data.publishState == 'deleting'
+                      && resource.data.ownerId == request.auth.uid
+                      && 'blocksCleared' in resource.data
+                      && resource.data.blocksCleared == true
+                      && 'slotsCleared' in resource.data
+                      && resource.data.slotsCleared == true
+                      && templateVersion(
+                           get(
+                             /databases/$(database)/documents/workoutTemplates/$(templateId)
+                           ).data
+                         ) + 1 == resource.data.versionNumber;
+
+        match /workoutBlocks/{blockId} {
+          allow read: if canReadWorkoutVersionChild(
+                           templateId,
+                           versionNumber
+                         );
+          allow create: if isSignedIn()
+                         && blockId == request.resource.data.blockId
+                         && hasValidWorkoutBlock(request.resource.data)
+                         && !exists(
+                             /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                           )
+                         && getAfter(
+                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                            ).data.storageFormat == 'typedWorkoutBlocksV1'
+                         && getAfter(
+                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                            ).data.publishState == 'draft'
+                         && getAfter(
+                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                            ).data.ownerId == request.auth.uid
+                         && request.resource.data
+                            == getAfter(
+                                /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                              ).data.blocks[request.resource.data.sortOrder]
+                         && hasValidBlockManifestRange(
+                              getAfter(
+                                /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                              ).data,
+                              request.resource.data
+                            );
+          allow update: if false;
+          allow delete: if canDeleteDraftWorkoutVersionChild(
+                             templateId,
+                             versionNumber
+                           );
+        }
+
+        match /exerciseSlots/{slotId} {
+          allow read: if canReadWorkoutVersionChild(
+                           templateId,
+                           versionNumber
+                         );
+          allow create: if isSignedIn()
+                         && slotId == request.resource.data.slotId
+                         && hasValidWorkoutSlot(request.resource.data)
+                         && isOwnedExerciseVersion(
+                              request.resource.data.exerciseId,
+                              request.resource.data.exerciseVersion
+                            )
+                         && !exists(
+                             /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                           )
+                         && getAfter(
+                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                            ).data.storageFormat == 'typedWorkoutBlocksV1'
+                         && getAfter(
+                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                            ).data.publishState == 'draft'
+                         && getAfter(
+                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                            ).data.ownerId == request.auth.uid
+                         && request.resource.data
+                            == getAfter(
+                                /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                              ).data.slots[request.resource.data.slotOrder]
+                         && getAfter(
+                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                            ).data.slotIds[request.resource.data.slotOrder]
+                            == slotId
+                         && request.resource.data.blockSortOrder
+                            < getAfter(
+                                /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                              ).data.blockCount
+                         && getAfter(
+                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                            ).data.blocks[
+                              request.resource.data.blockSortOrder
+                            ].blockId == request.resource.data.blockId
+                         && request.resource.data.sortOrder
+                            < getAfter(
+                                /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                              ).data.blocks[
+                                request.resource.data.blockSortOrder
+                              ].slotCount
+                         && getAfter(
+                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                            ).data.blocks[
+                              request.resource.data.blockSortOrder
+                            ].slotIds[request.resource.data.sortOrder]
+                            == slotId
+                         && request.resource.data.slotOrder
+                            == getAfter(
+                                 /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                               ).data.blocks[
+                                 request.resource.data.blockSortOrder
+                               ].slotStartOrder
+                               + request.resource.data.sortOrder;
+          allow update: if false;
+          allow delete: if canDeleteDraftWorkoutVersionChild(
+                             templateId,
+                             versionNumber
+                           );
+        }
 
         match /exercisePrescriptions/{sortOrder} {
           allow read: if isSignedIn();
@@ -810,6 +1403,17 @@ service cloud.firestore {
                         || resource.data.programOwnerId == request.auth.uid);
       allow create: if isSignedIn()
                       && request.resource.data.assignedBy == request.auth.uid
+                      && (!('actuals' in request.resource.data)
+                          || (request.resource.data.actuals is list
+                              && request.resource.data.actuals.size() == 0))
+                      && (!('actualsBySlot' in request.resource.data)
+                          || (request.resource.data.actualsBySlot is map
+                              && request.resource.data.actualsBySlot.size()
+                                 == 0))
+                      && (!('actualSlotIds' in request.resource.data)
+                          || (request.resource.data.actualSlotIds is list
+                              && request.resource.data.actualSlotIds.size()
+                                 == 0))
                       && hasValidProgramOwner(request.resource.data)
                       && hasActiveRelationshipForProgram(request.resource.data)
                       && (isProgramOwner(request.resource.data.programId)
@@ -819,18 +1423,68 @@ service cloud.firestore {
                                    request.resource.data.programId)));
       allow update: if isSignedIn()
                       && preservesProgramOwner()
-                      && (resource.data.athleteId == request.auth.uid
+                      && hasValidLegacyActualsChange(instanceId)
+                      && (!request.resource.data.diff(resource.data)
+                            .affectedKeys().hasAny(['actualsBySlot'])
+                          || !('actualsBySlot' in request.resource.data))
+                      && (!request.resource.data.diff(resource.data)
+                            .affectedKeys().hasAny([
+                              'actualSlotIds', 'actualsStorageFormat'
+                            ])
+                          || hasCompleteDeclaredSlotResults(
+                               instanceId,
+                               request.resource.data
+                             ))
+                      && ((resource.data.athleteId == request.auth.uid
+                           && (isAthleteCompletionUpdate()
+                               || isProgramOwnerBackfill()))
                           || (isProgramOwner(resource.data.programId)
                               && hasActiveRelationshipForProgram(resource.data)
-                              && request.resource.data.diff(resource.data)
-                                   .affectedKeys()
-                                   .hasOnly(['status', 'scheduledDate',
-                                             'workoutTemplateId',
-                                             'workoutTemplateVersion',
-                                             'workoutType', 'updatedAt'])));
+                              && isOwnerSchedulingUpdate()));
       allow delete: if isSignedIn()
                       && (resource.data.athleteId == request.auth.uid
                           || resource.data.assignedBy == request.auth.uid);
+
+      match /slotResults/{slotId} {
+        allow read: if isSignedIn()
+                    && (workoutInstanceData(instanceId).athleteId
+                          == request.auth.uid
+                        || workoutInstanceData(instanceId).assignedBy
+                          == request.auth.uid
+                        || workoutInstanceData(instanceId).programOwnerId
+                          == request.auth.uid);
+        allow create, update: if isSignedIn()
+                              && getAfter(
+                                   /databases/$(database)/documents/workoutInstances/$(instanceId)
+                                 ).data.athleteId == request.auth.uid
+                              && getAfter(
+                                   /databases/$(database)/documents/workoutInstances/$(instanceId)
+                                 ).data.status == 'completed'
+                              && getAfter(
+                                   /databases/$(database)/documents/workoutInstances/$(instanceId)
+                                 ).data.actualsStorageFormat
+                                 == 'slotResultsSubcollection'
+                              && getAfter(
+                                   /databases/$(database)/documents/workoutInstances/$(instanceId)
+                                 ).data.actualSlotIds.hasAny([slotId])
+                              && hasValidSlotResult(request.resource.data)
+                              && hasValidResultSlot(
+                                   instanceId,
+                                   slotId,
+                                   request.resource.data
+                                 );
+        allow delete: if isSignedIn()
+                      && (workoutInstanceData(instanceId).athleteId
+                            == request.auth.uid
+                          || workoutInstanceData(instanceId).assignedBy
+                            == request.auth.uid)
+                      && (!existsAfter(
+                            /databases/$(database)/documents/workoutInstances/$(instanceId)
+                          )
+                          || !getAfter(
+                               /databases/$(database)/documents/workoutInstances/$(instanceId)
+                             ).data.actualSlotIds.hasAny([slotId]));
+      }
     }
   }
 }
