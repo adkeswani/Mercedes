@@ -11,9 +11,29 @@ void main() {
   late FakeFirebaseFirestore fakeFirestore;
   late ProgramRepository repo;
 
-  setUp(() {
+  setUp(() async {
     fakeFirestore = FakeFirebaseFirestore();
     repo = ProgramRepository(firestore: fakeFirestore);
+    for (final templateId in ['wt1', 'wt2']) {
+      final template =
+          fakeFirestore.collection('workoutTemplates').doc(templateId);
+      await template.set({
+        'ownerId': 'coach1',
+        'createdBy': 'coach1',
+        'workoutType': 'strength',
+        'currentVersion': 2,
+      });
+      for (final version in [1, 2]) {
+        await template
+            .collection('workoutTemplateVersions')
+            .doc('$version')
+            .set({
+          'versionNumber': version,
+          'publishedAt': DateTime.utc(2026, 1, version),
+          'publishState': 'published',
+        });
+      }
+    }
   });
 
   group('ProgramRepository', () {
@@ -273,6 +293,15 @@ void main() {
       expect(versionDoc.changeNote, 'Initial publish');
       expect(versionDoc.entries[0].workoutTemplateId, 'wt1');
       expect(versionDoc.entries[1].workoutTemplateId, 'wt2');
+      expect(versionDoc.entries[0].resolvedEntryId, 'legacy-0');
+      expect(versionDoc.propagationState, ProgramPropagationState.pending);
+      final rawVersion = await fakeFirestore
+          .collection('programs')
+          .doc(id)
+          .collection('programVersions')
+          .doc('1')
+          .get();
+      expect(rawVersion.data()!['propagationState'], 'pending');
     });
 
     test('publishVersion increments version number', () async {
@@ -324,6 +353,52 @@ void main() {
       final version2 = await repo.getVersion(id, 2);
       expect(version2!.entries.length, 2);
       expect(version2.changeNote, 'Added second workout');
+    });
+
+    test('publishVersion rejects foreign or unpublished workout pins',
+        () async {
+      final id = await repo.create(
+        name: 'Invalid references',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+      await fakeFirestore.collection('workoutTemplates').doc('foreign').set({
+        'ownerId': 'coach2',
+        'createdBy': 'coach2',
+      });
+
+      await expectLater(
+        repo.publishVersion(
+          programId: id,
+          entries: [
+            ProgramScheduleEntry(
+              entryId: 'foreign-entry',
+              workoutTemplateId: 'foreign',
+              workoutTemplateVersion: 1,
+              dayOffset: 0,
+              sortOrder: 0,
+            ),
+          ],
+          userId: 'coach1',
+        ),
+        throwsStateError,
+      );
+      await expectLater(
+        repo.publishVersion(
+          programId: id,
+          entries: [
+            ProgramScheduleEntry(
+              entryId: 'missing-version',
+              workoutTemplateId: 'wt1',
+              workoutTemplateVersion: 3,
+              dayOffset: 0,
+              sortOrder: 0,
+            ),
+          ],
+          userId: 'coach1',
+        ),
+        throwsStateError,
+      );
     });
 
     test('getVersion returns null for non-existent version', () async {

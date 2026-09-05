@@ -1287,6 +1287,8 @@ void main() {
         expect(programInstance.data()!['sourceProgramId'], 'prog1');
         expect(programInstance.data()!['sourceProgramVersion'], 1);
         expect(programInstance.data()!['relationshipMode'], 'subscribed');
+        expect(programInstance.data()!['propagationState'], 'complete');
+        expect(programInstance.data()!['propagationTargetVersion'], 1);
         expect(programInstance.data()!['startDate'], '2026-06-01');
         expect(programInstance.data()!['expectedEndDate'], '2026-06-04');
 
@@ -1304,6 +1306,8 @@ void main() {
         expect(byTemplate['wt1']!['workoutType'], 'push');
         expect(byTemplate['wt2']!['workoutType'], 'pull');
         expect(byTemplate['wt1']!['programVersion'], 1);
+        expect(byTemplate['wt1']!['programEntryId'], 'legacy-0');
+        expect(byTemplate['wt2']!['programEntryId'], 'legacy-1');
         expect(
           byTemplate['wt1']!['athleteProgramInstanceId'],
           result.programInstanceId,

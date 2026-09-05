@@ -195,11 +195,23 @@ class ProgramVersion {
     required this.publishedAt,
     required this.entries,
     this.changeNote,
+    this.propagationState = ProgramPropagationState.complete,
+    this.propagationAttempt = 0,
+    this.propagationStartedAt,
+    this.propagationCompletedAt,
+    this.propagationFailedAt,
+    this.propagationError,
   });
   final int versionNumber;
   final DateTime publishedAt;
   final List<ProgramScheduleEntry> entries;
   final String? changeNote;
+  final ProgramPropagationState propagationState;
+  final int propagationAttempt;
+  final DateTime? propagationStartedAt;
+  final DateTime? propagationCompletedAt;
+  final DateTime? propagationFailedAt;
+  final String? propagationError;
 
   /// The program length in days, derived from the largest [dayOffset].
   ///
@@ -215,6 +227,13 @@ class ProgramVersion {
     if (versionNumber < 1) {
       throw ArgumentError('versionNumber must be >= 1');
     }
+    if (propagationAttempt < 0) {
+      throw ArgumentError('propagationAttempt must be >= 0');
+    }
+    if (propagationState == ProgramPropagationState.failed &&
+        (propagationError == null || propagationError!.trim().isEmpty)) {
+      throw ArgumentError('propagationError is required for failed jobs');
+    }
 
     for (final entry in entries) {
       entry.validate();
@@ -227,8 +246,16 @@ class ProgramVersion {
         'Schedule entry sortOrder values must be unique within a program version',
       );
     }
+    final entryIds = entries.map((entry) => entry.resolvedEntryId).toSet();
+    if (entryIds.length != entries.length) {
+      throw ArgumentError(
+        'Schedule entry IDs must be unique within a program version',
+      );
+    }
   }
 }
+
+String legacyProgramScheduleEntryId(int sortOrder) => 'legacy-$sortOrder';
 
 /// A single scheduled workout within a program version.
 ///
@@ -242,12 +269,14 @@ class ProgramVersion {
 /// versions retain the name as it was when published.
 class ProgramScheduleEntry {
   ProgramScheduleEntry({
+    this.entryId,
     required this.workoutTemplateId,
     required this.workoutTemplateVersion,
     required this.dayOffset,
     required this.sortOrder,
     this.workoutName,
   });
+  final String? entryId;
   final String workoutTemplateId;
   final int workoutTemplateVersion;
 
@@ -258,8 +287,16 @@ class ProgramScheduleEntry {
   final int sortOrder;
   final String? workoutName;
 
+  /// Stable identity across program versions.
+  ///
+  /// Legacy versions did not persist an ID, so their original sort position
+  /// is used as a deterministic compatibility identity.
+  String get resolvedEntryId =>
+      entryId ?? legacyProgramScheduleEntryId(sortOrder);
+
   /// Creates a copy with the given fields replaced.
   ProgramScheduleEntry copyWith({
+    String? entryId,
     String? workoutTemplateId,
     int? workoutTemplateVersion,
     int? dayOffset,
@@ -267,6 +304,7 @@ class ProgramScheduleEntry {
     String? workoutName,
   }) {
     return ProgramScheduleEntry(
+      entryId: entryId ?? this.entryId,
       workoutTemplateId: workoutTemplateId ?? this.workoutTemplateId,
       workoutTemplateVersion:
           workoutTemplateVersion ?? this.workoutTemplateVersion,
@@ -278,6 +316,13 @@ class ProgramScheduleEntry {
 
   /// Validates entry fields.
   void validate() {
+    if (resolvedEntryId.isEmpty ||
+        resolvedEntryId.contains('/') ||
+        resolvedEntryId.length > 200) {
+      throw ArgumentError(
+        'entryId must be 1-200 characters and cannot contain "/"',
+      );
+    }
     if (workoutTemplateId.isEmpty) {
       throw ArgumentError('workoutTemplateId cannot be empty');
     }

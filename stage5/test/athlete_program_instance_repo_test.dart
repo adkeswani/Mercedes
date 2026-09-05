@@ -1,6 +1,7 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/programs/data/athlete_program_instance_repository.dart';
 
 void main() {
@@ -33,6 +34,13 @@ void main() {
       'unlinkedAt': null,
       'unlinkReason': null,
       'materializationKey': null,
+      'propagationState': 'running',
+      'propagationTargetVersion': 3,
+      'propagationAttempt': 2,
+      'propagationStartedAt': DateTime.utc(2026, 1, 1),
+      'propagationCompletedAt': null,
+      'propagationFailedAt': null,
+      'propagationError': null,
       'createdAt': DateTime.utc(2026, 1, 1),
       'createdBy': 'trainer-1',
       'updatedAt': DateTime.utc(2026, 1, 1),
@@ -52,6 +60,7 @@ void main() {
       'scheduledDate': '2026-01-10',
       'relationshipMode': 'subscribed',
     });
+
     await firestore.collection('workoutInstances').doc('completed').set({
       'athleteProgramInstanceId': 'instance-1',
       'athleteId': 'athlete-1',
@@ -92,6 +101,34 @@ void main() {
     final completed =
         await firestore.collection('workoutInstances').doc('completed').get();
     expect(completed.data()!['relationshipMode'], 'subscribed');
+  });
+
+  test('reads propagation audit state and defaults legacy records safely',
+      () async {
+    await seedSubscription();
+    final current = await repository.getById('instance-1');
+    expect(current!.propagationState, ProgramPropagationState.running);
+    expect(current.propagationTargetVersion, 3);
+    expect(current.propagationAttempt, 2);
+
+    await firestore.collection('athleteProgramInstances').doc('legacy').set({
+      'athleteOwnerId': 'athlete-1',
+      'assigningTrainerId': 'trainer-1',
+      'sourceProgramId': 'program-1',
+      'sourceProgramVersion': 1,
+      'relationshipMode': 'copied',
+      'startDate': '2026-01-01',
+      'expectedEndDate': '2026-01-01',
+      'workoutCount': 1,
+      'status': 'active',
+      'createdAt': DateTime.utc(2026, 1, 1),
+      'createdBy': 'athlete-1',
+      'updatedAt': DateTime.utc(2026, 1, 1),
+      'updatedBy': 'athlete-1',
+    });
+    final legacy = await repository.getById('legacy');
+    expect(legacy!.propagationState, ProgramPropagationState.complete);
+    expect(legacy.propagationAttempt, 0);
   });
 
   test('legacy backfill is conservative, linked, and idempotent', () async {

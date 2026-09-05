@@ -60,6 +60,46 @@ service cloud.firestore {
       return 'currentVersion' in data ? data.currentVersion : 0;
     }
 
+    function hasValidProgramPropagationRequest(data) {
+      return data.keys().hasOnly([
+               'versionNumber', 'publishedAt', 'entries', 'changeNote',
+               'propagationState', 'propagationRequestedAt',
+               'propagationAttempt', 'propagationStartedAt',
+               'propagationCompletedAt', 'propagationFailedAt',
+               'propagationError'
+             ])
+             && (!('propagationState' in data)
+             || (data.propagationState == 'pending'
+                 && data.propagationRequestedAt == request.time
+                 && data.propagationAttempt == 0
+                 && data.propagationStartedAt == null
+                 && data.propagationCompletedAt == null
+                 && data.propagationFailedAt == null
+                 && data.propagationError == null));
+    }
+
+    function hasValidInitialInstancePropagation(data) {
+      return !('propagationState' in data)
+             || (data.propagationState == 'complete'
+                 && data.propagationTargetVersion
+                    == data.sourceProgramVersion
+                 && data.propagationAttempt == 0
+                 && data.propagationStartedAt == null
+                 && data.propagationCompletedAt == request.time
+                 && data.propagationFailedAt == null
+                 && data.propagationError == null
+                 && (!('propagationOperationId' in data)
+                     || data.propagationOperationId == null)
+                 && (!('propagationLeaseExpiresAt' in data)
+                     || data.propagationLeaseExpiresAt == null)
+                 && (!('propagationCreatedCount' in data)
+                     || data.propagationCreatedCount == 0)
+                 && (!('propagationUpdatedCount' in data)
+                     || data.propagationUpdatedCount == 0)
+                 && (!('propagationCancelledCount' in data)
+                     || data.propagationCancelledCount == 0));
+    }
+
     function libraryFolderType(data) {
       return 'itemType' in data ? data.itemType : 'program';
     }
@@ -1461,7 +1501,10 @@ service cloud.firestore {
                        && getAfter(
                             /databases/$(database)/documents/programs/$(programId)
                           ).data.currentVersion
-                          == request.resource.data.versionNumber;
+                          == request.resource.data.versionNumber
+                       && hasValidProgramPropagationRequest(
+                            request.resource.data
+                          );
         allow update, delete: if false;
       }
     }
@@ -1587,7 +1630,15 @@ service cloud.firestore {
                          'workoutCount', 'status', 'linkedAt', 'unlinkedAt',
                          'unlinkReason', 'materializationKey', 'createdAt',
                          'createdBy', 'updatedAt', 'updatedBy', 'deletedAt',
-                         'deletedBy'
+                         'deletedBy', 'propagationState',
+                         'propagationTargetVersion', 'propagationAttempt',
+                         'propagationOperationId',
+                         'propagationLeaseExpiresAt',
+                         'propagationStartedAt', 'propagationCompletedAt',
+                         'propagationFailedAt', 'propagationError',
+                         'propagationCreatedCount',
+                         'propagationUpdatedCount',
+                         'propagationCancelledCount'
                        ])
                     && request.resource.data.createdBy == request.auth.uid
                     && request.resource.data.updatedBy == request.auth.uid
@@ -1607,6 +1658,9 @@ service cloud.firestore {
                     && request.resource.data.updatedAt == request.time
                     && request.resource.data.deletedAt == null
                     && request.resource.data.deletedBy == null
+                    && hasValidInitialInstancePropagation(
+                         request.resource.data
+                       )
                     && ((request.resource.data.assigningTrainerId
                            == request.auth.uid
                          && request.resource.data.status == 'active'

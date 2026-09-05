@@ -34,6 +34,8 @@ class WorkoutInstance {
     required this.createdAt,
     required this.updatedAt,
     this.programVersion = 0,
+    this.programEntryId,
+    this.programEntrySortOrder,
     this.athleteProgramInstanceId,
     this.programAssignmentId,
     this.relationshipMode,
@@ -54,8 +56,8 @@ class WorkoutInstance {
     Map<String, ExerciseActual>? actualsBySlot,
     List<ExerciseActual>? actuals,
     this.athleteNotes,
-  }) : assert(actualsBySlot == null || actuals == null),
-       actualsBySlot = actualsBySlot ?? _actualsToSlotMap(actuals ?? const []);
+  })  : assert(actualsBySlot == null || actuals == null),
+        actualsBySlot = actualsBySlot ?? _actualsToSlotMap(actuals ?? const []);
 
   final String id;
   final String programId;
@@ -70,6 +72,12 @@ class WorkoutInstance {
   /// 0 means the instance was assigned ad-hoc (a single or recurring
   /// workout), not from a program schedule.
   final int programVersion;
+
+  /// Stable source schedule entry identity used for subscription propagation.
+  final String? programEntryId;
+
+  /// Latest source ordering, independent of the scheduled date.
+  final int? programEntrySortOrder;
 
   /// First-class athlete-owned program grouping for materialized schedules.
   ///
@@ -186,6 +194,13 @@ class WorkoutInstance {
         'athleteProgramInstanceId and programAssignmentId must match',
       );
     }
+    if (programEntryId != null &&
+        (programEntryId!.isEmpty || programEntryId!.contains('/'))) {
+      throw ArgumentError('programEntryId cannot be empty or contain "/"');
+    }
+    if (programEntrySortOrder != null && programEntrySortOrder! < 0) {
+      throw ArgumentError('programEntrySortOrder must be >= 0');
+    }
 
     // ISO 8601 date format validation (YYYY-MM-DD)
     final dateRegex = RegExp(r'^\d{4}-\d{2}-\d{2}$');
@@ -263,8 +278,8 @@ class ExerciseActual {
     this.weight,
     this.restSeconds,
     this.notes,
-  }) : slotId = slotId ?? 'legacy-result-$exerciseId',
-       hasExplicitSlotId = slotId != null;
+  })  : slotId = slotId ?? 'legacy-result-$exerciseId',
+        hasExplicitSlotId = slotId != null;
   final String slotId;
   final bool hasExplicitSlotId;
   final String exerciseId;

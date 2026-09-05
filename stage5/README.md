@@ -32,7 +32,15 @@ Implemented in this slice:
   customization, plus recoverable unlink-to-copy when a trainer-client
   relationship enters its `ending` state. New assignments are blocked before
   unlink batches run, and retries finish the transition to `ended`.
-  Template-version propagation is intentionally not part of this slice.
+- Authoritative Cloud Function propagation for each newly published immutable
+  program version. Active subscribed athlete program instances reconcile only
+  current/future scheduled workouts by stable program-entry ID. Additions,
+  removals, substitutions, ordering, schedule changes, and pinned workout
+  versions are applied without touching historical/completed workouts or
+  athlete-authored completion and communication data.
+- Retry-safe propagation audit state on program versions and athlete program
+  instances (`pending`, `running`, `complete`, or `failed`), including target
+  and applied versions, attempt timestamps, errors, and mutation counts.
 - Firestore rules and indexes for relationship-scoped mutations.
 
 Compatibility behavior:
@@ -82,9 +90,9 @@ Compatibility behavior:
 - Trainers may manage only current or future incomplete workouts while the
   relationship is active. Completed and past workouts remain historical;
   athletes must explicitly convert subscriptions before structural changes.
-- Signed-in template reads remain compatible with Stage 4 until scheduled
-  workouts are materialized in a later sequence step; owner-only template
-  writes are enforced now.
+- Signed-in template reads remain compatible with Stage 4 while assigned
+  workout detail resolves its pinned immutable workout/exercise versions;
+  owner-only template writes are enforced.
 - Exercise notes remain keyed to the stable logical exercise ID, so they follow
   the exercise across versions.
 - Existing headers without library metadata resolve with empty tags, no folder,
@@ -95,4 +103,42 @@ Compatibility behavior:
   `itemType` discriminator and cannot be assigned across owners or types.
 - Copy operations atomically record source template ID, source owner, pinned
   source version, timestamp, and copier. Provenance cannot be changed later.
-- Automatic propagation from newer trainer template versions remains deferred.
+- Legacy program entries without stable IDs resolve to deterministic
+  `legacy-{sortOrder}` identities. New builder entries receive stable IDs before
+  publication, and assigned workouts persist the ID and source order.
+- Legacy athlete program instances without propagation fields read as
+  `complete` at their recorded source version. Legacy assignment backfill
+  remains conservative copied mode and is never enrolled into propagation.
+
+Subscription propagation is server-authoritative: clients can request only a
+`pending` job as part of the atomic program-version publish. They cannot mark a
+job complete or mutate propagation audit fields. The retried Firestore create
+trigger verifies program/workout ownership and the active trainer-client
+relationship before every write. Ending or ended relationships, copied
+instances, unlinked content, past workouts, and terminal workouts are skipped.
+The Functions manifest adds only the repository test command and does not add,
+remove, pin, or update any package, so the license notices and tooling
+version/lock inventories are intentionally unchanged.
+
+## Next browser integration slice
+
+Account-dependent browser integration tests are intentionally deferred. They
+require all of the following setup:
+
+1. A deployed or emulator-hosted Stage 5 web build connected to Auth,
+   Firestore, and Functions for the same Firebase project.
+2. One verified trainer test account and one distinct athlete test account,
+   with credentials supplied through the test runner's secret store rather
+   than committed files.
+3. A deterministic active `trainerClientRelationships/{trainerId}_{athleteId}`
+   record and active enrollment for an assignable trainer-owned program.
+4. Trainer-owned published exercise and typed workout versions, plus program
+   version 1 containing stable entry IDs and an active subscribed athlete
+   program instance whose schedule includes past, current, and future cases.
+5. Emulator cleanup/seed tooling or an isolated disposable project so tests can
+   publish version 2, wait for `propagationState == complete`, assert the
+   reconciled schedule and immutable history, end the relationship, publish
+   again, and verify no further propagation.
+6. Browser automation configured for two independent authenticated contexts,
+   with Functions retry logs and Firestore documents available as failure
+   artifacts.

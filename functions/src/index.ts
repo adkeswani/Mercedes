@@ -1,6 +1,7 @@
-import {auth} from "firebase-functions/v1";
+import {auth, runWith} from "firebase-functions/v1";
 import {logger} from "firebase-functions";
 import * as admin from "firebase-admin";
+import {propagateProgramVersion} from "./subscription_propagation";
 
 admin.initializeApp();
 
@@ -61,3 +62,18 @@ export const onUserCreated = auth.user().onCreate(
     }
   },
 );
+
+export const onProgramVersionPublished = runWith({
+  failurePolicy: true,
+  timeoutSeconds: 540,
+}).firestore
+  .document("programs/{programId}/programVersions/{versionNumber}")
+  .onCreate(async (_snapshot, context) => {
+    const versionNumber = Number(context.params.versionNumber);
+    await propagateProgramVersion(
+      db,
+      context.params.programId,
+      versionNumber,
+      context.eventId,
+    );
+  });

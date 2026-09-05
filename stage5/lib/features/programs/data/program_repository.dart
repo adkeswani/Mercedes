@@ -10,9 +10,8 @@ import 'package:stage5/features/programs/domain/program.dart';
 /// Targets `programs/{programId}` with sub-collection
 /// `programVersions/{versionNumber}`.
 class ProgramRepository {
-  ProgramRepository({
-    FirebaseFirestore? firestore,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance;
+  ProgramRepository({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -39,9 +38,11 @@ class ProgramRepository {
         .where('deletedAt', isNull: true)
         .orderBy('updatedAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => _headerFromMap(doc.data(), doc.id))
-            .toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => _headerFromMap(doc.data(), doc.id))
+              .toList(),
+        );
   }
 
   /// Returns the program with [id], or null if not found or soft-deleted.
@@ -192,9 +193,7 @@ class ProgramRepository {
         .limit(1)
         .get();
     if (enrollments.docs.isNotEmpty) {
-      throw StateError(
-        'Cannot delete program $id while athletes are enrolled',
-      );
+      throw StateError('Cannot delete program $id while athletes are enrolled');
     }
     await _collection.doc(id).update({
       'deletedAt': FieldValue.serverTimestamp(),
@@ -219,6 +218,14 @@ class ProgramRepository {
     String? changeNote,
   }) async {
     await verifyOwnership(programId, userId);
+    final version = ProgramVersion(
+      versionNumber: 1,
+      publishedAt: DateTime.now(),
+      entries: entries,
+      changeNote: changeNote,
+    );
+    version.validate();
+    await _verifyScheduleEntries(entries, userId);
     return _firestore.runTransaction<int>((txn) async {
       final headerRef = _collection.doc(programId);
       final headerSnap = await txn.get(headerRef);
@@ -243,6 +250,13 @@ class ProgramRepository {
         'publishedAt': Timestamp.fromDate(now),
         'entries': entries.map(_entryToMap).toList(),
         'changeNote': changeNote,
+        'propagationState': ProgramPropagationState.pending.name,
+        'propagationRequestedAt': Timestamp.fromDate(now),
+        'propagationAttempt': 0,
+        'propagationStartedAt': null,
+        'propagationCompletedAt': null,
+        'propagationFailedAt': null,
+        'propagationError': null,
       });
 
       txn.update(headerRef, {
@@ -277,8 +291,10 @@ class ProgramRepository {
         .collection('programVersions')
         .orderBy('versionNumber', descending: true)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => _versionFromMap(doc.data())).toList());
+        .map(
+          (snapshot) =>
+              snapshot.docs.map((doc) => _versionFromMap(doc.data())).toList(),
+        );
   }
 
   /// Creates a copy of an existing program as a new draft.
@@ -327,9 +343,7 @@ class ProgramRepository {
   /// or an empty list if no versions exist.
   ///
   /// Used by the UI to pre-populate the draft when copying a program.
-  Future<List<ProgramScheduleEntry>> getLatestEntries(
-    String programId,
-  ) async {
+  Future<List<ProgramScheduleEntry>> getLatestEntries(String programId) async {
     final program = await getById(programId);
     if (program == null || program.currentVersion == 0) return [];
 
@@ -375,11 +389,26 @@ class ProgramRepository {
           .map((e) => _entryFromMap(e as Map<String, dynamic>))
           .toList(),
       changeNote: data['changeNote'] as String?,
+      propagationState: _parsePropagationState(
+        data['propagationState'] as String?,
+      ),
+      propagationAttempt: (data['propagationAttempt'] as int?) ?? 0,
+      propagationStartedAt: data['propagationStartedAt'] == null
+          ? null
+          : _toDateTime(data['propagationStartedAt']),
+      propagationCompletedAt: data['propagationCompletedAt'] == null
+          ? null
+          : _toDateTime(data['propagationCompletedAt']),
+      propagationFailedAt: data['propagationFailedAt'] == null
+          ? null
+          : _toDateTime(data['propagationFailedAt']),
+      propagationError: data['propagationError'] as String?,
     );
   }
 
   ProgramScheduleEntry _entryFromMap(Map<String, dynamic> data) {
     return ProgramScheduleEntry(
+      entryId: data['entryId'] as String?,
       workoutTemplateId: data['workoutTemplateId'] as String? ?? '',
       workoutTemplateVersion: (data['workoutTemplateVersion'] as int?) ?? 1,
       dayOffset: (data['dayOffset'] as int?) ?? 0,
@@ -390,12 +419,53 @@ class ProgramRepository {
 
   Map<String, dynamic> _entryToMap(ProgramScheduleEntry entry) {
     return {
+      'entryId': entry.resolvedEntryId,
       'workoutTemplateId': entry.workoutTemplateId,
       'workoutTemplateVersion': entry.workoutTemplateVersion,
       'dayOffset': entry.dayOffset,
       'sortOrder': entry.sortOrder,
       'workoutName': entry.workoutName,
     };
+  }
+
+  Future<void> _verifyScheduleEntries(
+    List<ProgramScheduleEntry> entries,
+    String userId,
+  ) async {
+    final references = <({String templateId, int version})>{};
+    for (final entry in entries) {
+      entry.validate();
+      references.add((
+        templateId: entry.workoutTemplateId,
+        version: entry.workoutTemplateVersion,
+      ));
+    }
+    for (final reference in references) {
+      final headerRef =
+          _firestore.collection('workoutTemplates').doc(reference.templateId);
+      final header = await headerRef.get();
+      final ownerId = header.data()?['ownerId'] as String? ??
+          header.data()?['createdBy'] as String?;
+      if (!header.exists || ownerId != userId) {
+        throw StateError(
+          'User $userId is not the owner of workout '
+          '${reference.templateId}',
+        );
+      }
+      final version = await headerRef
+          .collection('workoutTemplateVersions')
+          .doc(reference.version.toString())
+          .get();
+      final publishState = version.data()?['publishState'] as String?;
+      if (!version.exists ||
+          publishState == 'draft' ||
+          publishState == 'deleting') {
+        throw StateError(
+          'Workout ${reference.templateId} version ${reference.version} '
+          'is not published',
+        );
+      }
+    }
   }
 
   Future<void> _validateCreationMetadata({
@@ -431,6 +501,13 @@ class ProgramRepository {
     return ProgramStatus.values.firstWhere(
       (e) => e.name == value,
       orElse: () => ProgramStatus.draft,
+    );
+  }
+
+  static ProgramPropagationState _parsePropagationState(String? value) {
+    return ProgramPropagationState.values.firstWhere(
+      (state) => state.name == value,
+      orElse: () => ProgramPropagationState.complete,
     );
   }
 

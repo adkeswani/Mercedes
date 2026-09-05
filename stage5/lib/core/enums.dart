@@ -47,6 +47,9 @@ enum ProgramRelationshipMode { subscribed, copied }
 /// Lifecycle of a materialized athlete program instance.
 enum AthleteProgramInstanceStatus { active, completed, cancelled }
 
+/// Recoverable server-side propagation lifecycle for a subscribed program.
+enum ProgramPropagationState { pending, running, complete, failed }
+
 /// Workout instance lifecycle status.
 enum WorkoutInstanceStatus { scheduled, completed, missed, cancelled }
 

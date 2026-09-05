@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:stage5/core/enums.dart';
+import 'package:stage5/features/programs/domain/program.dart';
 import 'package:stage5/features/relationships/data/trainer_client_relationship_repository.dart';
 import 'package:stage5/features/workouts/data/workout_template_repository.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
@@ -178,6 +179,8 @@ class WorkoutInstanceRepository {
       'programId': programId,
       'programOwnerId': authorization.ownerId,
       'programVersion': authorization.selfProgramVersion ?? 0,
+      'programEntryId': null,
+      'programEntrySortOrder': null,
       'athleteProgramInstanceId': null,
       'programAssignmentId': null,
       'relationshipMode': null,
@@ -516,6 +519,13 @@ class WorkoutInstanceRepository {
       'unlinkedAt': null,
       'unlinkReason': null,
       'materializationKey': idempotencyKey,
+      'propagationState': ProgramPropagationState.complete.name,
+      'propagationTargetVersion': currentVersion,
+      'propagationAttempt': 0,
+      'propagationStartedAt': null,
+      'propagationCompletedAt': FieldValue.serverTimestamp(),
+      'propagationFailedAt': null,
+      'propagationError': null,
       'createdAt': FieldValue.serverTimestamp(),
       'createdBy': assignedBy,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -532,12 +542,16 @@ class WorkoutInstanceRepository {
       final dayOffset = (entry['dayOffset'] as int?) ?? 0;
       final scheduledDate = addDays(startDate, dayOffset);
       final workoutType = typeByTemplate[templateId] ?? WorkoutType.fullBody;
+      final entryId = entry['entryId'] as String? ??
+          legacyProgramScheduleEntryId((entry['sortOrder'] as int?) ?? index);
 
       final docRef = _collection.doc('$assignmentId-$index');
       batch.set(docRef, {
         'programId': programId,
         'programOwnerId': ownerId,
         'programVersion': currentVersion,
+        'programEntryId': entryId,
+        'programEntrySortOrder': (entry['sortOrder'] as int?) ?? index,
         'athleteProgramInstanceId': assignmentId,
         'programAssignmentId': assignmentId,
         'relationshipMode': effectiveMode.name,
@@ -696,10 +710,7 @@ class WorkoutInstanceRepository {
         await _verifyActiveRelationship(trainerId, athleteId);
       }
       Query<Map<String, dynamic>> query = _collection
-          .where(
-            'athleteProgramInstanceId',
-            isEqualTo: programAssignmentId,
-          )
+          .where('athleteProgramInstanceId', isEqualTo: programAssignmentId)
           .where('athleteId', isEqualTo: athleteId);
       if (ownerId == trainerId) {
         query = query.where('programOwnerId', isEqualTo: trainerId);
@@ -708,9 +719,7 @@ class WorkoutInstanceRepository {
       return snapshot.docs;
     }
 
-    Future<QuerySnapshot<Map<String, dynamic>>> legacyQuery(
-      String ownerField,
-    ) {
+    Future<QuerySnapshot<Map<String, dynamic>>> legacyQuery(String ownerField) {
       return _collection
           .where('programAssignmentId', isEqualTo: programAssignmentId)
           .where(ownerField, isEqualTo: ownerId)
@@ -1172,13 +1181,10 @@ class WorkoutInstanceRepository {
     if (callerId == athleteId) {
       return watchOwnerField(null);
     }
-    return _mergeInstanceStreams(
-      [
-        watchOwnerField('programOwnerId'),
-        watchOwnerField('assignedBy'),
-      ],
-      descending: true,
-    );
+    return _mergeInstanceStreams([
+      watchOwnerField('programOwnerId'),
+      watchOwnerField('assignedBy'),
+    ], descending: true);
   }
 
   /// Streams every instance in [ownerId]'s programs for [athleteId].
@@ -1257,11 +1263,9 @@ class WorkoutInstanceRepository {
     required String athleteId,
     required String actorId,
   }) async {
-    Query<Map<String, dynamic>> query =
-        _programInstances.where('athleteOwnerId', isEqualTo: athleteId).where(
-              'status',
-              isEqualTo: AthleteProgramInstanceStatus.active.name,
-            );
+    Query<Map<String, dynamic>> query = _programInstances
+        .where('athleteOwnerId', isEqualTo: athleteId)
+        .where('status', isEqualTo: AthleteProgramInstanceStatus.active.name);
     if (actorId != athleteId) {
       await _verifyActiveRelationship(actorId, athleteId);
       query = query.where('assigningTrainerId', isEqualTo: actorId);
@@ -1271,15 +1275,9 @@ class WorkoutInstanceRepository {
       final data = instance.data();
       if (data['athleteOwnerId'] != athleteId ||
           (actorId != athleteId && data['assigningTrainerId'] != actorId)) {
-        throw StateError(
-          'Program instance ${instance.id} ownership mismatch',
-        );
+        throw StateError('Program instance ${instance.id} ownership mismatch');
       }
-      await _refreshProgramInstanceLifecycle(
-        instance.id,
-        athleteId,
-        actorId,
-      );
+      await _refreshProgramInstanceLifecycle(instance.id, athleteId, actorId);
     }
     return active.docs.length;
   }
@@ -1476,6 +1474,8 @@ class WorkoutInstanceRepository {
       programId: data['programId'] as String? ?? '',
       programOwnerId: data['programOwnerId'] as String?,
       programVersion: (data['programVersion'] as int?) ?? 0,
+      programEntryId: data['programEntryId'] as String?,
+      programEntrySortOrder: data['programEntrySortOrder'] as int?,
       athleteProgramInstanceId: data['athleteProgramInstanceId'] as String?,
       programAssignmentId: data['programAssignmentId'] as String?,
       relationshipMode: _parseRelationshipMode(

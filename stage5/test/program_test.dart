@@ -228,6 +228,16 @@ void main() {
       expect(() => version.validate(), throwsArgumentError);
     });
 
+    test('failed propagation requires an audit error', () {
+      final version = ProgramVersion(
+        versionNumber: 1,
+        publishedAt: DateTime(2024, 2, 1),
+        entries: const [],
+        propagationState: ProgramPropagationState.failed,
+      );
+      expect(() => version.validate(), throwsArgumentError);
+    });
+
     test('validate throws on duplicate sortOrder', () {
       final version = ProgramVersion(
         versionNumber: 1,
@@ -244,6 +254,30 @@ void main() {
             workoutTemplateVersion: 1,
             dayOffset: 0,
             sortOrder: 0,
+          ),
+        ],
+      );
+      expect(() => version.validate(), throwsArgumentError);
+    });
+
+    test('validate throws on duplicate stable entry IDs', () {
+      final version = ProgramVersion(
+        versionNumber: 1,
+        publishedAt: DateTime(2024, 2, 1),
+        entries: [
+          ProgramScheduleEntry(
+            entryId: 'same-entry',
+            workoutTemplateId: 'wt1',
+            workoutTemplateVersion: 1,
+            dayOffset: 0,
+            sortOrder: 0,
+          ),
+          ProgramScheduleEntry(
+            entryId: 'same-entry',
+            workoutTemplateId: 'wt2',
+            workoutTemplateVersion: 1,
+            dayOffset: 1,
+            sortOrder: 1,
           ),
         ],
       );
@@ -313,6 +347,7 @@ void main() {
 
     test('copyWith replaces only given fields', () {
       final ref = ProgramScheduleEntry(
+        entryId: 'stable-entry',
         workoutTemplateId: 'wt1',
         workoutTemplateVersion: 1,
         dayOffset: 2,
@@ -324,6 +359,17 @@ void main() {
       expect(updated.dayOffset, 2);
       expect(updated.workoutTemplateId, 'wt1');
       expect(updated.workoutName, 'Push');
+      expect(updated.entryId, 'stable-entry');
+    });
+
+    test('legacy entries derive stable IDs from their original sort order', () {
+      final ref = ProgramScheduleEntry(
+        workoutTemplateId: 'wt1',
+        workoutTemplateVersion: 1,
+        dayOffset: 2,
+        sortOrder: 3,
+      );
+      expect(ref.resolvedEntryId, 'legacy-3');
     });
 
     test('allows the same workout at multiple day offsets', () {

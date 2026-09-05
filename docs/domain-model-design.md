@@ -473,8 +473,8 @@ tests, and any required backfill tests before the next step depends on it.
 
 ### Stage 5 implementation status
 
-Sequence steps 1 through 4 and the athlete-program-instance slice in step 6 are
-implemented in `stage5/`.
+Sequence steps 1 through 4, the athlete-program-instance slice in step 6, and
+server-side subscription propagation in step 8 are implemented in `stage5/`.
 
 - Trainer-client relationships use deterministic
   `{trainerId}_{athleteId}` document IDs, retain ended relationships for audit,
@@ -572,7 +572,34 @@ implemented in `stage5/`.
   subscriptions to independent copies with `relationshipEnded` unlink audit
   metadata before finalizing `ended`. Trainers may mutate workouts only while
   the relationship is active.
-- Automatic template-version propagation remains deferred to sequence step 8.
+- Program schedule entries now carry stable IDs across immutable versions.
+  Versions created before this field resolve to `legacy-{sortOrder}` so their
+  already-materialized workouts can be reconciled without rewriting the
+  immutable source snapshot.
+- Publishing a program version atomically records a pending propagation job.
+  A retry-enabled Firestore Cloud Function verifies the owning trainer, every
+  pinned workout version, each subscribed program instance, and its active
+  trainer-client relationship before reconciling.
+- Each active subscribed athlete program instance records its latest applied
+  source version plus pending/running/complete/failed propagation audit state,
+  attempt count, timestamps, error details, and create/update/cancel counts.
+  Deterministic entry IDs and guarded per-workout transactions make retries
+  idempotent and allow interrupted jobs to resume safely.
+- Reconciliation adds, substitutes, reorders, reschedules, or cancels only
+  workouts that are still scheduled for today or later. It never rewrites
+  copied/unlinked content; past, completed, missed, or already-cancelled
+  workouts; completion results; athlete notes; persistent notes; discussion
+  threads; or reactions.
+- A schedule entry moved into the past is removed from the mutable future plan
+  by cancelling its still-scheduled future occurrence; no historical workout
+  is synthesized. A historical occurrence moved back into the future creates a
+  new deterministic materialization and retains the historical record.
+- Relationship ending blocks propagation immediately because every
+  reconciliation mutation rechecks active relationship state. The existing
+  unlink workflow then converts remaining subscribed materializations to
+  copied mode without deleting athlete content.
+- Legacy assignment groups remain conservative copied instances and therefore
+  never begin receiving propagation during backfill.
 
 ## 12. Deferred Details
 

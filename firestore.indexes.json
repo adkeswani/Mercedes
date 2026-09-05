@@ -240,6 +240,15 @@
         { "fieldPath": "athleteOwnerId", "order": "ASCENDING" },
         { "fieldPath": "relationshipMode", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "athleteProgramInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sourceProgramId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "relationshipMode", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

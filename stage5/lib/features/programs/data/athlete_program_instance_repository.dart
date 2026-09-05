@@ -70,15 +70,12 @@ class AthleteProgramInstanceRepository {
                 isEqualTo: AthleteProgramInstanceStatus.active.name,
               )
               .snapshots()
-              .listen(
-            (snapshot) {
-              values[athleteId] = snapshot.docs
-                  .map((doc) => _fromMap(doc.data(), doc.id))
-                  .toList();
-              emit();
-            },
-            onError: controller.addError,
-          );
+              .listen((snapshot) {
+            values[athleteId] = snapshot.docs
+                .map((doc) => _fromMap(doc.data(), doc.id))
+                .toList();
+            emit();
+          }, onError: controller.addError);
           subscriptions.add(subscription);
         }
       },
@@ -138,9 +135,7 @@ class AthleteProgramInstanceRepository {
         .where(
           (doc) =>
               doc.data()['status'] == WorkoutInstanceStatus.scheduled.name &&
-              (doc.data()['scheduledDate'] as String? ?? '').compareTo(
-                    today,
-                  ) >=
+              (doc.data()['scheduledDate'] as String? ?? '').compareTo(today) >=
                   0,
         )
         .toList();
@@ -261,6 +256,13 @@ class AthleteProgramInstanceRepository {
         'unlinkedAt': null,
         'unlinkReason': null,
         'materializationKey': null,
+        'propagationState': ProgramPropagationState.complete.name,
+        'propagationTargetVersion': programVersion,
+        'propagationAttempt': 0,
+        'propagationStartedAt': null,
+        'propagationCompletedAt': FieldValue.serverTimestamp(),
+        'propagationFailedAt': null,
+        'propagationError': null,
         'createdAt': FieldValue.serverTimestamp(),
         'createdBy': actorId,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -323,6 +325,21 @@ class AthleteProgramInstanceRepository {
           data['unlinkedAt'] == null ? null : _toDateTime(data['unlinkedAt']),
       unlinkReason: data['unlinkReason'] as String?,
       materializationKey: data['materializationKey'] as String?,
+      propagationState: _parsePropagationState(
+        data['propagationState'] as String?,
+      ),
+      propagationTargetVersion: data['propagationTargetVersion'] as int?,
+      propagationAttempt: (data['propagationAttempt'] as int?) ?? 0,
+      propagationStartedAt: data['propagationStartedAt'] == null
+          ? null
+          : _toDateTime(data['propagationStartedAt']),
+      propagationCompletedAt: data['propagationCompletedAt'] == null
+          ? null
+          : _toDateTime(data['propagationCompletedAt']),
+      propagationFailedAt: data['propagationFailedAt'] == null
+          ? null
+          : _toDateTime(data['propagationFailedAt']),
+      propagationError: data['propagationError'] as String?,
       createdAt: _toDateTime(data['createdAt']),
       createdBy: data['createdBy'] as String? ?? '',
       updatedAt: _toDateTime(data['updatedAt']),
@@ -344,6 +361,13 @@ class AthleteProgramInstanceRepository {
     return AthleteProgramInstanceStatus.values.firstWhere(
       (status) => status.name == value,
       orElse: () => AthleteProgramInstanceStatus.active,
+    );
+  }
+
+  static ProgramPropagationState _parsePropagationState(String? value) {
+    return ProgramPropagationState.values.firstWhere(
+      (state) => state.name == value,
+      orElse: () => ProgramPropagationState.complete,
     );
   }
 

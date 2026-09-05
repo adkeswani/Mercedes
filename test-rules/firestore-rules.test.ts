@@ -1664,6 +1664,13 @@ describe('programs', () => {
       publishedAt: serverTimestamp(),
       entries: [],
       changeNote: null,
+      propagationState: 'pending',
+      propagationRequestedAt: serverTimestamp(),
+      propagationAttempt: 0,
+      propagationStartedAt: null,
+      propagationCompletedAt: null,
+      propagationFailedAt: null,
+      propagationError: null,
     });
     batch.update(header, {
       currentVersion: 1,
@@ -1672,6 +1679,41 @@ describe('programs', () => {
     await assertSucceeds(batch.commit());
     await assertFails(version.update({ changeNote: 'rewritten' }));
     await assertFails(version.delete());
+  });
+
+  it('denies client-forged completed propagation state', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('programs').doc('versioned-program').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        updatedBy: OWNER,
+        currentVersion: 0,
+        tags: [],
+        folderId: null,
+        provenance: null,
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('programs').doc('versioned-program');
+    const batch = db.batch();
+    batch.set(header.collection('programVersions').doc('1'), {
+      versionNumber: 1,
+      publishedAt: serverTimestamp(),
+      entries: [],
+      changeNote: null,
+      propagationState: 'complete',
+      propagationRequestedAt: serverTimestamp(),
+      propagationAttempt: 0,
+      propagationStartedAt: null,
+      propagationCompletedAt: serverTimestamp(),
+      propagationFailedAt: null,
+      propagationError: null,
+    });
+    batch.update(header, {
+      currentVersion: 1,
+      updatedBy: OWNER,
+    });
+    await assertFails(batch.commit());
   });
 
   it('denies stranger from reading program versions', async () => {
@@ -2062,6 +2104,13 @@ describe('athleteProgramInstances', () => {
       unlinkedAt: null,
       unlinkReason: null,
       materializationKey: 'request-1',
+      propagationState: 'complete',
+      propagationTargetVersion: 1,
+      propagationAttempt: 0,
+      propagationStartedAt: null,
+      propagationCompletedAt: serverTimestamp(),
+      propagationFailedAt: null,
+      propagationError: null,
       createdAt: serverTimestamp(),
       createdBy: OWNER,
       updatedAt: serverTimestamp(),
@@ -2117,6 +2166,14 @@ describe('athleteProgramInstances', () => {
     await assertFails(
       athleteDb.collection('athleteProgramInstances').doc(INSTANCE_ID).update({
         sourceProgramVersion: 99,
+        updatedAt: serverTimestamp(),
+        updatedBy: ATHLETE,
+      })
+    );
+    await assertFails(
+      athleteDb.collection('athleteProgramInstances').doc(INSTANCE_ID).update({
+        propagationState: 'complete',
+        propagationTargetVersion: 99,
         updatedAt: serverTimestamp(),
         updatedBy: ATHLETE,
       })
@@ -2231,6 +2288,13 @@ describe('athleteProgramInstances', () => {
         unlinkedAt: null,
         unlinkReason: null,
         materializationKey: null,
+        propagationState: 'complete',
+        propagationTargetVersion: 1,
+        propagationAttempt: 0,
+        propagationStartedAt: null,
+        propagationCompletedAt: serverTimestamp(),
+        propagationFailedAt: null,
+        propagationError: null,
         createdAt: serverTimestamp(),
         createdBy: ATHLETE,
         updatedAt: serverTimestamp(),
@@ -2314,6 +2378,13 @@ describe('workoutInstances', () => {
       unlinkedAt: null,
       unlinkReason: null,
       materializationKey: 'atomic-1',
+      propagationState: 'complete',
+      propagationTargetVersion: 1,
+      propagationAttempt: 0,
+      propagationStartedAt: null,
+      propagationCompletedAt: serverTimestamp(),
+      propagationFailedAt: null,
+      propagationError: null,
       createdAt: serverTimestamp(),
       createdBy: OWNER,
       updatedAt: serverTimestamp(),
@@ -2354,6 +2425,13 @@ describe('workoutInstances', () => {
         unlinkedAt: null,
         unlinkReason: null,
         materializationKey: null,
+        propagationState: 'complete',
+        propagationTargetVersion: 1,
+        propagationAttempt: 0,
+        propagationStartedAt: null,
+        propagationCompletedAt: serverTimestamp(),
+        propagationFailedAt: null,
+        propagationError: null,
         createdAt: serverTimestamp(),
         createdBy: OWNER,
         updatedAt: serverTimestamp(),

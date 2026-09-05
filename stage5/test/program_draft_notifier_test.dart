@@ -24,6 +24,8 @@ void main() {
       notifier.addWorkout(_entry(workoutTemplateId: 'b', sortOrder: 1));
       expect(notifier.state.length, 2);
       expect(notifier.state[1].workoutTemplateId, 'b');
+      expect(
+          notifier.state.map((entry) => entry.entryId).toSet(), hasLength(2));
     });
 
     test('setDayOffset updates the targeted entry only', () {
@@ -72,10 +74,22 @@ void main() {
         _entry(workoutTemplateId: 'c', dayOffset: 14),
       ]);
       notifier.removeAt(1);
-      expect(notifier.state.map((e) => e.workoutTemplateId).toList(),
-          ['a', 'c']);
+      expect(
+          notifier.state.map((e) => e.workoutTemplateId).toList(), ['a', 'c']);
       expect(notifier.state.map((e) => e.sortOrder).toList(), [0, 1]);
       expect(notifier.state[1].dayOffset, 14);
+    });
+
+    test('reorder and schedule edits preserve stable entry identity', () {
+      final notifier = ProgramDraftNotifier();
+      notifier.addAll([
+        _entry(workoutTemplateId: 'a'),
+        _entry(workoutTemplateId: 'b'),
+      ]);
+      final ids = notifier.state.map((entry) => entry.entryId).toList();
+      notifier.reorder(0, 2);
+      notifier.setDayOffset(0, 10);
+      expect(notifier.state.map((entry) => entry.entryId), [ids[1], ids[0]]);
     });
   });
 }

@@ -25,6 +25,13 @@ class AthleteProgramInstance with Auditable {
     this.unlinkedAt,
     this.unlinkReason,
     this.materializationKey,
+    this.propagationState = ProgramPropagationState.complete,
+    this.propagationTargetVersion,
+    this.propagationAttempt = 0,
+    this.propagationStartedAt,
+    this.propagationCompletedAt,
+    this.propagationFailedAt,
+    this.propagationError,
     this.deletedAt,
     this.deletedBy,
   });
@@ -45,6 +52,13 @@ class AthleteProgramInstance with Auditable {
 
   /// Caller-supplied idempotency key used to safely retry materialization.
   final String? materializationKey;
+  final ProgramPropagationState propagationState;
+  final int? propagationTargetVersion;
+  final int propagationAttempt;
+  final DateTime? propagationStartedAt;
+  final DateTime? propagationCompletedAt;
+  final DateTime? propagationFailedAt;
+  final String? propagationError;
 
   @override
   final DateTime createdAt;
@@ -86,8 +100,18 @@ class AthleteProgramInstance with Auditable {
     if (DateTime.parse(expectedEndDate).isBefore(DateTime.parse(startDate))) {
       throw ArgumentError('expectedEndDate must be >= startDate');
     }
-    if (workoutCount < 1) {
-      throw ArgumentError('workoutCount must be >= 1');
+    if (workoutCount < 0) {
+      throw ArgumentError('workoutCount must be >= 0');
+    }
+    if (propagationAttempt < 0) {
+      throw ArgumentError('propagationAttempt must be >= 0');
+    }
+    if (propagationTargetVersion != null && propagationTargetVersion! < 1) {
+      throw ArgumentError('propagationTargetVersion must be >= 1');
+    }
+    if (propagationState == ProgramPropagationState.failed &&
+        (propagationError == null || propagationError!.trim().isEmpty)) {
+      throw ArgumentError('propagationError is required for failed jobs');
     }
     if (relationshipMode == ProgramRelationshipMode.subscribed) {
       if (linkedAt == null) {

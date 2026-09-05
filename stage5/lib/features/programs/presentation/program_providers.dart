@@ -11,8 +11,9 @@ final programRepositoryProvider = Provider<ProgramRepository>((ref) {
 });
 
 /// Singleton repository for program folders.
-final programFolderRepositoryProvider =
-    Provider<ProgramFolderRepository>((ref) {
+final programFolderRepositoryProvider = Provider<ProgramFolderRepository>((
+  ref,
+) {
   return ProgramFolderRepository();
 });
 
@@ -39,14 +40,30 @@ final programFoldersProvider = StreamProvider<List<ProgramFolder>>((ref) {
 class ProgramDraftNotifier extends StateNotifier<List<ProgramScheduleEntry>> {
   ProgramDraftNotifier() : super([]);
 
+  var _nextEntrySequence = 0;
+
+  String _newEntryId() {
+    final timestamp = DateTime.now().microsecondsSinceEpoch;
+    return 'entry-$timestamp-${_nextEntrySequence++}';
+  }
+
+  ProgramScheduleEntry _withStableId(ProgramScheduleEntry entry) {
+    return entry.entryId == null
+        ? entry.copyWith(entryId: _newEntryId())
+        : entry;
+  }
+
   /// Replaces the entire draft (e.g. when loading from existing version).
   void load(List<ProgramScheduleEntry> entries) {
-    state = List.of(entries);
+    state = [
+      for (final entry in entries)
+        entry.copyWith(entryId: entry.resolvedEntryId),
+    ];
   }
 
   /// Adds a schedule entry to the draft.
   void addWorkout(ProgramScheduleEntry entry) {
-    state = [...state, entry];
+    state = [...state, _withStableId(entry)];
   }
 
   /// Removes the entry at [index].
@@ -91,7 +108,7 @@ class ProgramDraftNotifier extends StateNotifier<List<ProgramScheduleEntry>> {
     state = [
       ...state,
       for (var i = 0; i < entries.length; i++)
-        entries[i].copyWith(sortOrder: base + i),
+        _withStableId(entries[i]).copyWith(sortOrder: base + i),
     ];
   }
 
@@ -103,7 +120,8 @@ class ProgramDraftNotifier extends StateNotifier<List<ProgramScheduleEntry>> {
 
 /// Provider for the program builder draft state.
 final programDraftProvider =
-    StateNotifierProvider<ProgramDraftNotifier, List<ProgramScheduleEntry>>(
-        (ref) {
+    StateNotifierProvider<ProgramDraftNotifier, List<ProgramScheduleEntry>>((
+  ref,
+) {
   return ProgramDraftNotifier();
 });
