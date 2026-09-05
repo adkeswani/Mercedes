@@ -125,6 +125,103 @@ void main() {
       expect(await repository.watchClients('trainer1').first, isEmpty);
     });
 
+    test('ending a relationship atomically unlinks active subscriptions',
+        () async {
+      await repository.startRelationship(
+        trainerId: 'trainer1',
+        athleteId: 'athlete1',
+        callerUserId: 'trainer1',
+      );
+      await firestore
+          .collection('athleteProgramInstances')
+          .doc('instance-1')
+          .set({
+        'athleteOwnerId': 'athlete1',
+        'assigningTrainerId': 'trainer1',
+        'relationshipMode': 'subscribed',
+        'status': 'active',
+        'workoutCount': 1,
+      });
+      await firestore
+          .collection('athleteProgramInstances')
+          .doc('instance-2')
+          .set({
+        'athleteOwnerId': 'athlete1',
+        'assigningTrainerId': 'trainer1',
+        'relationshipMode': 'copied',
+        'status': 'active',
+        'workoutCount': 1,
+      });
+      await firestore.collection('workoutInstances').doc('workout-1').set({
+        'athleteProgramInstanceId': 'instance-1',
+        'athleteId': 'athlete1',
+        'programOwnerId': 'trainer1',
+        'relationshipMode': 'subscribed',
+        'status': 'scheduled',
+        'scheduledDate': '2099-01-01',
+      });
+
+      await repository.endRelationship(
+        trainerId: 'trainer1',
+        athleteId: 'athlete1',
+        callerUserId: 'trainer1',
+      );
+
+      final unlinked = await firestore
+          .collection('athleteProgramInstances')
+          .doc('instance-1')
+          .get();
+      expect(unlinked.data()!['relationshipMode'], 'copied');
+      expect(unlinked.data()!['unlinkReason'], 'relationshipEnded');
+      expect(unlinked.data()!['unlinkedAt'], isNotNull);
+      final workout =
+          await firestore.collection('workoutInstances').doc('workout-1').get();
+      expect(workout.data()!['relationshipMode'], 'copied');
+      final preexistingCopy = await firestore
+          .collection('athleteProgramInstances')
+          .doc('instance-2')
+          .get();
+      expect(preexistingCopy.data()!['unlinkReason'], isNull);
+    });
+
+    test('recovers an interrupted ending relationship', () async {
+      await repository.startRelationship(
+        trainerId: 'trainer1',
+        athleteId: 'athlete1',
+        callerUserId: 'trainer1',
+      );
+      await firestore
+          .collection('trainerClientRelationships')
+          .doc('trainer1_athlete1')
+          .update({'status': 'ending'});
+      await firestore
+          .collection('athleteProgramInstances')
+          .doc('instance-1')
+          .set({
+        'athleteOwnerId': 'athlete1',
+        'assigningTrainerId': 'trainer1',
+        'relationshipMode': 'subscribed',
+        'status': 'active',
+        'workoutCount': 1,
+      });
+
+      expect(
+        await repository.recoverEndingRelationships(
+          trainerId: 'trainer1',
+          callerUserId: 'trainer1',
+        ),
+        1,
+      );
+      final relationship =
+          await repository.getRelationship('trainer1', 'athlete1');
+      expect(relationship!.isEnded, isTrue);
+      final instance = await firestore
+          .collection('athleteProgramInstances')
+          .doc('instance-1')
+          .get();
+      expect(instance.data()!['relationshipMode'], 'copied');
+    });
+
     test('rejects ending another trainer relationship', () async {
       await repository.startRelationship(
         trainerId: 'trainer1',

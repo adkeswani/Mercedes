@@ -59,8 +59,11 @@ class _ScheduleAssignmentScreenState
   int? _selectedWorkoutVersion;
   WorkoutType? _selectedWorkoutType;
   late DateTime _selectedDate;
+  late final String _programAssignmentRequestId;
   bool _isLoading = false;
   late _AssignmentType _type;
+  ProgramRelationshipMode _relationshipMode =
+      ProgramRelationshipMode.subscribed;
   final _athleteNames = <String, String>{};
 
   // Recurrence state
@@ -83,6 +86,8 @@ class _ScheduleAssignmentScreenState
     _selectedDate =
         widget.preselectedDate ?? DateTime.now().add(const Duration(days: 1));
     _endDate = _selectedDate.add(const Duration(days: 28));
+    _programAssignmentRequestId =
+        '${DateTime.now().microsecondsSinceEpoch}-${identityHashCode(this)}';
   }
 
   Future<void> _pickDate() async {
@@ -140,17 +145,17 @@ class _ScheduleAssignmentScreenState
     if (uid == null) return;
 
     if (_selectedAthleteId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select an athlete first')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Select an athlete first')));
       return;
     }
 
     final programId = _selectedProgramId;
     if (programId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select a program first')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Select a program first')));
       return;
     }
 
@@ -163,6 +168,8 @@ class _ScheduleAssignmentScreenState
                   athleteId: _selectedAthleteId!,
                   startDate: _formatDate(_selectedDate),
                   assignedBy: uid,
+                  relationshipMode: _relationshipMode,
+                  idempotencyKey: _programAssignmentRequestId,
                 );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -174,9 +181,9 @@ class _ScheduleAssignmentScreenState
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to assign: $e')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Failed to assign: $e')));
         }
       } finally {
         if (mounted) setState(() => _isLoading = false);
@@ -187,9 +194,9 @@ class _ScheduleAssignmentScreenState
     if (_selectedWorkoutId == null ||
         _selectedWorkoutVersion == null ||
         _selectedWorkoutType == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select a workout first')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Select a workout first')));
       return;
     }
 
@@ -223,9 +230,9 @@ class _ScheduleAssignmentScreenState
         );
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$count workouts scheduled')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('$count workouts scheduled')));
           context.pop();
         }
       } else {
@@ -252,9 +259,9 @@ class _ScheduleAssignmentScreenState
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to assign: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to assign: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -293,11 +300,13 @@ class _ScheduleAssignmentScreenState
     for (final folder in sortedFolders) {
       final progs = grouped[folder.id];
       if (progs == null || progs.isEmpty) continue;
-      items.add(DropdownMenuItem<String>(
-        value: '__hdr_${folder.id}',
-        enabled: false,
-        child: Text(folder.name, style: headerStyle),
-      ));
+      items.add(
+        DropdownMenuItem<String>(
+          value: '__hdr_${folder.id}',
+          enabled: false,
+          child: Text(folder.name, style: headerStyle),
+        ),
+      );
       for (final p in progs) {
         items.add(DropdownMenuItem<String>(value: p.id, child: Text(p.name)));
       }
@@ -306,11 +315,13 @@ class _ScheduleAssignmentScreenState
     final ungrouped = grouped[null] ?? const [];
     if (ungrouped.isNotEmpty) {
       if (items.isNotEmpty) {
-        items.add(DropdownMenuItem<String>(
-          value: '__hdr_ungrouped',
-          enabled: false,
-          child: Text('Ungrouped', style: headerStyle),
-        ));
+        items.add(
+          DropdownMenuItem<String>(
+            value: '__hdr_ungrouped',
+            enabled: false,
+            child: Text('Ungrouped', style: headerStyle),
+          ),
+        );
       }
       for (final p in ungrouped) {
         items.add(DropdownMenuItem<String>(value: p.id, child: Text(p.name)));
@@ -323,8 +334,9 @@ class _ScheduleAssignmentScreenState
   Widget build(BuildContext context) {
     final AsyncValue<List<ProgramWorkoutOption>> workoutOptionsAsync;
     if (widget.selfService && _selectedProgramId != null) {
-      workoutOptionsAsync =
-          ref.watch(programWorkoutOptionsProvider(_selectedProgramId!));
+      workoutOptionsAsync = ref.watch(
+        programWorkoutOptionsProvider(_selectedProgramId!),
+      );
     } else if (widget.selfService) {
       workoutOptionsAsync = const AsyncValue.data(<ProgramWorkoutOption>[]);
     } else {
@@ -363,9 +375,11 @@ class _ScheduleAssignmentScreenState
     // Programs offered by the in-screen picker, depending on mode.
     // Personal programs are only offered when assigning to yourself.
     final programModePrograms = allPrograms
-        .where((p) =>
-            p.currentVersion > 0 &&
-            (p.isAssignable || (isSelf && p.isPersonal)))
+        .where(
+          (p) =>
+              p.currentVersion > 0 &&
+              (p.isAssignable || (isSelf && p.isPersonal)),
+        )
         .toList();
     final workoutModePrograms = widget.selfService
         ? enrolledPrograms
@@ -441,10 +455,7 @@ class _ScheduleAssignmentScreenState
           const SizedBox(height: 24),
 
           // Athlete picker
-          Text(
-            'Athlete',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text('Athlete', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           if (widget.preselectedAthleteId != null)
             _buildFixedAthleteTile(widget.preselectedAthleteId!)
@@ -455,10 +466,7 @@ class _ScheduleAssignmentScreenState
 
           // Program picker (only when the caller didn't fix the program)
           if (showProgramPicker) ...[
-            Text(
-              'Program',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text('Program', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             if (pickerPrograms.isEmpty)
               Text(
@@ -472,7 +480,8 @@ class _ScheduleAssignmentScreenState
             else
               DropdownButtonFormField<String>(
                 key: ValueKey(
-                    'program-picker-${_type.name}-$_selectedAthleteId'),
+                  'program-picker-${_type.name}-$_selectedAthleteId',
+                ),
                 initialValue:
                     pickerPrograms.any((p) => p.id == _selectedProgramId)
                         ? _selectedProgramId
@@ -510,15 +519,45 @@ class _ScheduleAssignmentScreenState
                 ),
               ),
             ),
+            if (program?.isAssignable ?? false) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<ProgramRelationshipMode>(
+                initialValue: _relationshipMode,
+                decoration: const InputDecoration(
+                  labelText: 'Program relationship',
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: ProgramRelationshipMode.subscribed,
+                    child: Text('Subscribed'),
+                  ),
+                  DropdownMenuItem(
+                    value: ProgramRelationshipMode.copied,
+                    child: Text('Independent copy'),
+                  ),
+                ],
+                onChanged: (mode) {
+                  if (mode != null) {
+                    setState(() => _relationshipMode = mode);
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _relationshipMode == ProgramRelationshipMode.subscribed
+                    ? 'Stays linked to the trainer program. Future template '
+                        'updates are not applied automatically yet.'
+                    : 'Creates an independent schedule that will not receive '
+                        'future template updates.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             const SizedBox(height: 24),
           ],
 
           // Workout picker (workout mode only)
           if (_type == _AssignmentType.workout) ...[
-            Text(
-              'Workout',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text('Workout', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             if (widget.selfService && _selectedProgramId == null)
               const Text('Select a program first')
@@ -536,8 +575,9 @@ class _ScheduleAssignmentScreenState
                   }
                   return DropdownButtonFormField<String>(
                     value: _selectedWorkoutId,
-                    decoration:
-                        const InputDecoration(labelText: 'Select workout'),
+                    decoration: const InputDecoration(
+                      labelText: 'Select workout',
+                    ),
                     items: published.map((option) {
                       final workout = option.template;
                       return DropdownMenuItem(
@@ -578,9 +618,7 @@ class _ScheduleAssignmentScreenState
             onTap: _pickDate,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
-              side: BorderSide(
-                color: Theme.of(context).colorScheme.outline,
-              ),
+              side: BorderSide(color: Theme.of(context).colorScheme.outline),
             ),
           ),
 
@@ -600,10 +638,7 @@ class _ScheduleAssignmentScreenState
               const SizedBox(height: 16),
 
               // Pattern selector
-              Text(
-                'Pattern',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('Pattern', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               SegmentedButton<RecurrencePattern>(
                 segments: const [
@@ -695,10 +730,7 @@ class _ScheduleAssignmentScreenState
               const SizedBox(height: 16),
 
               // End date
-              Text(
-                'End Date',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('End Date', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               ListTile(
                 title: Text(_formatDate(_endDate)),
@@ -767,13 +799,13 @@ class _ScheduleAssignmentScreenState
   Widget _buildFixedAthleteTile(String athleteId) {
     if (!_athleteNames.containsKey(athleteId)) {
       _athleteNames[athleteId] = athleteId;
-      ref.read(userProfileRepositoryProvider).getUserProfile(athleteId).then(
-        (profile) {
-          if (profile != null && mounted) {
-            setState(() => _athleteNames[athleteId] = profile.displayName);
-          }
-        },
-      );
+      ref.read(userProfileRepositoryProvider).getUserProfile(athleteId).then((
+        profile,
+      ) {
+        if (profile != null && mounted) {
+          setState(() => _athleteNames[athleteId] = profile.displayName);
+        }
+      });
     }
     return Card(
       child: ListTile(
@@ -783,11 +815,9 @@ class _ScheduleAssignmentScreenState
     );
   }
 
-  Widget _buildAthleteDropdown(
-    List<TrainerClientRelationship> relationships,
-  ) {
+  Widget _buildAthleteDropdown(List<TrainerClientRelationship> relationships) {
     final athleteIds = {
-      for (final relationship in relationships) relationship.athleteId
+      for (final relationship in relationships) relationship.athleteId,
     }.toList();
     if (athleteIds.isEmpty) {
       return const Text('No athletes in your active roster yet');

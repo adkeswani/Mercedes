@@ -1,8 +1,6 @@
 import 'package:stage5/core/enums.dart';
 
-Map<String, ExerciseActual> _actualsToSlotMap(
-  List<ExerciseActual> actuals,
-) {
+Map<String, ExerciseActual> _actualsToSlotMap(List<ExerciseActual> actuals) {
   final result = <String, ExerciseActual>{};
   for (final actual in actuals) {
     if (result.containsKey(actual.slotId)) {
@@ -36,7 +34,9 @@ class WorkoutInstance {
     required this.createdAt,
     required this.updatedAt,
     this.programVersion = 0,
+    this.athleteProgramInstanceId,
     this.programAssignmentId,
+    this.relationshipMode,
     this.programOwnerId,
     this.completedAt,
     this.missedAt,
@@ -54,8 +54,8 @@ class WorkoutInstance {
     Map<String, ExerciseActual>? actualsBySlot,
     List<ExerciseActual>? actuals,
     this.athleteNotes,
-  })  : assert(actualsBySlot == null || actuals == null),
-        actualsBySlot = actualsBySlot ?? _actualsToSlotMap(actuals ?? const []);
+  }) : assert(actualsBySlot == null || actuals == null),
+       actualsBySlot = actualsBySlot ?? _actualsToSlotMap(actuals ?? const []);
 
   final String id;
   final String programId;
@@ -71,12 +71,27 @@ class WorkoutInstance {
   /// workout), not from a program schedule.
   final int programVersion;
 
+  /// First-class athlete-owned program grouping for materialized schedules.
+  ///
+  /// Legacy documents may only have [programAssignmentId].
+  final String? athleteProgramInstanceId;
+
   /// Groups all instances materialized from a single program assignment.
   ///
   /// Null for ad-hoc assignments. Shared across every instance created by
   /// one `assignProgram` call so the block can be rescheduled or cancelled
   /// together.
   final String? programAssignmentId;
+
+  /// Denormalized relationship mode at materialization time.
+  ///
+  /// The athlete program instance is authoritative. Null is accepted only for
+  /// ad-hoc and legacy workouts.
+  final ProgramRelationshipMode? relationshipMode;
+
+  /// Resolves both the first-class reference and its legacy compatibility ID.
+  String? get resolvedProgramInstanceId =>
+      athleteProgramInstanceId ?? programAssignmentId;
 
   final String athleteId;
   final String workoutTemplateId;
@@ -164,6 +179,13 @@ class WorkoutInstance {
     if (assignedBy.isEmpty) {
       throw ArgumentError('assignedBy cannot be empty');
     }
+    if (athleteProgramInstanceId != null &&
+        programAssignmentId != null &&
+        athleteProgramInstanceId != programAssignmentId) {
+      throw ArgumentError(
+        'athleteProgramInstanceId and programAssignmentId must match',
+      );
+    }
 
     // ISO 8601 date format validation (YYYY-MM-DD)
     final dateRegex = RegExp(r'^\d{4}-\d{2}-\d{2}$');
@@ -184,9 +206,7 @@ class WorkoutInstance {
         );
       }
       if (completedAt == null) {
-        throw ArgumentError(
-          'completedAt is required when status is completed',
-        );
+        throw ArgumentError('completedAt is required when status is completed');
       }
     }
 
@@ -243,8 +263,8 @@ class ExerciseActual {
     this.weight,
     this.restSeconds,
     this.notes,
-  })  : slotId = slotId ?? 'legacy-result-$exerciseId',
-        hasExplicitSlotId = slotId != null;
+  }) : slotId = slotId ?? 'legacy-result-$exerciseId',
+       hasExplicitSlotId = slotId != null;
   final String slotId;
   final bool hasExplicitSlotId;
   final String exerciseId;
@@ -306,9 +326,7 @@ class Recurrence {
 
     final dateRegex = RegExp(r'^\d{4}-\d{2}-\d{2}$');
     if (!dateRegex.hasMatch(endDate)) {
-      throw ArgumentError(
-        'endDate must be ISO 8601 date format (YYYY-MM-DD)',
-      );
+      throw ArgumentError('endDate must be ISO 8601 date format (YYYY-MM-DD)');
     }
 
     if (daysOfWeek != null) {

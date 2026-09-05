@@ -38,6 +38,7 @@ class TrainerClientRelationship with Auditable {
   final String? deletedBy;
 
   bool get isActive => status == TrainerClientRelationshipStatus.active;
+  bool get isEnding => status == TrainerClientRelationshipStatus.ending;
   bool get isEnded => status == TrainerClientRelationshipStatus.ended;
   bool get isDeleted => deletedAt != null;
 
@@ -60,8 +61,8 @@ class TrainerClientRelationship with Auditable {
     if (updatedBy.isEmpty) {
       throw ArgumentError('updatedBy cannot be empty');
     }
-    if (isActive && endedAt != null) {
-      throw ArgumentError('endedAt must be null while status is active');
+    if ((isActive || isEnding) && endedAt != null) {
+      throw ArgumentError('endedAt must be null until status is ended');
     }
     if (isEnded && endedAt == null) {
       throw ArgumentError('endedAt is required when status is ended');

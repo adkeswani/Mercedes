@@ -12,12 +12,17 @@ final trainerClientRelationshipRepositoryProvider =
 /// Idempotently materializes durable roster relationships for active legacy
 /// enrollments owned by [trainerId].
 final trainerClientRelationshipBackfillForUserProvider =
-    FutureProvider.family<int, String>((ref, trainerId) {
+    FutureProvider.family<int, String>((ref, trainerId) async {
   final repo = ref.watch(trainerClientRelationshipRepositoryProvider);
-  return repo.backfillActiveEnrollmentRelationships(
+  final backfilled = await repo.backfillActiveEnrollmentRelationships(
     trainerId: trainerId,
     callerUserId: trainerId,
   );
+  final recovered = await repo.recoverEndingRelationships(
+    trainerId: trainerId,
+    callerUserId: trainerId,
+  );
+  return backfilled + recovered;
 });
 
 final trainerClientsProvider =

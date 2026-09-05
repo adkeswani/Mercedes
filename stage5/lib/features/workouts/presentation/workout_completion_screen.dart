@@ -31,7 +31,6 @@ class _WorkoutCompletionScreenState
   bool _isLoading = false;
   WorkoutInstance? _instance;
   bool _didLoad = false;
-  bool _isEditing = false;
   bool _isAthlete = false;
   List<ExerciseSlot> _exercises = [];
 
@@ -63,7 +62,6 @@ class _WorkoutCompletionScreenState
         _exercises = workoutVersion?.exerciseSlots ?? [];
         _isAthlete = isAthlete;
         if (instance.isCompleted) {
-          _isEditing = true;
           _rpe = instance.rpe ?? 5;
           _durationMinutes = instance.durationMinutes ?? 45;
           _notesController.text = instance.athleteNotes ?? '';
@@ -80,34 +78,21 @@ class _WorkoutCompletionScreenState
       if (athleteId == null) {
         throw StateError('A signed-in athlete is required');
       }
-      if (_isEditing) {
-        await repo.updateCompletion(
-          instanceId: widget.instanceId,
-          athleteId: athleteId,
-          rpe: _rpe,
-          durationMinutes: _durationMinutes,
-          athleteNotes: _notesController.text.trim().isEmpty
-              ? null
-              : _notesController.text.trim(),
-        );
-      } else {
-        await repo.completeWorkout(
-          instanceId: widget.instanceId,
-          athleteId: athleteId,
-          rpe: _rpe,
-          durationMinutes: _durationMinutes,
-          actuals: [],
-          athleteNotes: _notesController.text.trim().isEmpty
-              ? null
-              : _notesController.text.trim(),
-        );
-      }
+      await repo.completeWorkout(
+        instanceId: widget.instanceId,
+        athleteId: athleteId,
+        rpe: _rpe,
+        durationMinutes: _durationMinutes,
+        actuals: [],
+        athleteNotes: _notesController.text.trim().isEmpty
+            ? null
+            : _notesController.text.trim(),
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content:
-                Text(_isEditing ? 'Workout updated!' : 'Workout completed! 💪'),
+            content: const Text('Workout completed! 💪'),
           ),
         );
         context.pop();
@@ -138,9 +123,11 @@ class _WorkoutCompletionScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isAthlete
-            ? (_isEditing ? 'Edit Workout' : 'Complete Workout')
-            : 'Workout Details'),
+        title: Text(
+          _isAthlete && !instance.isCompleted
+              ? 'Complete Workout'
+              : 'Workout Details',
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -231,7 +218,7 @@ class _WorkoutCompletionScreenState
             const SizedBox(height: 24),
 
           // RPE slider
-          if (_isAthlete) ...[
+          if (_isAthlete && !instance.isCompleted) ...[
             Text(
               'Rate of Perceived Exertion (RPE)',
               style: Theme.of(context).textTheme.titleMedium,
@@ -324,8 +311,8 @@ class _WorkoutCompletionScreenState
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : Icon(_isEditing ? Icons.save : Icons.check_circle),
-              label: Text(_isEditing ? 'Save Changes' : 'Mark as Completed'),
+                  : const Icon(Icons.check_circle),
+              label: const Text('Mark as Completed'),
             ),
           ] else if (instance.isCompleted) ...[
             // Read-only view for owner

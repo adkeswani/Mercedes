@@ -6,6 +6,7 @@ import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/presentation/app_entry_providers.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/programs/domain/program.dart';
+import 'package:stage5/features/programs/presentation/athlete_program_instance_providers.dart';
 import 'package:stage5/features/programs/presentation/enrollment_providers.dart';
 import 'package:stage5/features/programs/presentation/program_providers.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
@@ -117,9 +118,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
   Widget _buildFixedProgramCalendar(BuildContext context) {
     final athleteId = _selectedAthleteId;
     if (athleteId == null) {
-      return const Scaffold(
-        body: Center(child: Text('No athlete selected')),
-      );
+      return const Scaffold(body: Center(child: Text('No athlete selected')));
     }
     final programRepo = ref.watch(programRepositoryProvider);
     return FutureBuilder<Program?>(
@@ -127,9 +126,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
       builder: (context, snapshot) {
         final program = snapshot.data;
         return Scaffold(
-          appBar: AppBar(
-            title: Text(program?.name ?? 'Program Calendar'),
-          ),
+          appBar: AppBar(title: Text(program?.name ?? 'Program Calendar')),
           body: snapshot.connectionState != ConnectionState.done
               ? const Center(child: CircularProgressIndicator())
               : program == null
@@ -140,10 +137,11 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                         const Divider(height: 1),
                         Expanded(
                           child: _buildCalendarBody(
-                            context,
-                            [program],
-                            programId: program.id,
-                          ),
+                              context,
+                              [
+                                program,
+                              ],
+                              programId: program.id),
                         ),
                       ],
                     ),
@@ -156,9 +154,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     final uid = ref.watch(authStateProvider).value?.uid;
     final programsAsync = ref.watch(myEnrolledProgramsProvider);
     if (uid == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     _selectedAthleteId = uid;
     return Scaffold(
@@ -169,10 +165,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
           for (final program in programs) {
             final migration = ref.watch(
               programOwnerBackfillProvider(
-                ProgramAthleteKey(
-                  programId: program.id,
-                  athleteId: uid,
-                ),
+                ProgramAthleteKey(programId: program.id, athleteId: uid),
               ),
             );
             migrationError ??= migration.error;
@@ -193,11 +186,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
               _buildMonthNav(context),
               const Divider(height: 1),
               Expanded(
-                child: _buildCalendarBody(
-                  context,
-                  programs,
-                  athleteView: true,
-                ),
+                child: _buildCalendarBody(context, programs, athleteView: true),
               ),
             ],
           );
@@ -225,8 +214,9 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
       body: enrollmentsAsync.when(
         data: (enrollments) {
           _resolveNames(enrollments);
-          final athleteIds =
-              {for (final e in enrollments) e.athleteId}.toList();
+          final athleteIds = {
+            for (final e in enrollments) e.athleteId,
+          }.toList();
           if (athleteIds.isEmpty) {
             return const Center(
               child: Padding(
@@ -330,10 +320,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
         : athleteView
             ? ref.watch(
                 athleteScheduleProvider(
-                  DateRange(
-                    startDate: range.startDate,
-                    endDate: range.endDate,
-                  ),
+                  DateRange(startDate: range.startDate, endDate: range.endDate),
                 ),
               )
             : ref.watch(athleteCalendarProvider(range));
@@ -349,7 +336,12 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
             Expanded(
               child: SingleChildScrollView(
                 child: _buildGrid(
-                    context, firstOfMonth, daysInMonth, byDate, programs),
+                  context,
+                  firstOfMonth,
+                  daysInMonth,
+                  byDate,
+                  programs,
+                ),
               ),
             ),
             _buildLegend(context, instances, programs),
@@ -545,64 +537,66 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                     child: Text('No workouts on this day'),
                   )
                 else
-                  ...instances.map((i) => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(
-                          Icons.circle,
-                          size: 14,
-                          color: i.status == WorkoutInstanceStatus.cancelled
-                              ? Colors.grey
-                              : _colorForProgram(i.programId, programs),
-                        ),
-                        title: Text(nameById[i.programId] ?? 'Program'),
-                        subtitle: Text(
-                          '${i.workoutType.name} · ${i.status.name}',
-                        ),
-                        trailing: i.isScheduled &&
-                                i.assignedBy ==
-                                    ref.read(authStateProvider).value?.uid
-                            ? PopupMenuButton<String>(
-                                onSelected: (value) async {
-                                  Navigator.of(sheetContext).pop();
-                                  if (value == 'open') {
-                                    context.push(
-                                      '/workouts/complete/${i.id}',
-                                    );
-                                  } else if (value == 'reschedule') {
-                                    await _reschedule(context, i);
-                                  } else if (value == 'cancel') {
-                                    await _cancel(context, i);
-                                  } else if (value == 'delete') {
-                                    await _delete(context, i);
-                                  }
-                                },
-                                itemBuilder: (_) => [
-                                  const PopupMenuItem(
-                                    value: 'open',
-                                    child: Text('Open / Complete'),
-                                  ),
-                                  const PopupMenuItem(
-                                    value: 'reschedule',
-                                    child: Text('Reschedule'),
-                                  ),
-                                  const PopupMenuItem(
-                                    value: 'cancel',
-                                    child: Text('Cancel'),
-                                  ),
-                                  const PopupMenuItem(
-                                    value: 'delete',
-                                    child: Text('Delete\u2026'),
-                                  ),
-                                ],
+                  ...instances.map(
+                    (i) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        Icons.circle,
+                        size: 14,
+                        color: i.status == WorkoutInstanceStatus.cancelled
+                            ? Colors.grey
+                            : _colorForProgram(i.programId, programs),
+                      ),
+                      title: Text(nameById[i.programId] ?? 'Program'),
+                      subtitle: Text(
+                        '${i.workoutType.name} · ${i.status.name}',
+                      ),
+                      trailing: i.isScheduled &&
+                              _canManage(
+                                i,
+                                ref.read(authStateProvider).value?.uid,
                               )
-                            : IconButton(
-                                icon: const Icon(Icons.chevron_right),
-                                onPressed: () {
-                                  Navigator.of(sheetContext).pop();
+                          ? PopupMenuButton<String>(
+                              onSelected: (value) async {
+                                Navigator.of(sheetContext).pop();
+                                if (value == 'open') {
                                   context.push('/workouts/complete/${i.id}');
-                                },
-                              ),
-                      )),
+                                } else if (value == 'reschedule') {
+                                  await _reschedule(context, i);
+                                } else if (value == 'cancel') {
+                                  await _cancel(context, i);
+                                } else if (value == 'delete') {
+                                  await _delete(context, i);
+                                }
+                              },
+                              itemBuilder: (_) => [
+                                const PopupMenuItem(
+                                  value: 'open',
+                                  child: Text('Open / Complete'),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'reschedule',
+                                  child: Text('Reschedule'),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'cancel',
+                                  child: Text('Cancel'),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Text('Delete\u2026'),
+                                ),
+                              ],
+                            )
+                          : IconButton(
+                              icon: const Icon(Icons.chevron_right),
+                              onPressed: () {
+                                Navigator.of(sheetContext).pop();
+                                context.push('/workouts/complete/${i.id}');
+                              },
+                            ),
+                    ),
+                  ),
                 const Divider(),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -626,6 +620,13 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     );
   }
 
+  bool _canManage(WorkoutInstance instance, String? userId) {
+    return userId != null &&
+        (instance.athleteId == userId ||
+            instance.programOwnerId == userId ||
+            instance.assignedBy == userId);
+  }
+
   void _assignOnDay(BuildContext context, DateTime date) {
     final athleteId = _selectedAthleteId;
     if (athleteId == null) return;
@@ -642,8 +643,52 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     }
   }
 
+  Future<bool> _confirmStructuralCustomization(
+    BuildContext context,
+    WorkoutInstance instance,
+    String athleteId,
+  ) async {
+    final programInstanceId = instance.resolvedProgramInstanceId;
+    if (instance.athleteId != athleteId ||
+        instance.relationshipMode != ProgramRelationshipMode.subscribed ||
+        programInstanceId == null) {
+      return true;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Create an independent copy?'),
+        content: const Text(
+          'Changing this subscribed schedule will unlink it from the trainer '
+          'program. Future template updates will not apply.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep subscribed'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Create copy'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return false;
+    await ref
+        .read(athleteProgramInstanceRepositoryProvider)
+        .convertSubscriptionToCopy(
+          instanceId: programInstanceId,
+          athleteId: athleteId,
+          confirmed: true,
+        );
+    return true;
+  }
+
   Future<void> _reschedule(
-      BuildContext context, WorkoutInstance instance) async {
+    BuildContext context,
+    WorkoutInstance instance,
+  ) async {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;
     final current = DateTime.tryParse(instance.scheduledDate) ?? DateTime.now();
@@ -655,6 +700,9 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     );
     if (picked == null) return;
     try {
+      if (!await _confirmStructuralCustomization(context, instance, uid)) {
+        return;
+      }
       await ref.read(workoutInstanceRepositoryProvider).rescheduleInstance(
             instanceId: instance.id,
             newDate: _formatIsoDate(picked),
@@ -667,9 +715,9 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to reschedule: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to reschedule: $e')));
       }
     }
   }
@@ -678,20 +726,22 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;
     try {
-      await ref.read(workoutInstanceRepositoryProvider).cancelInstance(
-            instanceId: instance.id,
-            ownerId: uid,
-          );
+      if (!await _confirmStructuralCustomization(context, instance, uid)) {
+        return;
+      }
+      await ref
+          .read(workoutInstanceRepositoryProvider)
+          .cancelInstance(instanceId: instance.id, ownerId: uid);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Workout cancelled')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Workout cancelled')));
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to cancel: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to cancel: $e')));
       }
     }
   }
@@ -699,7 +749,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
   Future<void> _delete(BuildContext context, WorkoutInstance instance) async {
     final uid = ref.read(authStateProvider).value?.uid;
     if (uid == null) return;
-    final assignmentId = instance.programAssignmentId;
+    final assignmentId = instance.resolvedProgramInstanceId;
     var deleteIncomplete = false;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -742,6 +792,9 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     );
     if (confirmed != true) return;
     try {
+      if (!await _confirmStructuralCustomization(context, instance, uid)) {
+        return;
+      }
       final repo = ref.read(workoutInstanceRepositoryProvider);
       if (deleteIncomplete && assignmentId != null) {
         final count = await repo.deleteIncompleteProgramAssignment(
@@ -749,23 +802,23 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
           ownerId: uid,
         );
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Deleted $count workout(s)')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Deleted $count workout(s)')));
         }
       } else {
         await repo.deleteInstance(instanceId: instance.id, ownerId: uid);
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Workout deleted')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Workout deleted')));
         }
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
       }
     }
   }

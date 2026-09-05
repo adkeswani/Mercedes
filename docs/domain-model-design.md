@@ -473,7 +473,8 @@ tests, and any required backfill tests before the next step depends on it.
 
 ### Stage 5 implementation status
 
-Sequence steps 1 through 4 are implemented in `stage5/`.
+Sequence steps 1 through 4 and the athlete-program-instance slice in step 6 are
+implemented in `stage5/`.
 
 - Trainer-client relationships use deterministic
   `{trainerId}_{athleteId}` document IDs, retain ended relationships for audit,
@@ -548,8 +549,30 @@ Sequence steps 1 through 4 are implemented in `stage5/`.
   while preserving typed blocks loaded from storage. Rich authoring controls
   for interval, circuit, and climbing payloads can be added without another
   workout-version schema change.
-- Program instances, subscription behavior, propagation, and full scheduled
-  workout materialization remain deferred to their respective sequence steps.
+- Program assignment now creates an athlete-owned `AthleteProgramInstance` and
+  all pinned scheduled workouts in one atomic batch. A caller-supplied
+  idempotency key makes retries safe, and deterministic workout IDs prevent
+  duplicate materialization.
+- Program instances record assigning trainer, source program/version,
+  subscribed or copied mode, start/expected-end dates, lifecycle state,
+  link/unlink metadata, and audit fields. Every new program workout references
+  the first-class instance; `programAssignmentId` remains as an equal-valued
+  compatibility alias.
+- Existing assignment groups remain readable and have an athlete-owned,
+  idempotent backfill. Because legacy data cannot prove subscription intent,
+  migrated groups conservatively become independent copies.
+- Legacy workouts that predate the immutable `scheduledAt` authorization field
+  remain readable but structurally immutable until a trusted administrative
+  migration supplies that timestamp; clients cannot self-assert it.
+- Structural customization uses a confirmation-gated domain operation that
+  atomically converts the program instance and current/future incomplete
+  workouts to copied mode. Past and completed workouts are not rewritten.
+- Ending a trainer-client relationship first enters a recoverable `ending`
+  state that blocks new assignments, then idempotently changes active
+  subscriptions to independent copies with `relationshipEnded` unlink audit
+  metadata before finalizing `ended`. Trainers may mutate workouts only while
+  the relationship is active.
+- Automatic template-version propagation remains deferred to sequence step 8.
 
 ## 12. Deferred Details
 

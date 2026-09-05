@@ -159,6 +159,13 @@ void main() {
           programRepositoryProvider.overrideWithValue(programRepository),
           workoutInstanceRepositoryProvider
               .overrideWithValue(workoutInstanceRepository),
+          programAthleteScheduleProvider.overrideWith(
+            (ref, key) => workoutInstanceRepository.watchProgramSchedule(
+              programId: key.programId,
+              athleteId: key.athleteId,
+              callerId: key.athleteId,
+            ),
+          ),
           workoutTemplateRepositoryProvider
               .overrideWithValue(workoutRepository),
         ],

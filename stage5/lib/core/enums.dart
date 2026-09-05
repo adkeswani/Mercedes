@@ -30,51 +30,31 @@ enum WorkoutType {
 }
 
 /// Program lifecycle status.
-enum ProgramStatus {
-  draft,
-  published,
-  archived,
-}
+enum ProgramStatus { draft, published, archived }
 
 /// Whether a program is owner-assignable or athlete-personal.
-enum ProgramType {
-  assignable,
-  personal,
-}
+enum ProgramType { assignable, personal }
 
 /// Enrollment lifecycle status.
-enum EnrollmentStatus {
-  active,
-  removed,
-}
+enum EnrollmentStatus { active, removed }
 
 /// Trainer-client relationship lifecycle status.
-enum TrainerClientRelationshipStatus {
-  active,
-  ended,
-}
+enum TrainerClientRelationshipStatus { active, ending, ended }
+
+/// Whether an athlete program instance remains linked to its source template.
+enum ProgramRelationshipMode { subscribed, copied }
+
+/// Lifecycle of a materialized athlete program instance.
+enum AthleteProgramInstanceStatus { active, completed, cancelled }
 
 /// Workout instance lifecycle status.
-enum WorkoutInstanceStatus {
-  scheduled,
-  completed,
-  missed,
-  cancelled,
-}
+enum WorkoutInstanceStatus { scheduled, completed, missed, cancelled }
 
 /// Exercise prescription mode.
-enum ExerciseMode {
-  reps,
-  time,
-  amrap,
-}
+enum ExerciseMode { reps, time, amrap }
 
 /// Recurrence scheduling pattern.
-enum RecurrencePattern {
-  weekly,
-  biweekly,
-  custom,
-}
+enum RecurrencePattern { weekly, biweekly, custom }
 
 /// Notification types that trigger in-app alerts.
 enum NotificationType {
@@ -87,24 +67,10 @@ enum NotificationType {
 }
 
 /// In-app feedback category.
-enum FeedbackType {
-  bug,
-  feature,
-  general,
-}
+enum FeedbackType { bug, feature, general }
 
 /// Admin triage status for feedback items.
-enum FeedbackStatus {
-  newItem,
-  reviewed,
-  resolved,
-  wontFix,
-}
+enum FeedbackStatus { newItem, reviewed, resolved, wontFix }
 
 /// Schema backfill status for data evolution tracking.
-enum BackfillStatus {
-  pending,
-  running,
-  complete,
-  notNeeded,
-}
+enum BackfillStatus { pending, running, complete, notNeeded }

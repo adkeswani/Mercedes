@@ -161,6 +161,85 @@
         { "fieldPath": "programAssignmentId", "order": "ASCENDING" },
         { "fieldPath": "programOwnerId", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "workoutInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "athleteProgramInstanceId", "order": "ASCENDING" },
+        { "fieldPath": "athleteId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "workoutInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "athleteProgramInstanceId", "order": "ASCENDING" },
+        { "fieldPath": "programOwnerId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "workoutInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "athleteProgramInstanceId", "order": "ASCENDING" },
+        { "fieldPath": "athleteId", "order": "ASCENDING" },
+        { "fieldPath": "programOwnerId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "workoutInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programId", "order": "ASCENDING" },
+        { "fieldPath": "athleteId", "order": "ASCENDING" },
+        { "fieldPath": "programOwnerId", "order": "ASCENDING" },
+        { "fieldPath": "scheduledDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "workoutInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programId", "order": "ASCENDING" },
+        { "fieldPath": "athleteId", "order": "ASCENDING" },
+        { "fieldPath": "assignedBy", "order": "ASCENDING" },
+        { "fieldPath": "scheduledDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "athleteProgramInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "athleteOwnerId", "order": "ASCENDING" },
+        { "fieldPath": "startDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "athleteProgramInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "athleteOwnerId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "athleteProgramInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assigningTrainerId", "order": "ASCENDING" },
+        { "fieldPath": "athleteOwnerId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "athleteProgramInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assigningTrainerId", "order": "ASCENDING" },
+        { "fieldPath": "athleteOwnerId", "order": "ASCENDING" },
+        { "fieldPath": "relationshipMode", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

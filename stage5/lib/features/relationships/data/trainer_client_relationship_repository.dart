@@ -5,9 +5,8 @@ import 'package:stage5/features/relationships/domain/trainer_client_relationship
 
 /// Firestore repository for durable trainer-client relationships.
 class TrainerClientRelationshipRepository {
-  TrainerClientRelationshipRepository({
-    FirebaseFirestore? firestore,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance;
+  TrainerClientRelationshipRepository({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -82,6 +81,9 @@ class TrainerClientRelationshipRepository {
       if (data['status'] == TrainerClientRelationshipStatus.active.name) {
         throw StateError('Relationship $id is already active');
       }
+      if (data['status'] == TrainerClientRelationshipStatus.ending.name) {
+        throw StateError('Relationship $id is still ending');
+      }
       transaction.update(docRef, {
         'status': TrainerClientRelationshipStatus.active.name,
         'startedAt': FieldValue.serverTimestamp(),
@@ -126,13 +128,15 @@ class TrainerClientRelationshipRepository {
         continue;
       }
 
-      final relationshipRef =
-          _collection.doc(relationshipId(trainerId, athleteId));
+      final relationshipRef = _collection.doc(
+        relationshipId(trainerId, athleteId),
+      );
       final enrollmentRef =
           _firestore.collection('enrollments').doc(enrollment.id);
 
-      final created =
-          await _firestore.runTransaction<bool>((transaction) async {
+      final created = await _firestore.runTransaction<bool>((
+        transaction,
+      ) async {
         final existingRelationship = await transaction.get(relationshipRef);
         if (existingRelationship.exists) {
           final data = existingRelationship.data()!;
@@ -187,34 +191,147 @@ class TrainerClientRelationshipRepository {
     _verifyTrainerCaller(trainerId, callerUserId);
     final id = relationshipId(trainerId, athleteId);
     final docRef = _collection.doc(id);
-    await _firestore.runTransaction<void>((transaction) async {
-      final existing = await transaction.get(docRef);
-      if (!existing.exists) {
-        throw StateError('Relationship $id not found');
-      }
-      final data = existing.data()!;
-      if (data['trainerId'] != callerUserId || data['athleteId'] != athleteId) {
-        throw StateError('Relationship $id is not owned by $callerUserId');
-      }
-      if (data['status'] != TrainerClientRelationshipStatus.active.name) {
-        throw StateError('Relationship $id is not active');
-      }
-      transaction.update(docRef, {
-        'status': TrainerClientRelationshipStatus.ended.name,
-        'endedAt': FieldValue.serverTimestamp(),
+    final existing = await docRef.get();
+    if (!existing.exists) {
+      throw StateError('Relationship $id not found');
+    }
+    final data = existing.data()!;
+    if (data['trainerId'] != callerUserId || data['athleteId'] != athleteId) {
+      throw StateError('Relationship $id is not owned by $callerUserId');
+    }
+    final status = data['status'] as String?;
+    if (status == TrainerClientRelationshipStatus.ended.name) {
+      return;
+    }
+    if (status != TrainerClientRelationshipStatus.active.name &&
+        status != TrainerClientRelationshipStatus.ending.name) {
+      throw StateError('Relationship $id has an invalid lifecycle status');
+    }
+
+    // Enter `ending` first so new assignments are blocked while the
+    // idempotent unlink batches remain readable and recoverable.
+    if (status == TrainerClientRelationshipStatus.active.name) {
+      await docRef.update({
+        'status': TrainerClientRelationshipStatus.ending.name,
         'updatedAt': FieldValue.serverTimestamp(),
         'updatedBy': callerUserId,
       });
+    }
+
+    final subscriptions = await _firestore
+        .collection('athleteProgramInstances')
+        .where('assigningTrainerId', isEqualTo: trainerId)
+        .where('athleteOwnerId', isEqualTo: athleteId)
+        .where(
+          'relationshipMode',
+          isEqualTo: ProgramRelationshipMode.subscribed.name,
+        )
+        .get();
+    for (var start = 0; start < subscriptions.docs.length; start += 450) {
+      final batch = _firestore.batch();
+      final end = (start + 450).clamp(0, subscriptions.docs.length);
+      for (final subscription in subscriptions.docs.sublist(start, end)) {
+        final instance = subscription.data();
+        if (instance['assigningTrainerId'] != callerUserId ||
+            instance['athleteOwnerId'] != athleteId) {
+          throw StateError(
+            'Program instance ${subscription.id} relationship mismatch',
+          );
+        }
+        await _syncWorkoutRelationshipModes(
+          subscription.id,
+          trainerId,
+          athleteId,
+        );
+        batch.update(subscription.reference, {
+          'relationshipMode': ProgramRelationshipMode.copied.name,
+          'unlinkedAt': FieldValue.serverTimestamp(),
+          'unlinkReason': 'relationshipEnded',
+          'updatedAt': FieldValue.serverTimestamp(),
+          'updatedBy': callerUserId,
+        });
+      }
+
+      await batch.commit();
+    }
+    await docRef.update({
+      'status': TrainerClientRelationshipStatus.ended.name,
+      'endedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': callerUserId,
     });
+  }
+
+  Future<void> _syncWorkoutRelationshipModes(
+    String programInstanceId,
+    String trainerId,
+    String athleteId,
+  ) async {
+    final workouts = await _firestore
+        .collection('workoutInstances')
+        .where('athleteProgramInstanceId', isEqualTo: programInstanceId)
+        .where('athleteId', isEqualTo: athleteId)
+        .where('programOwnerId', isEqualTo: trainerId)
+        .get();
+    final now = DateTime.now().toUtc();
+    final today = '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+    final mutable = workouts.docs.where((workout) {
+      final data = workout.data();
+      return data['status'] == 'scheduled' &&
+          (data['scheduledDate'] as String? ?? '').compareTo(today) >= 0 &&
+          data['relationshipMode'] == ProgramRelationshipMode.subscribed.name;
+    }).toList();
+    for (var start = 0; start < mutable.length; start += 450) {
+      final batch = _firestore.batch();
+      final end = (start + 450).clamp(0, mutable.length);
+      for (final workout in mutable.sublist(start, end)) {
+        batch.update(workout.reference, {
+          'relationshipMode': ProgramRelationshipMode.copied.name,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+  }
+
+  /// Resumes any interrupted unlink workflows owned by [trainerId].
+  Future<int> recoverEndingRelationships({
+    required String trainerId,
+    required String callerUserId,
+  }) async {
+    _verifyTrainerCaller(trainerId, callerUserId);
+    final ending = await _collection
+        .where('trainerId', isEqualTo: trainerId)
+        .where(
+          'status',
+          isEqualTo: TrainerClientRelationshipStatus.ending.name,
+        )
+        .get();
+    for (final relationship in ending.docs) {
+      final data = relationship.data();
+      final athleteId = data['athleteId'] as String?;
+      if (data['trainerId'] != trainerId ||
+          athleteId == null ||
+          athleteId.isEmpty) {
+        throw StateError(
+          'Relationship ${relationship.id} is not owned by $trainerId',
+        );
+      }
+      await endRelationship(
+        trainerId: trainerId,
+        athleteId: athleteId,
+        callerUserId: callerUserId,
+      );
+    }
+    return ending.docs.length;
   }
 
   Stream<List<TrainerClientRelationship>> watchClients(String trainerId) {
     return _collection
         .where('trainerId', isEqualTo: trainerId)
-        .where(
-          'status',
-          isEqualTo: TrainerClientRelationshipStatus.active.name,
-        )
+        .where('status', isEqualTo: TrainerClientRelationshipStatus.active.name)
         .snapshots()
         .map((snapshot) {
       final relationships =
@@ -227,10 +344,7 @@ class TrainerClientRelationshipRepository {
   Stream<List<TrainerClientRelationship>> watchTrainers(String athleteId) {
     return _collection
         .where('athleteId', isEqualTo: athleteId)
-        .where(
-          'status',
-          isEqualTo: TrainerClientRelationshipStatus.active.name,
-        )
+        .where('status', isEqualTo: TrainerClientRelationshipStatus.active.name)
         .snapshots()
         .map((snapshot) {
       final relationships =
@@ -255,10 +369,7 @@ class TrainerClientRelationshipRepository {
     return relationship?.isActive ?? false;
   }
 
-  TrainerClientRelationship _fromMap(
-    Map<String, dynamic> data,
-    String id,
-  ) {
+  TrainerClientRelationship _fromMap(Map<String, dynamic> data, String id) {
     return TrainerClientRelationship(
       id: id,
       trainerId: data['trainerId'] as String? ?? '',

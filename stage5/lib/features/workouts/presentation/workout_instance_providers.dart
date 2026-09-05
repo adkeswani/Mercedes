@@ -31,9 +31,12 @@ final athleteScheduleProvider =
 final programAthleteScheduleProvider =
     StreamProvider.family<List<WorkoutInstance>, ProgramAthleteKey>((ref, key) {
   final repo = ref.watch(workoutInstanceRepositoryProvider);
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) return const Stream.empty();
   return repo.watchProgramSchedule(
     programId: key.programId,
     athleteId: key.athleteId,
+    callerId: user.uid,
   );
 });
 
@@ -42,9 +45,12 @@ final programAthleteCalendarProvider =
     StreamProvider.family<List<WorkoutInstance>, ProgramAthleteCalendarKey>(
         (ref, key) {
   final repo = ref.watch(workoutInstanceRepositoryProvider);
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) return const Stream.empty();
   return repo.watchProgramSchedule(
     programId: key.programId,
     athleteId: key.athleteId,
+    callerId: user.uid,
     startDate: key.startDate,
     endDate: key.endDate,
   );

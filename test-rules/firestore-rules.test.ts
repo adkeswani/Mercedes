@@ -249,6 +249,11 @@ describe('trainerClientRelationships', () => {
     const ref = db.collection('trainerClientRelationships').doc(RELATIONSHIP_ID);
 
     await assertSucceeds(ref.update({
+      status: 'ending',
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    }));
+    await assertSucceeds(ref.update({
       status: 'ended',
       endedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
@@ -2037,6 +2042,211 @@ describe('enrollments', () => {
   });
 });
 
+// ─── Athlete Program Instances ───
+
+describe('athleteProgramInstances', () => {
+  const INSTANCE_ID = 'athlete-program-1';
+
+  function instanceData(mode = 'subscribed') {
+    return {
+      athleteOwnerId: ATHLETE,
+      assigningTrainerId: OWNER,
+      sourceProgramId: PROGRAM_ID,
+      sourceProgramVersion: 1,
+      relationshipMode: mode,
+      startDate: '2027-01-01',
+      expectedEndDate: '2027-02-01',
+      workoutCount: 1,
+      status: 'active',
+      linkedAt: mode === 'subscribed' ? serverTimestamp() : null,
+      unlinkedAt: null,
+      unlinkReason: null,
+      materializationKey: 'request-1',
+      createdAt: serverTimestamp(),
+      createdBy: OWNER,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+      deletedAt: null,
+      deletedBy: null,
+    };
+  }
+
+  it('allows trainer to create subscribed or copied athlete instances', async () => {
+    await seedProgramWithEnrollment();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('athleteProgramInstances').doc(INSTANCE_ID)
+        .set(instanceData())
+    );
+    await assertSucceeds(
+      db.collection('athleteProgramInstances').doc('athlete-program-copy')
+        .set(instanceData('copied'))
+    );
+  });
+
+  it('denies a stranger from creating or reading an athlete instance', async () => {
+    await seedProgramWithEnrollment();
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    await ownerDb.collection('athleteProgramInstances').doc(INSTANCE_ID)
+      .set(instanceData());
+    const strangerDb = testEnv.authenticatedContext(STRANGER).firestore();
+    await assertFails(
+      strangerDb.collection('athleteProgramInstances').doc('forged')
+        .set({ ...instanceData(), createdBy: STRANGER, updatedBy: STRANGER })
+    );
+    await assertFails(
+      strangerDb.collection('athleteProgramInstances').doc(INSTANCE_ID).get()
+    );
+  });
+
+  it('allows athlete-confirmed subscription conversion but not identity edits', async () => {
+    await seedProgramWithEnrollment();
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    await ownerDb.collection('athleteProgramInstances').doc(INSTANCE_ID)
+      .set(instanceData());
+    const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+    await assertSucceeds(
+      athleteDb.collection('athleteProgramInstances').doc(INSTANCE_ID).update({
+        relationshipMode: 'copied',
+        unlinkedAt: serverTimestamp(),
+        unlinkReason: 'structuralCustomization',
+        updatedAt: serverTimestamp(),
+        updatedBy: ATHLETE,
+      })
+    );
+    await assertFails(
+      athleteDb.collection('athleteProgramInstances').doc(INSTANCE_ID).update({
+        sourceProgramVersion: 99,
+        updatedAt: serverTimestamp(),
+        updatedBy: ATHLETE,
+      })
+    );
+  });
+
+  it('allows only one-way athlete program lifecycle transitions', async () => {
+    await seedProgramWithEnrollment();
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    await ownerDb.collection('athleteProgramInstances').doc(INSTANCE_ID)
+      .set(instanceData());
+    const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+    const instance =
+      athleteDb.collection('athleteProgramInstances').doc(INSTANCE_ID);
+    await assertSucceeds(instance.update({
+      status: 'completed',
+      updatedAt: serverTimestamp(),
+      updatedBy: ATHLETE,
+    }));
+    await assertFails(instance.update({
+      status: 'active',
+      updatedAt: serverTimestamp(),
+      updatedBy: ATHLETE,
+    }));
+  });
+
+  it('allows recoverable relationship ending to unlink children and parent', async () => {
+    await seedProgramWithEnrollment();
+    await seedActiveRelationship();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const instance = db.collection('athleteProgramInstances').doc(INSTANCE_ID);
+    await instance.set(instanceData());
+    const workout = db.collection('workoutInstances').doc('unlink-workout');
+    await workout.set({
+      programId: PROGRAM_ID,
+      programOwnerId: OWNER,
+      programVersion: 1,
+      athleteProgramInstanceId: INSTANCE_ID,
+      programAssignmentId: INSTANCE_ID,
+      relationshipMode: 'subscribed',
+      athleteId: ATHLETE,
+      assignedBy: OWNER,
+      status: 'scheduled',
+      scheduledDate: '2099-01-01',
+      scheduledAt: new Date('2099-01-01T00:00:00Z'),
+    });
+    await db.collection('trainerClientRelationships').doc(RELATIONSHIP_ID).update({
+      status: 'ending',
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    });
+    await assertSucceeds(
+      db.collection('workoutInstances')
+        .where('athleteProgramInstanceId', '==', INSTANCE_ID)
+        .where('athleteId', '==', ATHLETE)
+        .where('programOwnerId', '==', OWNER)
+        .get()
+    );
+    await assertSucceeds(workout.update({
+      relationshipMode: 'copied',
+      updatedAt: serverTimestamp(),
+    }));
+    await assertSucceeds(instance.update({
+      relationshipMode: 'copied',
+      unlinkedAt: serverTimestamp(),
+      unlinkReason: 'relationshipEnded',
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    }));
+    await assertSucceeds(
+      db.collection('trainerClientRelationships').doc(RELATIONSHIP_ID).update({
+        status: 'ended',
+        endedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedBy: OWNER,
+      })
+    );
+  });
+
+  it('allows athlete to backfill a copied legacy assignment without owner field',
+      async () => {
+    await seedProgramWithEnrollment();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await db.collection('enrollments').doc(ENROLLMENT_ID)
+        .update({ status: 'removed' });
+      await db.collection('workoutInstances').doc('legacy-workout').set({
+        programId: PROGRAM_ID,
+        programVersion: 1,
+        programAssignmentId: 'legacy-assignment',
+        athleteId: ATHLETE,
+        assignedBy: OWNER,
+        status: 'completed',
+        scheduledDate: '2025-01-01',
+      });
+    });
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    const batch = db.batch();
+    batch.set(
+      db.collection('athleteProgramInstances').doc('legacy-assignment'),
+      {
+        athleteOwnerId: ATHLETE,
+        assigningTrainerId: OWNER,
+        sourceProgramId: PROGRAM_ID,
+        sourceProgramVersion: 1,
+        relationshipMode: 'copied',
+        startDate: '2025-01-01',
+        expectedEndDate: '2025-01-01',
+        workoutCount: 1,
+        status: 'completed',
+        linkedAt: null,
+        unlinkedAt: null,
+        unlinkReason: null,
+        materializationKey: null,
+        createdAt: serverTimestamp(),
+        createdBy: ATHLETE,
+        updatedAt: serverTimestamp(),
+        updatedBy: ATHLETE,
+        deletedAt: null,
+        deletedBy: null,
+      }
+    );
+    batch.update(db.collection('workoutInstances').doc('legacy-workout'), {
+      athleteProgramInstanceId: 'legacy-assignment',
+      relationshipMode: 'copied',
+    });
+    await assertSucceeds(batch.commit());
+  });
+});
+
 // ─── Workout Instances ───
 
 describe('workoutInstances', () => {
@@ -2051,6 +2261,7 @@ describe('workoutInstances', () => {
         assignedBy: OWNER,
         status: 'scheduled',
         scheduledDate: '2026-06-15',
+        scheduledAt: new Date('2099-06-15T00:00:00Z'),
         workoutTemplateId: 'w1',
         workoutTemplateVersion: 1,
       });
@@ -2077,6 +2288,91 @@ describe('workoutInstances', () => {
         assignedBy: OWNER,
         status: 'scheduled',
         actualSlotIds: ['forged-slot'],
+      })
+    );
+  });
+
+  it('allows atomic materialization against a first-class program instance',
+      async () => {
+    await seedProgramWithEnrollment();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const programInstance =
+      db.collection('athleteProgramInstances').doc('materialized-1');
+    const workout = db.collection('workoutInstances').doc('materialized-w1');
+    const batch = db.batch();
+    batch.set(programInstance, {
+      athleteOwnerId: ATHLETE,
+      assigningTrainerId: OWNER,
+      sourceProgramId: PROGRAM_ID,
+      sourceProgramVersion: 1,
+      relationshipMode: 'subscribed',
+      startDate: '2027-01-01',
+      expectedEndDate: '2027-01-01',
+      workoutCount: 1,
+      status: 'active',
+      linkedAt: serverTimestamp(),
+      unlinkedAt: null,
+      unlinkReason: null,
+      materializationKey: 'atomic-1',
+      createdAt: serverTimestamp(),
+      createdBy: OWNER,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+      deletedAt: null,
+      deletedBy: null,
+    });
+    batch.set(workout, {
+      programId: PROGRAM_ID,
+      programOwnerId: OWNER,
+      programVersion: 1,
+      athleteProgramInstanceId: 'materialized-1',
+      programAssignmentId: 'materialized-1',
+      relationshipMode: 'subscribed',
+      athleteId: ATHLETE,
+      assignedBy: OWNER,
+      status: 'scheduled',
+      scheduledAt: new Date('2027-01-01T00:00:00Z'),
+    });
+    await assertSucceeds(batch.commit());
+  });
+
+  it('denies a mismatched first-class program reference', async () => {
+    await seedProgramWithEnrollment();
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    await ownerDb.collection('athleteProgramInstances').doc('materialized-1')
+      .set({
+        athleteOwnerId: ATHLETE,
+        assigningTrainerId: OWNER,
+        sourceProgramId: PROGRAM_ID,
+        sourceProgramVersion: 1,
+        relationshipMode: 'copied',
+        startDate: '2027-01-01',
+        expectedEndDate: '2027-01-01',
+        workoutCount: 1,
+        status: 'active',
+        linkedAt: null,
+        unlinkedAt: null,
+        unlinkReason: null,
+        materializationKey: null,
+        createdAt: serverTimestamp(),
+        createdBy: OWNER,
+        updatedAt: serverTimestamp(),
+        updatedBy: OWNER,
+        deletedAt: null,
+        deletedBy: null,
+      });
+    await assertFails(
+      ownerDb.collection('workoutInstances').doc('mismatch').set({
+        programId: PROGRAM_ID,
+        programOwnerId: OWNER,
+        programVersion: 1,
+        athleteProgramInstanceId: 'materialized-1',
+        programAssignmentId: 'different-id',
+        relationshipMode: 'copied',
+        athleteId: ATHLETE,
+        assignedBy: OWNER,
+        status: 'scheduled',
+        scheduledAt: new Date('2027-01-01T00:00:00Z'),
       })
     );
   });
@@ -2229,6 +2525,29 @@ describe('workoutInstances', () => {
     );
   });
 
+  it('allows an owner-scoped program and athlete query', async () => {
+    await seedProgramWithEnrollment();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc('program-owned').set({
+        programId: PROGRAM_ID,
+        programOwnerId: OWNER,
+        athleteId: ATHLETE,
+        assignedBy: OWNER,
+        status: 'scheduled',
+        scheduledDate: '2026-06-16',
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('workoutInstances')
+        .where('programId', '==', PROGRAM_ID)
+        .where('athleteId', '==', ATHLETE)
+        .where('programOwnerId', '==', OWNER)
+        .orderBy('scheduledDate', 'desc')
+        .get()
+    );
+  });
+
   it('denies creating an instance with the wrong programOwnerId', async () => {
     await seedProgramWithEnrollment();
     const db = testEnv.authenticatedContext(ATHLETE).firestore();
@@ -2357,11 +2676,18 @@ describe('workoutInstances', () => {
       actualsStorageFormat: 'slotResultsSubcollection',
       actualSlotIds: ['slot-1'],
       actuals: deleteField(),
+      updatedAt: serverTimestamp(),
     });
     batch.set(instance.collection('slotResults').doc('slot-1'), {
       exerciseId: 'e1', slotOrder: 0, mode: 'reps', sets: 5, reps: '5',
     });
     await assertSucceeds(batch.commit());
+    const rewrite = db.batch();
+    rewrite.update(instance, { updatedAt: serverTimestamp() });
+    rewrite.update(instance.collection('slotResults').doc('slot-1'), {
+      sets: 99,
+    });
+    await assertFails(rewrite.commit());
     await assertFails(
       instance.collection('slotResults').doc('legacy-slot-0').set({
         exerciseId: 'arbitrary',
@@ -2504,6 +2830,16 @@ describe('workoutInstances', () => {
         status: 'completed', rpe: 7, durationMinutes: 60,
       })
     );
+  });
+
+  it('denies athlete edits after completion', async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    const instance = db.collection('workoutInstances').doc(INSTANCE_ID);
+    await instance.update({
+      status: 'completed', rpe: 7, durationMinutes: 60,
+    });
+    await assertFails(instance.update({ rpe: 9 }));
   });
 
   it('allows owner to reschedule instance', async () => {

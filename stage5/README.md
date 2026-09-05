@@ -22,6 +22,17 @@ Implemented in this slice:
 - A common library metadata/folder abstraction used by all three template
   repositories without changing the current program-folder UX.
 - Active-relationship checks for new enrollments and workout assignments.
+- First-class athlete-owned `AthleteProgramInstance` records with pinned source
+  program versions, lifecycle dates/status, and explicit `subscribed` or
+  `copied` relationship modes.
+- Atomic, idempotent program materialization: the program instance and every
+  scheduled workout are committed together, and each workout references the
+  first-class instance while retaining the legacy assignment ID alias.
+- Confirmation-gated subscription-to-copy conversion for structural
+  customization, plus recoverable unlink-to-copy when a trainer-client
+  relationship enters its `ending` state. New assignments are blocked before
+  unlink batches run, and retries finish the transition to `ended`.
+  Template-version propagation is intentionally not part of this slice.
 - Firestore rules and indexes for relationship-scoped mutations.
 
 Compatibility behavior:
@@ -62,6 +73,15 @@ Compatibility behavior:
   documents remain visible.
 - Existing enrollments and assigned content remain readable after a
   relationship ends, but new assignments require an active relationship.
+- Existing `programAssignmentId` groups remain readable. An athlete-owned,
+  idempotent backfill creates conservative independent copies and adds
+  `athleteProgramInstanceId` references without rewriting historical results.
+- Legacy workouts without the immutable `scheduledAt` authorization field
+  remain readable but cannot be structurally changed by clients; a trusted
+  administrative migration is required before those records become mutable.
+- Trainers may manage only current or future incomplete workouts while the
+  relationship is active. Completed and past workouts remain historical;
+  athletes must explicitly convert subscriptions before structural changes.
 - Signed-in template reads remain compatible with Stage 4 until scheduled
   workouts are materialized in a later sequence step; owner-only template
   writes are enforced now.
@@ -75,5 +95,4 @@ Compatibility behavior:
   `itemType` discriminator and cannot be assigned across owners or types.
 - Copy operations atomically record source template ID, source owner, pinned
   source version, timestamp, and copier. Provenance cannot be changed later.
-- Athlete program instances, subscriptions, propagation, and full scheduled
-  workout materialization remain deferred to later implementation steps.
+- Automatic propagation from newer trainer template versions remains deferred.
