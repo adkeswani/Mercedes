@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -5,19 +6,28 @@ import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/main.dart' as app;
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('local test account enters the authenticated app',
       (tester) async {
     expect(browserSmokeConfig.loginEnabled, isTrue);
+    final identityRole = browserSmokeConfig.identityRole;
+    expect(identityRole, isNotNull);
 
     await app.main();
     await _pumpUntilFound(tester, find.byKey(browserSmokeLoginButtonKey));
+    await binding.takeScreenshot(
+      '${identityRole!.name}-auth-before-login',
+    );
 
     await tester.tap(find.byKey(browserSmokeLoginButtonKey));
     await _pumpUntilFound(tester, find.byKey(authenticatedAppEntryKey));
 
     expect(find.byKey(authenticatedAppEntryKey), findsOneWidget);
+    expect(FirebaseAuth.instance.currentUser?.email, browserSmokeConfig.email);
+    await binding.takeScreenshot(
+      '${identityRole.name}-app-after-login',
+    );
   });
 }
 

@@ -145,14 +145,46 @@ From the repository root, run:
 ```
 
 The script starts clean emulators, creates
-`browser-smoke@mercedes.test` with a non-secret deterministic password, seeds
-only the profile needed for bootstrap, runs the browser test in Chrome's
-desktop test viewport, and shuts the emulators down. No real Firebase or Google
-credentials are required.
+two non-secret deterministic identities, seeds their bootstrap profiles and
+active trainer-athlete relationship, runs the trainer login smoke in Chrome's
+1280x800 desktop viewport, and shuts the emulators down:
+
+| Role | Emulator email | Emulator password |
+| --- | --- | --- |
+| Trainer | `browser-smoke-trainer@mercedes.test` | `BrowserSmokeTrainer123!` |
+| Athlete | `browser-smoke-athlete@mercedes.test` | `BrowserSmokeAthlete123!` |
+
+Run the same login/bootstrap assertion as the athlete with:
+
+```powershell
+.\stage5\tool\run-browser-login-smoke.ps1 -Identity athlete
+```
+
+Each run seeds both identities and the relationship, but signs in only the
+selected role. No real Firebase or Google credentials are required.
 Google OAuth is deliberately not automated because its external consent UI is
 not deterministic in the Firebase Auth emulator. Instead, the local-login
 button is compiled in only when explicit browser-smoke and emulator flags are
 present in a debug build; release builds cannot enable it.
+
+### Screenshot artifacts
+
+The integration test captures the sign-in page before login and the app
+immediately after authenticated entry. The runner writes deterministic
+1280x800 PNGs to this gitignored directory:
+
+```text
+stage5/test-artifacts/browser-login/
+  trainer-auth-before-login.png
+  trainer-app-after-login.png
+  athlete-auth-before-login.png
+  athlete-app-after-login.png
+```
+
+Run the trainer and athlete commands above to regenerate all four images.
+Screenshots stay uncommitted because they are run artifacts rather than golden
+baselines; the repository does not currently maintain committed screenshot
+fixtures.
 
 The desktop-sized viewport is the current smoke-test baseline. After navigation
 and responsive layouts stabilize, add a phone-sized viewport (for example,

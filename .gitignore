@@ -27,3 +27,6 @@ test-rules/node_modules/
 # Firebase emulator logs
 firestore-debug.log
 ui-debug.log
+
+# Browser integration test artifacts
+stage5/test-artifacts/
