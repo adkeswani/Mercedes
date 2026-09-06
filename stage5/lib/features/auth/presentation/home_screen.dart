@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/profile/presentation/feedback_dialog.dart';
@@ -30,6 +31,7 @@ class HomeScreen extends ConsumerWidget {
     final authState = ref.watch(authStateProvider);
 
     return Scaffold(
+      key: authenticatedAppEntryKey,
       appBar: AppBar(
         title: const Text('Mercedes'),
         actions: [

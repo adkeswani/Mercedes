@@ -42,6 +42,20 @@ class AuthRepository {
     return _signInWithGoogleMobile();
   }
 
+  /// Signs in with email and password.
+  ///
+  /// Stage 5 exposes this only through the debug, emulator-gated browser smoke
+  /// test seam. The production UI continues to offer Google Sign-In only.
+  Future<UserCredential> signInWithEmailAndPassword({
+    required String email,
+    required String password,
+  }) {
+    return _firebaseAuth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+  }
+
   Future<UserCredential?> _signInWithGoogleWeb() async {
     final provider = GoogleAuthProvider();
     try {

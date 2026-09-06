@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 
 /// Sign-in screen with Google Sign-In button.
@@ -14,12 +15,11 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _isLoading = false;
 
-  Future<void> _signInWithGoogle() async {
+  Future<void> _signIn(Future<void> Function() operation) async {
     setState(() => _isLoading = true);
 
     try {
-      final repo = ref.read(authRepositoryProvider);
-      await repo.signInWithGoogle();
+      await operation();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -31,6 +31,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<void> _signInWithGoogle() {
+    return _signIn(() async {
+      await ref.read(authRepositoryProvider).signInWithGoogle();
+    });
+  }
+
+  Future<void> _signInForBrowserSmoke() {
+    return _signIn(() async {
+      await ref.read(authRepositoryProvider).signInWithEmailAndPassword(
+            email: browserSmokeConfig.email,
+            password: browserSmokeConfig.password,
+          );
+    });
   }
 
   @override
@@ -59,6 +74,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     icon: const Icon(Icons.login),
                     label: const Text('Sign in with Google'),
                   ),
+            if (!_isLoading && browserSmokeConfig.loginEnabled) ...[
+              const SizedBox(height: 12),
+              TextButton(
+                key: browserSmokeLoginButtonKey,
+                onPressed: _signInForBrowserSmoke,
+                child: const Text('Sign in to local test account'),
+              ),
+            ],
           ],
         ),
       ),

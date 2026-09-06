@@ -830,6 +830,16 @@ Every Cloud Function in the system, its trigger, and what it does:
 
 Triggered when a user deletes their account via Firebase Auth. The function cascades through all collections:
 
+> **Deferred product/security requirement:** The app still needs a
+> user-facing **Delete my account** action with explicit confirmation and clear
+> disclosure of what is deleted, anonymized, or retained. Its implementation
+> must remove or anonymize all personal data owned by the user, define how
+> trainer/athlete relationships are ended or detached on either party's
+> deletion, and preserve only historical training records that have a
+> documented retention basis with identifiers anonymized. This reminder does
+> not implement account deletion; the UI, policy decisions, server-side
+> orchestration, retry handling, and tests remain deferred.
+
 1. **`users/{uid}`** — delete document.
 2. **`usernames/{username}`** — delete the username reservation doc.
 3. **`enrollments`** — query all enrollments where `athleteId == uid`, set `status: "removed"`, write `removedAt`.

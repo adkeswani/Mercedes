@@ -14,7 +14,7 @@ This repository uses and/or depends on third-party tools and packages with their
 - VS Code (`Microsoft.VisualStudioCode`) — Microsoft Software License Terms
 - GitHub CLI (`GitHub.cli`) — MIT
 
-### Flutter packages (stage2)
+### Flutter packages (stage2-stage5)
 
 - `firebase_core` — BSD-3-Clause
 - `firebase_auth` — BSD-3-Clause
@@ -25,7 +25,13 @@ This repository uses and/or depends on third-party tools and packages with their
 - `url_launcher` — BSD-3-Clause
 - `youtube_player_iframe` — BSD-3-Clause
 - `flutter_lints` — BSD-3-Clause
+- `integration_test` (Flutter SDK, dev) — BSD-3-Clause
 - `fake_cloud_firestore` (dev) — BSD-3-Clause
+
+### Browser smoke-test tooling
+
+- ChromeDriver — BSD-3-Clause; the locally installed driver must match Chrome
+  and is not installed or version-pinned by this repository.
 
 ### Node.js packages (functions/)
 

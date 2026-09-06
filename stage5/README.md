@@ -120,25 +120,46 @@ The Functions manifest adds only the repository test command and does not add,
 remove, pin, or update any package, so the license notices and tooling
 version/lock inventories are intentionally unchanged.
 
-## Next browser integration slice
+## Browser login smoke test
 
-Account-dependent browser integration tests are intentionally deferred. They
-require all of the following setup:
+Stage 5 has one intentionally narrow browser integration test. It starts the
+Flutter web app in Chrome against local Firebase Auth and Firestore emulators,
+signs in through the real login and bootstrap path, and verifies that routing
+reaches the authenticated app entry. It does not assert Firestore application
+reads or writes and is not a broad UX test.
 
-1. A deployed or emulator-hosted Stage 5 web build connected to Auth,
-   Firestore, and Functions for the same Firebase project.
-2. One verified trainer test account and one distinct athlete test account,
-   with credentials supplied through the test runner's secret store rather
-   than committed files.
-3. A deterministic active `trainerClientRelationships/{trainerId}_{athleteId}`
-   record and active enrollment for an assignable trainer-owned program.
-4. Trainer-owned published exercise and typed workout versions, plus program
-   version 1 containing stable entry IDs and an active subscribed athlete
-   program instance whose schedule includes past, current, and future cases.
-5. Emulator cleanup/seed tooling or an isolated disposable project so tests can
-   publish version 2, wait for `propagationState == complete`, assert the
-   reconciled schedule and immutable history, end the relationship, publish
-   again, and verify no further propagation.
-6. Browser automation configured for two independent authenticated contexts,
-   with Functions retry logs and Firestore documents available as failure
-   artifacts.
+Prerequisites:
+
+- Flutter 3.41.2 with Chrome installed.
+- ChromeDriver matching the installed Chrome version, available on `PATH` or
+  through the `CHROMEDRIVER_PATH` environment variable.
+- Firebase CLI 15.15.0 and a Java runtime supported by the Firestore emulator.
+- Windows Developer Mode enabled before the initial `flutter pub get`, because
+  Flutter plugins require symbolic-link support.
+- Ports 9099 (Auth) and 8080 (Firestore) available locally.
+
+From the repository root, run:
+
+```powershell
+.\stage5\tool\run-browser-login-smoke.ps1
+```
+
+The script starts clean emulators, creates
+`browser-smoke@mercedes.test` with a non-secret deterministic password, seeds
+only the profile needed for bootstrap, runs the browser test in Chrome's
+desktop test viewport, and shuts the emulators down. No real Firebase or Google
+credentials are required.
+Google OAuth is deliberately not automated because its external consent UI is
+not deterministic in the Firebase Auth emulator. Instead, the local-login
+button is compiled in only when explicit browser-smoke and emulator flags are
+present in a debug build; release builds cannot enable it.
+
+The desktop-sized viewport is the current smoke-test baseline. After navigation
+and responsive layouts stabilize, add a phone-sized viewport (for example,
+390x844) as a separate run of the same authentication assertion rather than
+adding UX assertions to this smoke test.
+
+Full browser E2E remains deferred until the UX stabilizes. That later suite
+will cover trainer/athlete contexts, relationships, enrollments, assignment,
+propagation, immutable history, and responsive workflows with isolated seeded
+data and failure artifacts.
