@@ -1,6 +1,9 @@
 param(
     [switch]$InsideEmulators,
+    [switch]$SkipPubGet,
     [string]$ChromeDriverPath = $env:CHROMEDRIVER_PATH,
+    [string]$TestTarget = $env:BROWSER_SMOKE_TEST_TARGET,
+    [string]$StartGateName = $env:BROWSER_SMOKE_START_GATE,
     [ValidateSet('trainer', 'athlete')]
     [string]$Identity = 'trainer'
 )
@@ -8,10 +11,51 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+if ($StartGateName) {
+    $startGate = [Threading.EventWaitHandle]::OpenExisting($StartGateName)
+    try {
+        if (-not $startGate.WaitOne(30000)) {
+            throw 'Timed out waiting for the stage validation start gate.'
+        }
+    }
+    finally {
+        $startGate.Dispose()
+    }
+}
+
 $projectId = 'mercedes-app-11ce2'
-$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$stage5Path = Join-Path $repoRoot 'stage5'
-$artifactPath = Join-Path $stage5Path 'test-artifacts\browser-login'
+$stagePath = Split-Path -Parent $PSScriptRoot
+$repoRoot = Split-Path -Parent $stagePath
+$stageName = Split-Path -Leaf $stagePath
+$artifactRoot = Join-Path $stagePath 'test-artifacts'
+$artifactPath = Join-Path $artifactRoot 'browser-login'
+if ($env:BROWSER_SMOKE_ARTIFACT_DIR_OVERRIDE) {
+    $resolvedArtifactRoot = [IO.Path]::GetFullPath($artifactRoot)
+    $resolvedArtifactPath = [IO.Path]::GetFullPath(
+        $env:BROWSER_SMOKE_ARTIFACT_DIR_OVERRIDE
+    )
+    if (-not $resolvedArtifactPath.StartsWith(
+            "$resolvedArtifactRoot\",
+            [StringComparison]::OrdinalIgnoreCase
+        )) {
+        throw "Artifact directory must be inside $resolvedArtifactRoot."
+    }
+    $artifactPath = $resolvedArtifactPath
+}
+$integrationTestPath = Join-Path $stagePath 'integration_test'
+if (-not $TestTarget) {
+    $TestTarget = 'integration_test\browser_login_smoke_test.dart'
+}
+$resolvedTestTarget = Resolve-Path (Join-Path $stagePath $TestTarget)
+$resolvedIntegrationPath = Resolve-Path $integrationTestPath
+if (-not $resolvedTestTarget.Path.StartsWith(
+        "$($resolvedIntegrationPath.Path)\",
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+    throw "Integration test must be inside $integrationTestPath."
+}
+$TestTarget = $resolvedTestTarget.Path.Substring($stagePath.Length)
+$TestTarget = $TestTarget.TrimStart('\')
 $identities = @{
     trainer = [ordered]@{
         Role = 'trainer'
@@ -33,12 +77,16 @@ if (-not $InsideEmulators) {
     if ($ChromeDriverPath) {
         $env:CHROMEDRIVER_PATH = (Resolve-Path $ChromeDriverPath).Path
     }
+    $env:BROWSER_SMOKE_TEST_TARGET = $TestTarget
 
     Push-Location $repoRoot
     try {
         $innerCommand = 'powershell -NoProfile -ExecutionPolicy Bypass ' +
-            '-File "stage5\tool\run-browser-login-smoke.ps1" ' +
+            "-File `"$stageName\tool\run-browser-login-smoke.ps1`" " +
             "-InsideEmulators -Identity $Identity"
+        if ($SkipPubGet) {
+            $innerCommand += ' -SkipPubGet'
+        }
         & firebase emulators:exec `
             --only auth,firestore `
             --project $projectId `
@@ -150,6 +198,10 @@ Invoke-RestMethod `
     -Body $relationshipBody | Out-Null
 
 $selectedIdentity = if ($Identity -eq 'trainer') { $trainer } else { $athlete }
+$attempt = $env:BROWSER_SMOKE_ATTEMPT
+if ($attempt -and $attempt -ne '1') {
+    $artifactPath = Join-Path $artifactPath "retry-$attempt"
+}
 $env:BROWSER_SMOKE_ARTIFACT_DIR = $artifactPath
 New-Item -ItemType Directory -Force -Path $artifactPath | Out-Null
 Remove-Item `
@@ -161,7 +213,7 @@ Remove-Item `
     -Force `
     -ErrorAction SilentlyContinue
 
-Push-Location $stage5Path
+Push-Location $stagePath
 $chromeDriverProcess = $null
 try {
     if (-not $ChromeDriverPath) {
@@ -174,9 +226,11 @@ try {
         throw 'ChromeDriver was not found. Set CHROMEDRIVER_PATH to a driver that matches the installed Chrome version.'
     }
 
-    & flutter pub get
-    if ($LASTEXITCODE -ne 0) {
-        throw 'flutter pub get failed.'
+    if (-not $SkipPubGet) {
+        & flutter pub get
+        if ($LASTEXITCODE -ne 0) {
+            throw 'flutter pub get failed.'
+        }
     }
 
     $chromeDriverProcess = Start-Process `
@@ -191,7 +245,7 @@ try {
 
     & flutter drive `
         --driver 'test_driver\integration_test.dart' `
-        --target 'integration_test\browser_login_smoke_test.dart' `
+        --target $TestTarget `
         -d chrome `
         --headless `
         --no-keep-app-running `
@@ -210,7 +264,7 @@ try {
 }
 finally {
     if ($chromeDriverProcess -and -not $chromeDriverProcess.HasExited) {
-        Stop-Process -Id $chromeDriverProcess.Id
+        Stop-Process -Id $chromeDriverProcess.Id -Force
     }
     Pop-Location
 }

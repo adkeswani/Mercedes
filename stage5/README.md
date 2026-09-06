@@ -186,6 +186,27 @@ Screenshots stay uncommitted because they are run artifacts rather than golden
 baselines; the repository does not currently maintain committed screenshot
 fixtures.
 
+## Complete stage validation
+
+Copilot's repository-local stage completion skill lives at
+`.github/skills/stage-completion-testing/SKILL.md`. Its validation entry point
+automatically runs the full Flutter suite, analyzer, Firestore rules suite, and
+every Dart test discovered under `stage5/integration_test/` for both emulator
+identities:
+
+```powershell
+.\scripts\run-stage-validation.ps1 -Stage stage5
+```
+
+The script writes browser output to a unique
+`stage5/test-artifacts/stage-validation/<UTC timestamp>-<run ID>/` directory
+and prints that absolute directory plus every artifact path before it exits,
+including on failure. Direct browser-smoke commands continue to use the
+stable `stage5/test-artifacts/browser-login/` paths above. New browser
+integration tests only need to use the existing Stage 5 integration driver
+and be named `*_test.dart` in `stage5/integration_test/` to join the
+stage-completion matrix automatically.
+
 The desktop-sized viewport is the current smoke-test baseline. After navigation
 and responsive layouts stabilize, add a phone-sized viewport (for example,
 390x844) as a separate run of the same authentication assertion rather than

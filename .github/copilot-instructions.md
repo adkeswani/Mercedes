@@ -34,6 +34,12 @@
 
 - Every code change must include unit tests for the new or modified behavior.
 - If a change cannot be unit tested (e.g. pure UI wiring), document why in the commit message.
+- Before declaring an implementation stage complete, follow
+  `.github/skills/stage-completion-testing/SKILL.md`. Run
+  `.\scripts\run-stage-validation.ps1 -Stage <stage-directory>` so unit tests,
+  analysis, Firestore rules tests, and every discovered browser integration
+  test run together. Report the absolute artifact directory and each generated
+  artifact path.
 
 ## Ownership and authorization
 
