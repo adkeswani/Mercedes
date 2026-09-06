@@ -473,29 +473,28 @@ tests, and any required backfill tests before the next step depends on it.
 
 ### Stage 5 implementation status
 
-Sequence steps 1 through 4, the athlete-program-instance slice in step 6, and
-server-side subscription propagation in step 8 are implemented in `stage5/`.
+The Stage 5 model and migration foundation checkpoint is complete in `stage5/`,
+including sequence steps 1 through 4, the athlete-program-instance slice in
+step 6, and server-side subscription propagation in step 8.
 
 #### Current checkpoint
 
 Stage 5 now includes the domain foundations, immutable exercise versioning,
 shared library metadata/copy provenance, typed workout blocks with stable
 exercise slots, the `AthleteProgramInstance` lifecycle, and authoritative
-subscription propagation. Stage 4 remains unchanged. The Stage 5 Flutter
-suite, Cloud Functions build/tests, Firestore emulator rules suite, analyzer
-severity check, and final code-review pass are clean.
+subscription propagation. Browser login integration is complete: Chrome runs
+against local Firebase emulators with deterministic trainer and athlete
+identities linked by an active relationship, exercises the real login/bootstrap
+path, and captures signed-out and signed-in screenshots as gitignored
+artifacts. Full stage validation is automated across Flutter tests, analysis,
+Firestore rules, and discovered browser integration tests. Stage 4 remains
+unchanged.
 
-The next slice is account-dependent browser integration testing. It requires a
-deployed or emulator-hosted Stage 5 web build connected to Auth, Firestore, and
-Functions for one Firebase project; distinct verified trainer and athlete test
-accounts whose credentials come from the test runner's secret store; an active
-trainer-client relationship and enrollment; trainer-owned published exercise,
-typed workout, and program fixtures with stable program-entry IDs; and an
-active subscribed athlete program instance containing past, current, and future
-schedule cases. Tests also need isolated cleanup/seed support, two independent
-authenticated browser contexts, polling for propagation completion, and
-Functions logs plus Firestore documents captured as failure artifacts. No
-credentials are defined or committed by this checkpoint.
+Pause here. The next work session should begin with UX/product decisions and
+responsive UX implementation. Broad business-workflow browser E2E remains
+deferred until the UX stabilizes. The deferred **Delete my account**
+requirement, including owned-data deletion/anonymization and explicit
+relationship/history handling, is recorded in the technical design.
 
 - Trainer-client relationships use deterministic
   `{trainerId}_{athleteId}` document IDs, retain ended relationships for audit,
