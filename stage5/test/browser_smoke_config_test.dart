@@ -8,6 +8,7 @@ void main() {
 
   test('login seam is disabled in production builds', () {
     const config = BrowserSmokeConfig(
+      autoLogin: true,
       email: email,
       enableLogin: true,
       identityRoleName: 'trainer',
@@ -22,6 +23,7 @@ void main() {
 
   test('login seam requires explicit emulator and login flags', () {
     const noEmulator = BrowserSmokeConfig(
+      autoLogin: true,
       email: email,
       enableLogin: true,
       identityRoleName: 'trainer',
@@ -30,6 +32,7 @@ void main() {
       useFirebaseEmulators: false,
     );
     const noLoginFlag = BrowserSmokeConfig(
+      autoLogin: true,
       email: email,
       enableLogin: false,
       identityRoleName: 'trainer',
@@ -44,6 +47,7 @@ void main() {
 
   test('login seam requires non-empty deterministic credentials', () {
     const config = BrowserSmokeConfig(
+      autoLogin: true,
       email: '',
       enableLogin: true,
       identityRoleName: 'trainer',
@@ -57,6 +61,7 @@ void main() {
 
   test('debug emulator configuration enables the login seam', () {
     const config = BrowserSmokeConfig(
+      autoLogin: true,
       email: email,
       enableLogin: true,
       identityRoleName: 'trainer',
@@ -72,6 +77,7 @@ void main() {
 
   test('athlete role enables the same emulator-only seam', () {
     const config = BrowserSmokeConfig(
+      autoLogin: true,
       email: 'browser-smoke-athlete@mercedes.test',
       enableLogin: true,
       identityRoleName: 'athlete',
@@ -86,6 +92,7 @@ void main() {
 
   test('unknown identity role disables the login seam', () {
     const config = BrowserSmokeConfig(
+      autoLogin: true,
       email: email,
       enableLogin: true,
       identityRoleName: 'admin',
@@ -96,5 +103,29 @@ void main() {
 
     expect(config.identityRole, isNull);
     expect(config.loginEnabled, isFalse);
+  });
+
+  test('automatic login requires the fully enabled smoke seam', () {
+    const enabled = BrowserSmokeConfig(
+      autoLogin: true,
+      email: email,
+      enableLogin: true,
+      identityRoleName: 'trainer',
+      isDebugBuild: true,
+      password: password,
+      useFirebaseEmulators: true,
+    );
+    const disabled = BrowserSmokeConfig(
+      autoLogin: false,
+      email: email,
+      enableLogin: true,
+      identityRoleName: 'trainer',
+      isDebugBuild: true,
+      password: password,
+      useFirebaseEmulators: true,
+    );
+
+    expect(enabled.autoLoginEnabled, isTrue);
+    expect(disabled.autoLoginEnabled, isFalse);
   });
 }

@@ -14,6 +14,7 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _isLoading = false;
+  bool _autoLoginScheduled = false;
 
   Future<void> _signIn(Future<void> Function() operation) async {
     setState(() => _isLoading = true);
@@ -50,6 +51,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (browserSmokeConfig.autoLoginEnabled && !_autoLoginScheduled) {
+      _autoLoginScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _signInForBrowserSmoke();
+        }
+      });
+    }
+
     return Scaffold(
       body: Center(
         child: Column(

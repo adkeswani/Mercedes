@@ -1,0 +1,1 @@
+String? readInitialWebWorkspaceLocation() => null;

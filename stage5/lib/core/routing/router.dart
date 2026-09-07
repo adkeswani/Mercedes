@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:stage5/core/web_workspace/pending_web_workspace_route.dart';
+import 'package:stage5/core/web_workspace/web_workspace_location.dart';
+import 'package:stage5/core/web_workspace/web_workspace_mode.dart';
 import 'package:stage5/features/auth/presentation/app_entry_providers.dart';
 import 'package:stage5/features/auth/presentation/home_screen.dart';
 import 'package:stage5/features/auth/presentation/login_screen.dart';
 import 'package:stage5/features/auth/presentation/onboarding_screen.dart';
+import 'package:stage5/features/auth/presentation/web_workspace_shell.dart';
 import 'package:stage5/features/exercises/presentation/exercise_detail_screen.dart';
 import 'package:stage5/features/exercises/presentation/exercise_form_screen.dart';
 import 'package:stage5/features/exercises/presentation/exercise_list_screen.dart';
@@ -25,24 +29,35 @@ import 'package:stage5/features/workouts/presentation/workout_list_screen.dart';
 /// - signedOut → /login
 /// - waitingForProfile → /loading
 /// - needsOnboarding → /onboarding
-/// - ready → /
+/// - ready → the responsive authenticated entry point
 /// - error → /error
+final pendingWebWorkspaceRouteProvider =
+    Provider<PendingWebWorkspaceRoute>((ref) {
+  return PendingWebWorkspaceRoute(readInitialWebWorkspaceLocation());
+});
+
 final routerProvider = Provider<GoRouter>((ref) {
   final appState = ref.watch(appEntryStateProvider);
+  final pendingWorkspaceRoute = ref.watch(pendingWebWorkspaceRouteProvider);
 
-  return GoRouter(
-    initialLocation: '/',
+  final router = GoRouter(
     redirect: (context, state) {
       final loc = state.matchedLocation;
 
       switch (appState) {
         case AppEntryState.signedOut:
+          pendingWorkspaceRoute.remember(state.uri.toString());
           return loc == '/login' ? null : '/login';
         case AppEntryState.waitingForProfile:
           return loc == '/loading' ? null : '/loading';
         case AppEntryState.needsOnboarding:
           return loc == '/onboarding' ? null : '/onboarding';
         case AppEntryState.ready:
+          final pendingLocation = pendingWorkspaceRoute.take();
+          if (pendingLocation != null &&
+              WebWorkspaceMode.fromLocation(loc) == null) {
+            return pendingLocation;
+          }
           if (loc == '/login' || loc == '/onboarding' || loc == '/loading') {
             return '/';
           }
@@ -54,12 +69,9 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: '/',
-        builder: (context, state) => const HomeScreen(),
+        builder: (context, state) => const ResponsiveAuthenticatedHome(),
       ),
-      GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
-      ),
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
         path: '/onboarding',
         builder: (context, state) => const OnboardingScreen(),
@@ -83,9 +95,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/exercises/:id/edit',
-        builder: (context, state) => ExerciseFormScreen(
-          exerciseId: state.pathParameters['id'],
-        ),
+        builder: (context, state) =>
+            ExerciseFormScreen(exerciseId: state.pathParameters['id']),
       ),
       GoRoute(
         path: '/workouts',
@@ -126,8 +137,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => ScheduleAssignmentScreen(
           programId: state.uri.queryParameters['programId'],
           preselectedAthleteId: state.uri.queryParameters['athleteId'],
-          preselectedDate:
-              DateTime.tryParse(state.uri.queryParameters['date'] ?? ''),
+          preselectedDate: DateTime.tryParse(
+            state.uri.queryParameters['date'] ?? '',
+          ),
           startInProgramMode: state.uri.queryParameters['mode'] == 'program',
           selfService: state.uri.queryParameters['selfService'] == 'true',
         ),
@@ -141,9 +153,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/schedule',
-        builder: (context, state) => const TrainerCalendarScreen(
-          selfService: true,
-        ),
+        builder: (context, state) =>
+            const TrainerCalendarScreen(selfService: true),
       ),
       GoRoute(
         path: '/trainer-calendar',
@@ -158,6 +169,133 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: '/athlete/today',
+        builder: (context, state) => const AdaptiveWebWorkspaceRoute(
+          mode: WebWorkspaceMode.athlete,
+          destination: WebWorkspaceDestination.athleteToday,
+          webChild: HomeScreenContent(
+            showTrainerTools: false,
+            scheduleRoute: '/athlete/calendar',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/athlete/calendar',
+        builder: (context, state) => const AdaptiveWebWorkspaceRoute(
+          mode: WebWorkspaceMode.athlete,
+          destination: WebWorkspaceDestination.athleteCalendar,
+          webChild: TrainerCalendarScreen(selfService: true),
+        ),
+      ),
+      GoRoute(
+        path: '/athlete/programs',
+        builder: (context, state) => const AdaptiveWebWorkspaceRoute(
+          mode: WebWorkspaceMode.athlete,
+          destination: WebWorkspaceDestination.athletePrograms,
+          webChild: WebWorkspacePlaceholder(
+            icon: Icons.school_outlined,
+            title: 'My programs',
+            description:
+                'Your active programs are summarized on Today. A dedicated '
+                'program workspace is coming next.',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/athlete/history',
+        builder: (context, state) => const AdaptiveWebWorkspaceRoute(
+          mode: WebWorkspaceMode.athlete,
+          destination: WebWorkspaceDestination.athleteHistory,
+          webChild: WebWorkspacePlaceholder(
+            icon: Icons.history,
+            title: 'Workout history',
+            description:
+                'Completed workouts and past training details will appear '
+                'here.',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/athlete/progress',
+        builder: (context, state) => const AdaptiveWebWorkspaceRoute(
+          mode: WebWorkspaceMode.athlete,
+          destination: WebWorkspaceDestination.athleteProgress,
+          webChild: WebWorkspacePlaceholder(
+            icon: Icons.insights,
+            title: 'Progress',
+            description:
+                'Training trends, milestones, and progress insights are '
+                'planned for a later Stage 5 slice.',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/athlete/messages',
+        builder: (context, state) => const AdaptiveWebWorkspaceRoute(
+          mode: WebWorkspaceMode.athlete,
+          destination: WebWorkspaceDestination.athleteMessages,
+          webChild: WebWorkspacePlaceholder(
+            icon: Icons.chat_bubble_outline,
+            title: 'Messages',
+            description:
+                'Trainer and athlete conversations will be available here.',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/trainer/dashboard',
+        builder: (context, state) => const AdaptiveWebWorkspaceRoute(
+          mode: WebWorkspaceMode.trainer,
+          destination: WebWorkspaceDestination.trainerDashboard,
+          webChild: WebWorkspacePlaceholder(
+            icon: Icons.dashboard_outlined,
+            title: 'Trainer dashboard',
+            description: 'Client activity, upcoming assignments, and coaching '
+                'priorities will be summarized here.',
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/trainer/clients',
+        builder: (context, state) => const AdaptiveWebWorkspaceRoute(
+          mode: WebWorkspaceMode.trainer,
+          destination: WebWorkspaceDestination.trainerClients,
+          webChild: RosterAthletesScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/trainer/exercises',
+        builder: (context, state) => const AdaptiveWebWorkspaceRoute(
+          mode: WebWorkspaceMode.trainer,
+          destination: WebWorkspaceDestination.trainerExercises,
+          webChild: ExerciseListScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/trainer/workouts',
+        builder: (context, state) => const AdaptiveWebWorkspaceRoute(
+          mode: WebWorkspaceMode.trainer,
+          destination: WebWorkspaceDestination.trainerWorkouts,
+          webChild: WorkoutListScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/trainer/programs',
+        builder: (context, state) => const AdaptiveWebWorkspaceRoute(
+          mode: WebWorkspaceMode.trainer,
+          destination: WebWorkspaceDestination.trainerPrograms,
+          webChild: ProgramListScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/trainer/calendar',
+        builder: (context, state) => const AdaptiveWebWorkspaceRoute(
+          mode: WebWorkspaceMode.trainer,
+          destination: WebWorkspaceDestination.trainerCalendar,
+          webChild: TrainerCalendarScreen(),
+        ),
+      ),
+      GoRoute(
         path: '/loading',
         builder: (context, state) => const _LoadingScreen(),
       ),
@@ -167,6 +305,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+  ref.onDispose(router.dispose);
+  return router;
 });
 
 /// Shown while waiting for the Cloud Function to create the user doc.

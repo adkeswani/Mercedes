@@ -42,20 +42,6 @@ if ($env:BROWSER_SMOKE_ARTIFACT_DIR_OVERRIDE) {
     }
     $artifactPath = $resolvedArtifactPath
 }
-$integrationTestPath = Join-Path $stagePath 'integration_test'
-if (-not $TestTarget) {
-    $TestTarget = 'integration_test\browser_login_smoke_test.dart'
-}
-$resolvedTestTarget = Resolve-Path (Join-Path $stagePath $TestTarget)
-$resolvedIntegrationPath = Resolve-Path $integrationTestPath
-if (-not $resolvedTestTarget.Path.StartsWith(
-        "$($resolvedIntegrationPath.Path)\",
-        [StringComparison]::OrdinalIgnoreCase
-    )) {
-    throw "Integration test must be inside $integrationTestPath."
-}
-$TestTarget = $resolvedTestTarget.Path.Substring($stagePath.Length)
-$TestTarget = $TestTarget.TrimStart('\')
 $identities = @{
     trainer = [ordered]@{
         Role = 'trainer'
@@ -132,6 +118,7 @@ function New-BrowserSmokeIdentity {
             updatedAt = @{ timestampValue = $timestamp }
             updatedBy = @{ stringValue = $uid }
         }
+
     } | ConvertTo-Json -Depth 5
     $profileUri = "http://127.0.0.1:8080/v1/projects/$projectId/" +
         "databases/(default)/documents/users/$uid"
@@ -148,6 +135,20 @@ function New-BrowserSmokeIdentity {
         Password = $Config.Password
         Uid = $uid
         IdToken = $authUser.idToken
+    }
+}
+
+function Get-FreeTcpPort {
+    $listener = [Net.Sockets.TcpListener]::new(
+        [Net.IPAddress]::Loopback,
+        0
+    )
+    try {
+        $listener.Start()
+        return ([Net.IPEndPoint]$listener.LocalEndpoint).Port
+    }
+    finally {
+        $listener.Stop()
     }
 }
 
@@ -214,7 +215,10 @@ Remove-Item `
     -ErrorAction SilentlyContinue
 
 Push-Location $stagePath
+$webServerProcess = $null
 $chromeDriverProcess = $null
+$browserSessionId = $null
+$driverBaseUri = $null
 try {
     if (-not $ChromeDriverPath) {
         $chromeDriver = Get-Command 'chromedriver' -ErrorAction SilentlyContinue
@@ -233,38 +237,219 @@ try {
         }
     }
 
-    $chromeDriverProcess = Start-Process `
-        -FilePath $ChromeDriverPath `
-        -ArgumentList '--port=4444' `
-        -PassThru `
-        -WindowStyle Hidden
-    Start-Sleep -Seconds 1
-    if ($chromeDriverProcess.HasExited) {
-        throw 'ChromeDriver exited before the browser test started.'
+    if ($TestTarget) {
+        $integrationPath = (Resolve-Path 'integration_test').Path
+        $resolvedTestTarget = (Resolve-Path $TestTarget).Path
+        if (-not $resolvedTestTarget.StartsWith(
+                "$integrationPath\",
+                [StringComparison]::OrdinalIgnoreCase
+            )) {
+            throw "Integration test must be inside $integrationPath."
+        }
+        $relativeTestTarget = $resolvedTestTarget.Substring(
+            $stagePath.Length
+        ).TrimStart('\')
+        $driverPort = Get-FreeTcpPort
+        $chromeDriverProcess = Start-Process `
+            -FilePath $ChromeDriverPath `
+            -ArgumentList "--port=$driverPort" `
+            -PassThru `
+            -WindowStyle Hidden
+        Start-Sleep -Seconds 1
+        if ($chromeDriverProcess.HasExited) {
+            throw 'ChromeDriver exited before the browser test started.'
+        }
+
+        & flutter drive `
+            --driver 'test_driver\integration_test.dart' `
+            --target $relativeTestTarget `
+            -d chrome `
+            --headless `
+            --no-keep-app-running `
+            --browser-dimension=1280x800 `
+            "--driver-port=$driverPort" `
+            --timeout=180 `
+            --no-pub `
+            --dart-define=USE_FIREBASE_EMULATORS=true `
+            --dart-define=BROWSER_LOGIN_SMOKE=true `
+            "--dart-define=BROWSER_SMOKE_ROLE=$($selectedIdentity.Role)" `
+            "--dart-define=BROWSER_SMOKE_EMAIL=$($selectedIdentity.Email)" `
+            "--dart-define=BROWSER_SMOKE_PASSWORD=$($selectedIdentity.Password)"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Flutter integration test failed: $relativeTestTarget"
+        }
+        return
     }
 
-    & flutter drive `
-        --driver 'test_driver\integration_test.dart' `
-        --target $TestTarget `
-        -d chrome `
-        --headless `
-        --no-keep-app-running `
-        --browser-dimension=1280x800 `
-        --driver-port=4444 `
-        --timeout=180 `
+    & flutter build web `
+        --debug `
         --no-pub `
         --dart-define=USE_FIREBASE_EMULATORS=true `
         --dart-define=BROWSER_LOGIN_SMOKE=true `
+        --dart-define=BROWSER_SMOKE_AUTO_LOGIN=true `
         "--dart-define=BROWSER_SMOKE_ROLE=$($selectedIdentity.Role)" `
         "--dart-define=BROWSER_SMOKE_EMAIL=$($selectedIdentity.Email)" `
         "--dart-define=BROWSER_SMOKE_PASSWORD=$($selectedIdentity.Password)"
     if ($LASTEXITCODE -ne 0) {
-        throw 'Flutter browser login smoke test failed.'
+        throw 'Flutter web build failed.'
     }
+
+    $python = Get-Command 'python' -ErrorAction Stop
+    $webPort = Get-FreeTcpPort
+    $driverPort = Get-FreeTcpPort
+    $webServerProcess = Start-Process `
+        -FilePath $python.Source `
+        -ArgumentList '-m', 'http.server', "$webPort", '--bind', '127.0.0.1' `
+        -WorkingDirectory (Join-Path $stagePath 'build\web') `
+        -PassThru `
+        -WindowStyle Hidden
+    $chromeDriverProcess = Start-Process `
+        -FilePath $ChromeDriverPath `
+        -ArgumentList "--port=$driverPort" `
+        -PassThru `
+        -WindowStyle Hidden
+
+    $driverBaseUri = "http://127.0.0.1:$driverPort"
+    $driverDeadline = [DateTime]::UtcNow.AddSeconds(15)
+    $driverReady = $false
+    while ([DateTime]::UtcNow -lt $driverDeadline) {
+        try {
+            Invoke-RestMethod -Uri "$driverBaseUri/status" | Out-Null
+            $driverReady = $true
+            break
+        }
+        catch {
+            Start-Sleep -Milliseconds 200
+        }
+    }
+    if (-not $driverReady -or $chromeDriverProcess.HasExited) {
+        throw 'ChromeDriver did not become ready for the browser smoke test.'
+    }
+
+    $sessionBody = @{
+        capabilities = @{
+            alwaysMatch = @{
+                browserName = 'chrome'
+                'goog:chromeOptions' = @{
+                    args = @(
+                        '--headless=new',
+                        '--window-size=1280,800',
+                        '--disable-gpu',
+                        '--no-sandbox'
+                    )
+                }
+            }
+        }
+    } | ConvertTo-Json -Depth 6
+    $session = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$driverBaseUri/session" `
+        -ContentType 'application/json' `
+        -Body $sessionBody
+    $browserSessionId = $session.value.sessionId
+    if (-not $browserSessionId) {
+        throw 'ChromeDriver did not return a browser session ID.'
+    }
+
+    $expectedWorkspace = if ($Identity -eq 'trainer') {
+        'trainer'
+    }
+    else {
+        'athlete'
+    }
+    $workspaceRoute = if ($Identity -eq 'trainer') {
+        'trainer/dashboard'
+    }
+    else {
+        'athlete/today'
+    }
+    $appUri = "http://127.0.0.1:$webPort/#/$workspaceRoute"
+    Invoke-RestMethod `
+        -Method Post `
+        -Uri "$driverBaseUri/session/$browserSessionId/url" `
+        -ContentType 'application/json' `
+        -Body (@{ url = $appUri } | ConvertTo-Json) |
+        Out-Null
+
+    $authenticatedState = $null
+    $loginDeadline = [DateTime]::UtcNow.AddSeconds(60)
+    $identityScript = @{
+        script = @'
+return document.body ? {
+  email: document.body.getAttribute('data-browser-smoke-authenticated'),
+  workspace: document.body.getAttribute('data-browser-smoke-workspace')
+} : null;
+'@
+        args = @()
+    } | ConvertTo-Json
+    while ([DateTime]::UtcNow -lt $loginDeadline) {
+        $result = Invoke-RestMethod `
+            -Method Post `
+            -Uri "$driverBaseUri/session/$browserSessionId/execute/sync" `
+            -ContentType 'application/json' `
+            -Body $identityScript
+        $authenticatedState = $result.value
+        if (
+            $authenticatedState.email -eq $selectedIdentity.Email -and
+            $authenticatedState.workspace -eq $expectedWorkspace
+        ) {
+            break
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if (
+        $authenticatedState.email -ne $selectedIdentity.Email -or
+        $authenticatedState.workspace -ne $expectedWorkspace
+    ) {
+        $currentUrl = Invoke-RestMethod `
+            -Uri "$driverBaseUri/session/$browserSessionId/url"
+        throw (
+            'Browser smoke did not reach the expected authenticated ' +
+            "workspace. URL: $($currentUrl.value)"
+        )
+    }
+
+    $currentUrl = Invoke-RestMethod `
+        -Uri "$driverBaseUri/session/$browserSessionId/url"
+    $currentRoute = ([Uri]$currentUrl.value).Fragment.TrimStart('#')
+    if ($currentRoute -ne "/$workspaceRoute") {
+        throw (
+            "Browser smoke expected /$workspaceRoute but reached " +
+            "$currentRoute."
+        )
+    }
+
+    Write-Host "BROWSER_SMOKE_ROUTE_ASSERTIONS_PASSED:$Identity"
+    $screenshotName = "$Identity-app-after-login"
+    $screenshot = Invoke-RestMethod `
+        -Uri "$driverBaseUri/session/$browserSessionId/screenshot"
+    $screenshotBytes = [Convert]::FromBase64String($screenshot.value)
+    if ($screenshotBytes.Length -eq 0) {
+        throw "Browser smoke screenshot was empty: $screenshotName"
+    }
+    [IO.File]::WriteAllBytes(
+        (Join-Path $artifactPath "$screenshotName.png"),
+        $screenshotBytes
+    )
+    Write-Host "BROWSER_SMOKE_ASSERTIONS_PASSED:$Identity"
 }
 finally {
+    if ($browserSessionId -and $driverBaseUri) {
+        try {
+            Invoke-RestMethod `
+                -Method Delete `
+                -Uri "$driverBaseUri/session/$browserSessionId" |
+                Out-Null
+        }
+        catch {
+            Write-Warning "Could not close Chrome session: $_"
+        }
+    }
     if ($chromeDriverProcess -and -not $chromeDriverProcess.HasExited) {
         Stop-Process -Id $chromeDriverProcess.Id -Force
+    }
+    if ($webServerProcess -and -not $webServerProcess.HasExited) {
+        Stop-Process -Id $webServerProcess.Id -Force
     }
     Pop-Location
 }

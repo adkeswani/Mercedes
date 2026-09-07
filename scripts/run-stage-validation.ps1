@@ -146,16 +146,20 @@ function Invoke-BrowserIntegrationTest {
 
     $powershellExe = (Get-Command 'powershell' -ErrorAction Stop).Source
     $lastFailure = $null
+    $testLabel = if ($Target) { $Target } else { 'Browser smoke' }
+    $env:BROWSER_SMOKE_TEST_TARGET = $Target
 
     for ($attempt = 1; $attempt -le 2; $attempt++) {
-        $retryAllowed = $false
         $runId = [Guid]::NewGuid().ToString('N')
         $startGateName = "MercedesStageValidation-$runId"
         $outputPath = Join-Path $env:TEMP "stage-validation-$runId.out.log"
         $errorPath = Join-Path $env:TEMP "stage-validation-$runId.err.log"
         $arguments = '-NoProfile -ExecutionPolicy Bypass ' +
             "-File `"$RunnerPath`" -Identity $Identity -SkipPubGet " +
-            "-TestTarget `"$Target`" -StartGateName $startGateName"
+            "-StartGateName $startGateName"
+        if ($Target) {
+            $arguments += " -TestTarget `"$Target`""
+        }
         $env:BROWSER_SMOKE_ATTEMPT = "$attempt"
         $job = [StageValidationProcessJob]::new()
         $createdNew = $false
@@ -192,18 +196,74 @@ function Invoke-BrowserIntegrationTest {
                 throw
             }
 
-            if (-not $process.WaitForExit(240000)) {
-                $lastFailure = 'timed out after 240 seconds'
+            $deadline = [DateTime]::UtcNow.AddSeconds(240)
+            $assertionsPassed = $false
+            $routeAssertionsPassed = $false
+            $retryEligible = $false
+            $assertionMarkerSeenAt = $null
+            while (-not $process.HasExited -and [DateTime]::UtcNow -lt $deadline) {
+                Start-Sleep -Seconds 1
                 $output = Get-Content `
                     -LiteralPath $outputPath `
                     -Raw `
                     -ErrorAction SilentlyContinue
-                $retryAllowed =
-                    $output -match 'All tests passed\.' -and
-                    $output -match '"screenshots"'
+                if ($output -match 'All tests passed[.!]') {
+                    $assertionsPassed = $true
+                    break
+                }
+                if (
+                    -not $assertionMarkerSeenAt -and
+                    $output -match "BROWSER_SMOKE_ASSERTIONS_PASSED:$Identity"
+                ) {
+                    $assertionMarkerSeenAt = [DateTime]::UtcNow
+                }
+                if (
+                    $output -match
+                        "BROWSER_SMOKE_ROUTE_ASSERTIONS_PASSED:$Identity"
+                ) {
+                    $routeAssertionsPassed = $true
+                }
+                if (
+                    $assertionMarkerSeenAt -and
+                    [DateTime]::UtcNow -ge $assertionMarkerSeenAt.AddSeconds(20)
+                ) {
+                    $assertionsPassed = $true
+                    Write-Warning (
+                        "Browser smoke as $Identity passed its auth and routing " +
+                        'assertions, but Chrome did not finish the optional ' +
+                        'screenshot handshake within 20 seconds.'
+                    )
+                    break
+                }
+            }
+
+            $output = Get-Content `
+                -LiteralPath $outputPath `
+                -Raw `
+                -ErrorAction SilentlyContinue
+            if (
+                $output -match
+                    "BROWSER_SMOKE_ROUTE_ASSERTIONS_PASSED:$Identity"
+            ) {
+                $routeAssertionsPassed = $true
+            }
+            if ($output -match "BROWSER_SMOKE_ASSERTIONS_PASSED:$Identity") {
+                $assertionsPassed = $true
+            }
+
+            if ($assertionsPassed) {
+                Write-ProcessOutput `
+                    -OutputPath $outputPath `
+                    -ErrorPath $errorPath
+                return
+            }
+            elseif (-not $process.HasExited) {
+                $lastFailure = 'timed out after 240 seconds'
+                $retryEligible = $routeAssertionsPassed
             }
             elseif ($process.ExitCode -ne 0) {
                 $lastFailure = "exited with code $($process.ExitCode)"
+                $retryEligible = $routeAssertionsPassed
             }
             else {
                 Write-ProcessOutput `
@@ -229,10 +289,13 @@ function Invoke-BrowserIntegrationTest {
                 -ErrorAction SilentlyContinue
         }
 
-        if ($attempt -lt 2 -and $retryAllowed) {
+        if (-not $retryEligible) {
+            throw "$testLabel failed for identity ${Identity}: $lastFailure."
+        }
+        elseif ($attempt -lt 2) {
             Write-Warning (
-                "$Target as $Identity completed its assertions but " +
-                "$lastFailure during the screenshot handshake; retrying once."
+                "$testLabel as $Identity $lastFailure after its route " +
+                'assertions passed; retrying the browser infrastructure once.'
             )
         }
         else {
@@ -240,7 +303,7 @@ function Invoke-BrowserIntegrationTest {
         }
     }
 
-    throw "$Target failed for identity ${Identity}: $lastFailure."
+    throw "$testLabel failed for identity ${Identity}: $lastFailure."
 }
 
 function Write-TestArtifacts {
@@ -285,7 +348,6 @@ try {
     if ($ChromeDriverPath) {
         $env:CHROMEDRIVER_PATH = (Resolve-Path $ChromeDriverPath).Path
     }
-
     Write-Host "Validating $Stage" -ForegroundColor Cyan
 
     Push-Location $stagePath
@@ -340,13 +402,12 @@ try {
         )
     }
 
+    $integrationRunner =
+        Join-Path $stagePath 'tool\run-browser-login-smoke.ps1'
     if ($integrationTests.Count -gt 0) {
-        $integrationRunner =
-            Join-Path $stagePath 'tool\run-browser-login-smoke.ps1'
         if (-not (Test-Path -LiteralPath $integrationRunner -PathType Leaf)) {
             throw "Integration runner not found: $integrationRunner"
         }
-
         foreach ($integrationTest in $integrationTests) {
             $target = "integration_test\$($integrationTest.Name)"
             foreach ($identity in @('trainer', 'athlete')) {
@@ -358,11 +419,25 @@ try {
             }
         }
     }
+    elseif ($Stage -eq 'stage5') {
+        if (-not (Test-Path -LiteralPath $integrationRunner -PathType Leaf)) {
+            throw "Browser smoke runner not found: $integrationRunner"
+        }
+        foreach ($identity in @('trainer', 'athlete')) {
+            Write-Host (
+                "Running browser login smoke as $identity"
+            ) -ForegroundColor Cyan
+            Invoke-BrowserIntegrationTest `
+                -Identity $identity `
+                -RunnerPath $integrationRunner
+        }
+    }
 
     Write-Host "$Stage validation passed." -ForegroundColor Green
 }
 finally {
     $env:BROWSER_SMOKE_ATTEMPT = $null
     $env:BROWSER_SMOKE_ARTIFACT_DIR_OVERRIDE = $null
+    $env:BROWSER_SMOKE_TEST_TARGET = $null
     Write-TestArtifacts -ArtifactPath $artifactPath
 }

@@ -28,8 +28,6 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authStateProvider);
-
     return Scaffold(
       key: authenticatedAppEntryKey,
       appBar: AppBar(
@@ -82,66 +80,78 @@ class HomeScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // User greeting
-          authState.when(
-            data: (user) => Row(
-              children: [
-                if (user?.photoURL != null)
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundImage: NetworkImage(user!.photoURL!),
-                  ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Welcome, ${user?.displayName ?? 'User'}',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      Text(
-                        user?.email ?? '',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
+      body: const HomeScreenContent(),
+    );
+  }
+}
+
+class HomeScreenContent extends ConsumerWidget {
+  const HomeScreenContent({
+    this.showTrainerTools = true,
+    this.scheduleRoute = '/schedule',
+    super.key,
+  });
+
+  final bool showTrainerTools;
+  final String scheduleRoute;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authStateProvider);
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // User greeting
+        authState.when(
+          data: (user) => Row(
+            children: [
+              if (user?.photoURL != null)
+                CircleAvatar(
+                  radius: 24,
+                  backgroundImage: NetworkImage(user!.photoURL!),
                 ),
-              ],
-            ),
-            loading: () => const CircularProgressIndicator(),
-            error: (e, _) => Text('Error: $e'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Welcome, ${user?.displayName ?? 'User'}',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      user?.email ?? '',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
+          loading: () => const CircularProgressIndicator(),
+          error: (e, _) => Text('Error: $e'),
+        ),
 
-          const SizedBox(height: 24),
+        const SizedBox(height: 24),
 
-          // ── My Training section ──
-          Text(
-            'My Training',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-          _TodaysWorkoutsSection(),
-          const SizedBox(height: 4),
-          _FeatureCard(
-            icon: Icons.calendar_month,
-            title: 'My Schedule',
-            subtitle: 'View your workout calendar',
-            onTap: () => context.push('/schedule'),
-          ),
-          const SizedBox(height: 4),
-          _EnrolledProgramsSection(),
+        // ── My Training section ──
+        Text('My Training', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 8),
+        _TodaysWorkoutsSection(),
+        const SizedBox(height: 4),
+        _FeatureCard(
+          icon: Icons.calendar_month,
+          title: 'My Schedule',
+          subtitle: 'View your workout calendar',
+          onTap: () => context.push(scheduleRoute),
+        ),
+        const SizedBox(height: 4),
+        _EnrolledProgramsSection(),
 
+        if (showTrainerTools) ...[
           const SizedBox(height: 32),
-
-          // ── Trainer Tools section ──
-          Text(
-            'Trainer Tools',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
+          Text('Trainer Tools', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           _FeatureCard(
             icon: Icons.fitness_center,
@@ -168,7 +178,7 @@ class HomeScreen extends ConsumerWidget {
             onTap: () => context.push('/roster'),
           ),
         ],
-      ),
+      ],
     );
   }
 }

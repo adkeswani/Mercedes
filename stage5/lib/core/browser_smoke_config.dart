@@ -19,6 +19,7 @@ enum BrowserSmokeIdentityRole {
 /// it cannot be enabled in a production release build.
 class BrowserSmokeConfig {
   const BrowserSmokeConfig({
+    required this.autoLogin,
     required this.email,
     required this.enableLogin,
     required this.identityRoleName,
@@ -27,6 +28,7 @@ class BrowserSmokeConfig {
     required this.useFirebaseEmulators,
   });
 
+  final bool autoLogin;
   final String email;
   final bool enableLogin;
   final String identityRoleName;
@@ -45,9 +47,12 @@ class BrowserSmokeConfig {
       identityRole != null &&
       email.isNotEmpty &&
       password.isNotEmpty;
+
+  bool get autoLoginEnabled => loginEnabled && autoLogin;
 }
 
 const browserSmokeConfig = BrowserSmokeConfig(
+  autoLogin: bool.fromEnvironment('BROWSER_SMOKE_AUTO_LOGIN'),
   email: String.fromEnvironment('BROWSER_SMOKE_EMAIL'),
   enableLogin: bool.fromEnvironment('BROWSER_LOGIN_SMOKE'),
   identityRoleName: String.fromEnvironment('BROWSER_SMOKE_ROLE'),

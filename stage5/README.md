@@ -5,6 +5,24 @@ the Stage 4 application behavior.
 
 Implemented in this slice:
 
+- A responsive authenticated web shell that separates athlete and trainer
+  workspaces without introducing roles, claims, permissions, or identity
+  changes. Every signed-in user can switch modes from the top-right segmented
+  control.
+- Route-driven web context under `/athlete/...` and `/trainer/...`. Direct links
+  select the corresponding workspace, while the root route restores the last
+  browser selection from `localStorage` and otherwise defaults to Athlete.
+- Athlete navigation for Today, My calendar, My programs, Workout history,
+  Progress, and Messages. Today and My calendar reuse the current training and
+  self-service calendar experiences.
+- Trainer navigation for Dashboard, Clients, Exercise library, Workout library,
+  Program library, and Calendar & assignments. Existing roster, library, and
+  trainer calendar screens remain wired to their natural destinations.
+- Reusable, descriptive empty destinations for dashboard, dedicated athlete
+  programs, workout history, progress, and messages while those focused
+  experiences are deferred.
+- The existing compact/mobile home and navigation remain unchanged below the
+  desktop breakpoint. Login and onboarding do not expose the workspace switch.
 - `TrainerClientRelationship` as the durable trainer roster and authorization
   boundary.
 - Trainer-owned relationship lifecycle operations with active and ended
@@ -160,8 +178,10 @@ Run the same login/bootstrap assertion as the athlete with:
 .\stage5\tool\run-browser-login-smoke.ps1 -Identity athlete
 ```
 
-Each run seeds both identities and the relationship, but signs in only the
-selected role. No real Firebase or Google credentials are required.
+Each run seeds both identities and the relationship, signs in only the
+selected identity, and opens that run's workspace route. Identity selection is
+test context only: it does not represent a role or permission.
+No real Firebase or Google credentials are required.
 Google OAuth is deliberately not automated because its external consent UI is
 not deterministic in the Firebase Auth emulator. Instead, the local-login
 button is compiled in only when explicit browser-smoke and emulator flags are
@@ -169,30 +189,30 @@ present in a debug build; release builds cannot enable it.
 
 ### Screenshot artifacts
 
-The integration test captures the sign-in page before login and the app
-immediately after authenticated entry. The runner writes deterministic
+After the real login, route, workspace, and identity assertions pass, the
+runner captures an authenticated app screenshot. It writes deterministic
 1280x800 PNGs to this gitignored directory:
 
 ```text
 stage5/test-artifacts/browser-login/
-  trainer-auth-before-login.png
   trainer-app-after-login.png
-  athlete-auth-before-login.png
   athlete-app-after-login.png
 ```
 
-Run the trainer and athlete commands above to regenerate all four images.
-Screenshots stay uncommitted because they are run artifacts rather than golden
-baselines; the repository does not currently maintain committed screenshot
-fixtures.
+Screenshots are diagnostic artifacts rather than golden assertions. Each
+screenshot is captured directly from the rendered Flutter surface after the
+smoke completes the real login and verifies the exact authenticated workspace
+route and identity. The runner builds the real web app, opens it through
+ChromeDriver, and uses a browser-only emulator login seam plus an authenticated
+DOM marker. This avoids Flutter's intermittent `flutter drive` result handshake
+while retaining native full-window screenshots.
 
 ## Complete stage validation
 
 Copilot's repository-local stage completion skill lives at
 `.github/skills/stage-completion-testing/SKILL.md`. Its validation entry point
 automatically runs the full Flutter suite, analyzer, Firestore rules suite, and
-every Dart test discovered under `stage5/integration_test/` for both emulator
-identities:
+the browser login smoke for both emulator identities:
 
 ```powershell
 .\scripts\run-stage-validation.ps1 -Stage stage5
@@ -202,17 +222,24 @@ The script writes browser output to a unique
 `stage5/test-artifacts/stage-validation/<UTC timestamp>-<run ID>/` directory
 and prints that absolute directory plus every artifact path before it exits,
 including on failure. Direct browser-smoke commands continue to use the
-stable `stage5/test-artifacts/browser-login/` paths above. New browser
-integration tests only need to use the existing Stage 5 integration driver
-and be named `*_test.dart` in `stage5/integration_test/` to join the
-stage-completion matrix automatically.
+stable `stage5/test-artifacts/browser-login/` paths above.
 
 The desktop-sized viewport is the current smoke-test baseline. After navigation
-and responsive layouts stabilize, add a phone-sized viewport (for example,
-390x844) as a separate run of the same authentication assertion rather than
-adding UX assertions to this smoke test.
+and responsive layouts stabilize further, add a phone-sized viewport (for
+example, 390x844) as a separate run of the same authentication assertion rather
+than adding UX assertions to this smoke test.
 
 Full browser E2E remains deferred until the UX stabilizes. That later suite
 will cover trainer/athlete contexts, relationships, enrollments, assignment,
 propagation, immutable history, and responsive workflows with isolated seeded
 data and failure artifacts.
+
+## Web workspace follow-ups
+
+This first shell slice intentionally leaves trainer dashboard aggregation,
+dedicated athlete program management, workout history, progress reporting, and
+messaging as polished empty destinations. The underlying implemented screens
+remain available in the appropriate workspace. Detail and edit flows continue
+to use their existing flat Stage 4-compatible routes; a later slice can move
+those secondary routes under the workspace namespaces without changing
+authorization or stored data.
