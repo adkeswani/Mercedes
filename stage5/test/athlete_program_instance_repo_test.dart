@@ -131,6 +131,54 @@ void main() {
     expect(legacy.propagationAttempt, 0);
   });
 
+  test('athlete program query includes modern and compatible legacy records',
+      () async {
+    await seedSubscription();
+    await firestore.collection('athleteProgramInstances').doc('legacy').set({
+      'athleteOwnerId': 'athlete-1',
+      'assigningTrainerId': 'trainer-1',
+      'sourceProgramId': 'program-1',
+      'sourceProgramVersion': 1,
+      'relationshipMode': 'copied',
+      'startDate': '2025-01-01',
+      'expectedEndDate': '2025-02-01',
+      'workoutCount': 1,
+      'status': 'completed',
+      'createdAt': DateTime.utc(2025, 1, 1),
+      'createdBy': 'athlete-1',
+      'updatedAt': DateTime.utc(2025, 1, 1),
+      'updatedBy': 'athlete-1',
+    });
+    await firestore.collection('athleteProgramInstances').doc('other').set({
+      'athleteOwnerId': 'athlete-2',
+      'assigningTrainerId': 'trainer-1',
+      'sourceProgramId': 'program-1',
+      'sourceProgramVersion': 1,
+      'relationshipMode': 'copied',
+      'startDate': '2027-01-01',
+      'expectedEndDate': '2027-02-01',
+      'workoutCount': 1,
+      'status': 'active',
+      'createdAt': DateTime.utc(2027, 1, 1),
+      'createdBy': 'athlete-2',
+      'updatedAt': DateTime.utc(2027, 1, 1),
+      'updatedBy': 'athlete-2',
+    });
+
+    final instances =
+        await repository.watchForAthlete('athlete-1').first;
+
+    expect(instances.map((instance) => instance.id), ['instance-1', 'legacy']);
+    expect(
+      instances.every((instance) => instance.athleteOwnerId == 'athlete-1'),
+      isTrue,
+    );
+    expect(
+      instances.last.propagationState,
+      ProgramPropagationState.complete,
+    );
+  });
+
   test('legacy backfill is conservative, linked, and idempotent', () async {
     await firestore.collection('workoutInstances').doc('workout-1').set({
       'programId': 'program-1',

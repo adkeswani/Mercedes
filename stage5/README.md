@@ -225,6 +225,54 @@ workaround. Follow-up should reproduce whether foreground focus is actually
 required, inspect ChromeDriver window activation and screenshot timing, and
 automate focus only if that need is proven.
 
+## Release authorization contract
+
+Stage 5 web releases must deploy the client and its Firestore authorization
+contract as one ordered release. Pass an explicit Firebase project ID or CLI
+alias:
+
+```powershell
+.\deploy.ps1 -Target web -StageDir stage5 -Project mercedes-app-11ce2
+```
+
+The script deploys Firestore rules and indexes first, waits until every
+composite index in `firestore.indexes.json` reports `READY`, and deploys
+Hosting only after that gate succeeds. `scripts/verify-web-deploy-contract.ps1`
+is part of Stage 5 validation and fails if this ordering, the explicit project
+requirement, or the repository Firestore configuration is removed. A
+Hosting-only release is not a complete Stage 5 release because new client
+queries can depend on newer rules and composite indexes.
+
+Authorization coverage is layered:
+
+1. Firestore emulator tests execute the exact Calendar, My Programs, workout
+   history, and legacy-backfill query shapes. Fixtures include modern records,
+   legacy records missing newer optional fields, and another athlete's data;
+   own-athlete queries must succeed while cross-athlete queries must fail.
+2. Stage validation checks the combined deployment contract above. Release
+   operators must select the intended Firebase project explicitly and review
+   the active alias before deploying.
+3. A deployed-environment canary should exercise login, Calendar, My Programs,
+   and workout history using dedicated non-personal trainer and athlete
+   accounts plus deterministic synthetic documents. Use a reserved
+   `release-canary-` ID namespace, delete or overwrite that namespace on each
+   run, store credentials only in the release system's secret store, and never
+   read or mutate real user data. Run it manually as a staging promotion gate
+   first; move it into CI after staging project aliases and protected secrets
+   are configured.
+
+Firebase environments should be separate projects for development, staging,
+and production rather than Hosting preview channels sharing one backend. Add
+explicit CLI aliases such as `dev`, `staging`, and `prod`, seed only synthetic
+Auth/Firestore data in staging, deploy the full Hosting/rules/index bundle to
+staging, run the canary, and then promote the same commit and configuration to
+production with an explicit `--project` or selected alias. Creating those
+projects, aliases, accounts, and secrets is intentionally deferred.
+
+Screenshots remain useful diagnostics for layout and identity rendering, but
+they are supplemental: they cannot establish that deployed rules and indexes
+match the client query contract.
+
 ## Complete stage validation
 
 Copilot's repository-local stage completion skill lives at

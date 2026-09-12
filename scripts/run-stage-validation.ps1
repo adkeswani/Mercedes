@@ -350,6 +350,10 @@ try {
     }
     Write-Host "Validating $Stage" -ForegroundColor Cyan
 
+    if ($Stage -eq 'stage5') {
+        & (Join-Path $repoRoot 'scripts\verify-web-deploy-contract.ps1')
+    }
+
     Push-Location $stagePath
     try {
         & flutter pub get

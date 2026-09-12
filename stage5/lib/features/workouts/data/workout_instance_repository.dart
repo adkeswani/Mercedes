@@ -1149,20 +1149,13 @@ class WorkoutInstanceRepository {
     required String startDate,
     required String endDate,
   }) {
-    return Stream.fromFuture(
-      recoverProgramInstanceLifecycles(
-        athleteId: athleteId,
-        actorId: athleteId,
-      ),
-    ).asyncExpand(
-      (_) => _collection
-          .where('athleteId', isEqualTo: athleteId)
-          .where('scheduledDate', isGreaterThanOrEqualTo: startDate)
-          .where('scheduledDate', isLessThanOrEqualTo: endDate)
-          .orderBy('scheduledDate')
-          .snapshots()
-          .asyncMap(_instancesFromSnapshot),
-    );
+    return _collection
+        .where('athleteId', isEqualTo: athleteId)
+        .where('scheduledDate', isGreaterThanOrEqualTo: startDate)
+        .where('scheduledDate', isLessThanOrEqualTo: endDate)
+        .orderBy('scheduledDate')
+        .snapshots()
+        .asyncMap(_instancesFromSnapshot);
   }
 
   /// Streams immutable terminal records and any overdue scheduled workouts.

@@ -2148,6 +2148,48 @@ describe('athleteProgramInstances', () => {
     );
   });
 
+  it('allows only the athlete-scoped program instance list query', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const collection = ctx.firestore().collection('athleteProgramInstances');
+      await collection.doc('modern-own').set(instanceData());
+      await collection.doc('legacy-own').set({
+        athleteOwnerId: ATHLETE,
+        assigningTrainerId: OWNER,
+        sourceProgramId: PROGRAM_ID,
+        sourceProgramVersion: 1,
+        relationshipMode: 'copied',
+        startDate: '2026-01-01',
+        expectedEndDate: '2026-02-01',
+        workoutCount: 1,
+        status: 'completed',
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        createdBy: ATHLETE,
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+        updatedBy: ATHLETE,
+      });
+      await collection.doc('other-athlete').set({
+        ...instanceData(),
+        athleteOwnerId: STRANGER,
+        startDate: '2026-06-01',
+      });
+    });
+    const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+    const ownPrograms = await assertSucceeds(
+      athleteDb.collection('athleteProgramInstances')
+        .where('athleteOwnerId', '==', ATHLETE)
+        .orderBy('startDate', 'desc')
+        .get()
+    );
+    expect(ownPrograms.docs.map((doc) => doc.id))
+      .toEqual(['modern-own', 'legacy-own']);
+    await assertFails(
+      athleteDb.collection('athleteProgramInstances')
+        .where('athleteOwnerId', '==', STRANGER)
+        .orderBy('startDate', 'desc')
+        .get()
+    );
+  });
+
   it('allows athlete-confirmed subscription conversion but not identity edits', async () => {
     await seedProgramWithEnrollment();
     const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
@@ -2675,7 +2717,15 @@ describe('workoutInstances', () => {
   it('allows only the athlete-scoped calendar range query', async () => {
     await seedInstance();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await ctx.firestore().collection('workoutInstances').doc('other').set({
+      const collection = ctx.firestore().collection('workoutInstances');
+      await collection.doc('legacy-own').set({
+        programId: PROGRAM_ID,
+        athleteId: ATHLETE,
+        assignedBy: OWNER,
+        status: 'completed',
+        scheduledDate: '2026-06-14',
+      });
+      await collection.doc('other').set({
         programId: PROGRAM_ID,
         athleteId: STRANGER,
         assignedBy: OWNER,
@@ -2692,13 +2742,85 @@ describe('workoutInstances', () => {
         .orderBy('scheduledDate')
         .get()
     );
-    expect(ownCalendar.docs.map((doc) => doc.id)).toEqual([INSTANCE_ID]);
+    expect(ownCalendar.docs.map((doc) => doc.id))
+      .toEqual(['legacy-own', INSTANCE_ID]);
     await assertFails(
       athleteDb.collection('workoutInstances')
         .where('athleteId', '==', STRANGER)
         .where('scheduledDate', '>=', '2026-06-01')
         .where('scheduledDate', '<=', '2026-06-30')
         .orderBy('scheduledDate')
+        .get()
+    );
+  });
+
+  it('allows only the athlete-scoped legacy assignment backfill query',
+      async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const collection = ctx.firestore().collection('workoutInstances');
+      await collection.doc('legacy-own').set({
+        programId: PROGRAM_ID,
+        programAssignmentId: 'legacy-assignment',
+        athleteId: ATHLETE,
+        assignedBy: OWNER,
+        status: 'completed',
+        scheduledDate: '2025-06-14',
+      });
+      await collection.doc('legacy-other').set({
+        programId: PROGRAM_ID,
+        programAssignmentId: 'other-assignment',
+        athleteId: STRANGER,
+        assignedBy: OWNER,
+        status: 'completed',
+        scheduledDate: '2025-06-14',
+      });
+    });
+    const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+    const ownAssignments = await assertSucceeds(
+      athleteDb.collection('workoutInstances')
+        .where('athleteId', '==', ATHLETE)
+        .get()
+    );
+    expect(ownAssignments.docs.map((doc) => doc.id)).toEqual(['legacy-own']);
+    await assertFails(
+      athleteDb.collection('workoutInstances')
+        .where('athleteId', '==', STRANGER)
+        .get()
+    );
+  });
+
+  it('allows only the athlete-scoped workout history query', async () => {
+    await seedInstance();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const collection = ctx.firestore().collection('workoutInstances');
+      await collection.doc('legacy-history').set({
+        programId: PROGRAM_ID,
+        athleteId: ATHLETE,
+        assignedBy: OWNER,
+        status: 'completed',
+        scheduledDate: '2025-06-14',
+      });
+      await collection.doc('other-history').set({
+        programId: PROGRAM_ID,
+        athleteId: STRANGER,
+        assignedBy: OWNER,
+        status: 'completed',
+        scheduledDate: '2025-06-14',
+      });
+    });
+    const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+    const ownHistory = await assertSucceeds(
+      athleteDb.collection('workoutInstances')
+        .where('athleteId', '==', ATHLETE)
+        .orderBy('scheduledDate', 'desc')
+        .get()
+    );
+    expect(ownHistory.docs.map((doc) => doc.id))
+      .toEqual([INSTANCE_ID, 'legacy-history']);
+    await assertFails(
+      athleteDb.collection('workoutInstances')
+        .where('athleteId', '==', STRANGER)
+        .orderBy('scheduledDate', 'desc')
         .get()
     );
   });

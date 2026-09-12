@@ -5,7 +5,8 @@
 
 .DESCRIPTION
   Runs Flutter tests, builds release artifacts, and deploys.
-  Web deploys to Firebase Hosting. Android builds an AAB for Play Store upload.
+  Web deploys Firebase Hosting together with Firestore rules and indexes.
+  Android builds an AAB for Play Store upload.
 
 .PARAMETER Target
   Deployment target: 'web', 'android', or 'all'. Default: 'all'.
@@ -16,11 +17,14 @@
 .PARAMETER StageDir
   Stage directory to build from. Default: 'stage3'.
 
+.PARAMETER Project
+  Explicit Firebase project ID or configured CLI alias. Required for web.
+
 .EXAMPLE
-  .\deploy.ps1 -Target web
+  .\deploy.ps1 -Target web -StageDir stage5 -Project mercedes-app-11ce2
   .\deploy.ps1 -Target android
-  .\deploy.ps1 -Target all
-  .\deploy.ps1 -Target web -SkipTests
+  .\deploy.ps1 -Target all -Project mercedes-app-11ce2
+  .\deploy.ps1 -Target web -SkipTests -Project mercedes-app-11ce2
 #>
 
 param(
@@ -29,7 +33,9 @@ param(
 
     [switch]$SkipTests,
 
-    [string]$StageDir = 'stage3'
+    [string]$StageDir = 'stage3',
+
+    [string]$Project
 )
 
 Set-StrictMode -Version Latest
@@ -41,6 +47,11 @@ $stageRoot = Join-Path $repoRoot $StageDir
 function Write-Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 function Write-Ok($msg) { Write-Host "  OK: $msg" -ForegroundColor Green }
 function Write-Fail($msg) { Write-Host "  FAIL: $msg" -ForegroundColor Red; exit 1 }
+
+$deploysWeb = $Target -eq 'web' -or $Target -eq 'all'
+if ($deploysWeb -and [string]::IsNullOrWhiteSpace($Project)) {
+    Write-Fail 'Web deployment requires an explicit -Project ID or CLI alias.'
+}
 
 # Verify we're on main
 Write-Step "Checking branch"
@@ -75,12 +86,28 @@ if ($Target -eq 'web' -or $Target -eq 'all') {
     Pop-Location
     Write-Ok "Web build complete"
 
-    Write-Step "Deploying to Firebase Hosting"
+    Write-Step "Deploying Firestore configuration"
     Push-Location $repoRoot
-    firebase deploy --only hosting
-    if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Fail "Firebase deploy failed" }
+    firebase deploy --only "firestore:rules,firestore:indexes" --project $Project
+    if ($LASTEXITCODE -ne 0) {
+        Pop-Location
+        Write-Fail "Firestore deployment failed"
+    }
+    & (Join-Path $repoRoot 'scripts\wait-firestore-indexes.ps1') `
+        -Project $Project
+    if ($LASTEXITCODE -ne 0) {
+        Pop-Location
+        Write-Fail "Firestore indexes did not become ready"
+    }
+
+    Write-Step "Deploying Firebase Hosting"
+    firebase deploy --only hosting --project $Project
+    if ($LASTEXITCODE -ne 0) {
+        Pop-Location
+        Write-Fail "Firebase Hosting deployment failed"
+    }
     Pop-Location
-    Write-Ok "Deployed to https://mercedes-app-11ce2.web.app"
+    Write-Ok "Firebase web release completed for $Project"
 }
 
 # Android deployment
