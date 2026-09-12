@@ -25,6 +25,16 @@ final athleteScheduleProvider =
   );
 });
 
+/// Streams completed, terminal, and overdue workout records for this athlete.
+final athleteWorkoutHistoryProvider =
+    StreamProvider.autoDispose<List<WorkoutInstance>>((ref) {
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) return const Stream.empty();
+  return ref
+      .watch(workoutInstanceRepositoryProvider)
+      .watchHistory(athleteId: user.uid);
+});
+
 /// Streams workout instances for a specific program-athlete pair.
 ///
 /// Used by program owners and enrolled athletes to view a program schedule.

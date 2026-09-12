@@ -2672,6 +2672,37 @@ describe('workoutInstances', () => {
     );
   });
 
+  it('allows only the athlete-scoped calendar range query', async () => {
+    await seedInstance();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc('other').set({
+        programId: PROGRAM_ID,
+        athleteId: STRANGER,
+        assignedBy: OWNER,
+        status: 'scheduled',
+        scheduledDate: '2026-06-16',
+      });
+    });
+    const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+    const ownCalendar = await assertSucceeds(
+      athleteDb.collection('workoutInstances')
+        .where('athleteId', '==', ATHLETE)
+        .where('scheduledDate', '>=', '2026-06-01')
+        .where('scheduledDate', '<=', '2026-06-30')
+        .orderBy('scheduledDate')
+        .get()
+    );
+    expect(ownCalendar.docs.map((doc) => doc.id)).toEqual([INSTANCE_ID]);
+    await assertFails(
+      athleteDb.collection('workoutInstances')
+        .where('athleteId', '==', STRANGER)
+        .where('scheduledDate', '>=', '2026-06-01')
+        .where('scheduledDate', '<=', '2026-06-30')
+        .orderBy('scheduledDate')
+        .get()
+    );
+  });
+
   it('denies stranger from querying an athletes calendar', async () => {
     await seedInstance();
     const db = testEnv.authenticatedContext(STRANGER).firestore();

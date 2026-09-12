@@ -13,14 +13,25 @@ Implemented in this slice:
   select the corresponding workspace, while the root route restores the last
   browser selection from `localStorage` and otherwise defaults to Athlete.
 - Athlete navigation for Today, My calendar, My programs, Workout history,
-  Progress, and Messages. Today and My calendar reuse the current training and
-  self-service calendar experiences.
+  Progress, and Messages. Today reuses the current training experience. My
+  calendar now uses the athlete-owned date-range query directly instead of
+  entering the trainer calendar's enrollment and legacy-migration flow.
+- A dedicated My programs workspace backed by signed-in-athlete
+  `AthleteProgramInstance` records. It runs the existing conservative legacy
+  assignment backfill and renders loading, empty, error, active, completed,
+  and cancelled states without creating a parallel enrollment model.
+- A Workout history workspace backed by the signed-in athlete's immutable
+  terminal records and overdue workout instances, using the existing
+  `(athleteId, scheduledDate)` Firestore index.
+- An accessible desktop account identity beside the Athlete/Trainer switch.
+  It prefers the profile display name, then username, authentication display
+  name, email, and finally a non-sensitive signed-in fallback. The text is
+  constrained and ellipsized so the desktop header remains responsive.
 - Trainer navigation for Dashboard, Clients, Exercise library, Workout library,
   Program library, and Calendar & assignments. Existing roster, library, and
   trainer calendar screens remain wired to their natural destinations.
-- Reusable, descriptive empty destinations for dashboard, dedicated athlete
-  programs, workout history, progress, and messages while those focused
-  experiences are deferred.
+- Reusable, descriptive empty destinations for dashboard, progress, and
+  messages while those focused experiences are deferred.
 - The existing compact/mobile home and navigation remain unchanged below the
   desktop breakpoint. Login and onboarding do not expose the workspace switch.
 - `TrainerClientRelationship` as the durable trainer roster and authorization
@@ -140,11 +151,12 @@ version/lock inventories are intentionally unchanged.
 
 ## Browser login smoke test
 
-Stage 5 has one intentionally narrow browser integration test. It starts the
-Flutter web app in Chrome against local Firebase Auth and Firestore emulators,
-signs in through the real login and bootstrap path, and verifies that routing
-reaches the authenticated app entry. It does not assert Firestore application
-reads or writes and is not a broad UX test.
+Stage 5 has browser integration coverage that starts the Flutter web app in
+Chrome against local Firebase Auth and Firestore emulators and signs in through
+the real login and bootstrap path. Both identities verify their accessible
+header identity. The athlete run also navigates to and verifies seeded
+first-class program instance data, completed workout history, and the
+athlete-owned calendar query before capturing each surface.
 
 Prerequisites:
 
@@ -162,10 +174,11 @@ From the repository root, run:
 .\stage5\tool\run-browser-login-smoke.ps1
 ```
 
-The script starts clean emulators, creates
-two non-secret deterministic identities, seeds their bootstrap profiles and
-active trainer-athlete relationship, runs the trainer login smoke in Chrome's
-1280x800 desktop viewport, and shuts the emulators down:
+The script starts clean emulators, creates two non-secret deterministic
+identities, seeds their bootstrap profiles, active trainer-athlete
+relationship, an athlete program instance, a current calendar workout, and a
+completed historical workout. It then runs the selected identity in Chrome's
+1280x800 desktop viewport and shuts the emulators down:
 
 | Role | Emulator email | Emulator password |
 | --- | --- | --- |
@@ -189,23 +202,28 @@ present in a debug build; release builds cannot enable it.
 
 ### Screenshot artifacts
 
-After the real login, route, workspace, and identity assertions pass, the
-runner captures an authenticated app screenshot. It writes deterministic
-1280x800 PNGs to this gitignored directory:
+After the real login, route, workspace, identity, and data assertions pass, the
+runner captures deterministic 1280x800 PNGs under the selected artifact
+directory. A direct athlete integration run produces:
 
 ```text
 stage5/test-artifacts/browser-login/
-  trainer-app-after-login.png
-  athlete-app-after-login.png
+  athlete-header-identity.png
+  athlete-my-programs.png
+  athlete-workout-history.png
+  athlete-calendar.png
 ```
 
-Screenshots are diagnostic artifacts rather than golden assertions. Each
-screenshot is captured directly from the rendered Flutter surface after the
-smoke completes the real login and verifies the exact authenticated workspace
-route and identity. The runner builds the real web app, opens it through
-ChromeDriver, and uses a browser-only emulator login seam plus an authenticated
-DOM marker. This avoids Flutter's intermittent `flutter drive` result handshake
-while retaining native full-window screenshots.
+The trainer run produces `trainer-header-identity.png`. Screenshots are
+diagnostic artifacts rather than golden assertions. The runner drives the real
+Flutter application through ChromeDriver and the emulator-only login seam.
+
+On one Windows screenshot-based run, Chrome appeared to require a manual click
+or foreground focus before the test progressed. This is an intermittent
+observation to investigate, not a confirmed prerequisite or permanent
+workaround. Follow-up should reproduce whether foreground focus is actually
+required, inspect ChromeDriver window activation and screenshot timing, and
+automate focus only if that need is proven.
 
 ## Complete stage validation
 
@@ -236,10 +254,9 @@ data and failure artifacts.
 
 ## Web workspace follow-ups
 
-This first shell slice intentionally leaves trainer dashboard aggregation,
-dedicated athlete program management, workout history, progress reporting, and
-messaging as polished empty destinations. The underlying implemented screens
-remain available in the appropriate workspace. Detail and edit flows continue
-to use their existing flat Stage 4-compatible routes; a later slice can move
-those secondary routes under the workspace namespaces without changing
-authorization or stored data.
+Trainer dashboard aggregation, athlete progress reporting, and messaging
+remain polished empty destinations. My programs is currently a read-only
+instance list and Workout history is a read-only chronological list; existing
+detail and completion routes remain available. Detail and edit flows continue
+to use their flat Stage 4-compatible routes, so existing deep links and mobile
+navigation remain unchanged.

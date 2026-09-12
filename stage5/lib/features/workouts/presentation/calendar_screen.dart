@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:stage5/core/browser_smoke_config.dart';
+import 'package:stage5/core/browser_smoke_status.dart';
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
+import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
 /// Calendar-style schedule view for athletes.
 ///
@@ -229,10 +232,26 @@ class _WorkoutInstanceTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final color = _statusColor(context);
+    final template = ref
+        .watch(workoutTemplateRepositoryProvider)
+        .getById(instance.workoutTemplateId);
 
     return ListTile(
       leading: Icon(_statusIcon(), color: color),
-      title: Text(instance.workoutTemplateId),
+      title: FutureBuilder(
+        future: template,
+        builder: (context, snapshot) {
+          if (browserSmokeConfig.autoLoginEnabled && snapshot.hasData) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              markBrowserSmokeSurfaceReady('athlete-calendar');
+            });
+          }
+          final title = snapshot.connectionState != ConnectionState.done
+              ? 'Loading workout...'
+              : snapshot.data?.name ?? 'Workout details unavailable';
+          return Text(title);
+        },
+      ),
       subtitle: Text(
         '${instance.workoutType.name} · ${instance.status.name}'
         '${instance.rpe != null ? ' · RPE ${instance.rpe}' : ''}',

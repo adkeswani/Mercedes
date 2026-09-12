@@ -13,10 +13,13 @@ import 'package:stage5/features/auth/presentation/web_workspace_shell.dart';
 import 'package:stage5/features/exercises/presentation/exercise_detail_screen.dart';
 import 'package:stage5/features/exercises/presentation/exercise_form_screen.dart';
 import 'package:stage5/features/exercises/presentation/exercise_list_screen.dart';
+import 'package:stage5/features/programs/presentation/athlete_programs_screen.dart';
 import 'package:stage5/features/programs/presentation/athlete_schedule_screen.dart';
 import 'package:stage5/features/programs/presentation/program_builder_screen.dart';
 import 'package:stage5/features/programs/presentation/program_list_screen.dart';
 import 'package:stage5/features/programs/presentation/roster_athletes_screen.dart';
+import 'package:stage5/features/workouts/presentation/athlete_workout_history_screen.dart';
+import 'package:stage5/features/workouts/presentation/calendar_screen.dart';
 import 'package:stage5/features/workouts/presentation/schedule_assignment_screen.dart';
 import 'package:stage5/features/workouts/presentation/trainer_calendar_screen.dart';
 import 'package:stage5/features/workouts/presentation/workout_builder_screen.dart';
@@ -184,7 +187,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AdaptiveWebWorkspaceRoute(
           mode: WebWorkspaceMode.athlete,
           destination: WebWorkspaceDestination.athleteCalendar,
-          webChild: TrainerCalendarScreen(selfService: true),
+          webChild: CalendarScreen(),
         ),
       ),
       GoRoute(
@@ -192,13 +195,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AdaptiveWebWorkspaceRoute(
           mode: WebWorkspaceMode.athlete,
           destination: WebWorkspaceDestination.athletePrograms,
-          webChild: WebWorkspacePlaceholder(
-            icon: Icons.school_outlined,
-            title: 'My programs',
-            description:
-                'Your active programs are summarized on Today. A dedicated '
-                'program workspace is coming next.',
-          ),
+          webChild: AthleteProgramsScreen(),
         ),
       ),
       GoRoute(
@@ -206,13 +203,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AdaptiveWebWorkspaceRoute(
           mode: WebWorkspaceMode.athlete,
           destination: WebWorkspaceDestination.athleteHistory,
-          webChild: WebWorkspacePlaceholder(
-            icon: Icons.history,
-            title: 'Workout history',
-            description:
-                'Completed workouts and past training details will appear '
-                'here.',
-          ),
+          webChild: AthleteWorkoutHistoryScreen(),
         ),
       ),
       GoRoute(

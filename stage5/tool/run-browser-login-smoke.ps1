@@ -198,6 +198,209 @@ Invoke-RestMethod `
     -ContentType 'application/json' `
     -Body $relationshipBody | Out-Null
 
+$today = Get-Date
+$calendarDate = $today.ToString('yyyy-MM-dd')
+$historyDate = $today.AddDays(-7).ToString('yyyy-MM-dd')
+$calendarTimestamp = [DateTime]::ParseExact(
+    $calendarDate,
+    'yyyy-MM-dd',
+    [Globalization.CultureInfo]::InvariantCulture
+).ToUniversalTime().ToString('o')
+$historyTimestamp = [DateTime]::ParseExact(
+    $historyDate,
+    'yyyy-MM-dd',
+    [Globalization.CultureInfo]::InvariantCulture
+).ToUniversalTime().ToString('o')
+$seedTimestamp = $today.ToUniversalTime().ToString('o')
+$programId = 'browser-athlete-program'
+$programInstanceId = 'browser-athlete-program-instance'
+$calendarTemplateId = 'browser-calendar-workout'
+$historyTemplateId = 'browser-history-workout'
+$workspaceSeedBody = @{
+    writes = @(
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "programs/$programId"
+                fields = @{
+                    name = @{ stringValue = 'Browser Athlete Program' }
+                    description = @{
+                        stringValue = 'Deterministic athlete workspace program'
+                    }
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    type = @{ stringValue = 'assignable' }
+                    status = @{ stringValue = 'published' }
+                    currentVersion = @{ integerValue = '1' }
+                    createdAt = @{ timestampValue = $seedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $seedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "enrollments/$($programId)_$($athlete.Uid)"
+                fields = @{
+                    programId = @{ stringValue = $programId }
+                    athleteId = @{ stringValue = $athlete.Uid }
+                    addedAt = @{ timestampValue = $seedTimestamp }
+                    addedBy = @{ stringValue = $trainer.Uid }
+                    status = @{ stringValue = 'active' }
+                    createdAt = @{ timestampValue = $seedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $seedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "athleteProgramInstances/$programInstanceId"
+                fields = @{
+                    athleteOwnerId = @{ stringValue = $athlete.Uid }
+                    assigningTrainerId = @{ stringValue = $trainer.Uid }
+                    sourceProgramId = @{ stringValue = $programId }
+                    sourceProgramVersion = @{ integerValue = '1' }
+                    relationshipMode = @{ stringValue = 'subscribed' }
+                    startDate = @{ stringValue = $calendarDate }
+                    expectedEndDate = @{
+                        stringValue = $today.AddDays(14).ToString('yyyy-MM-dd')
+                    }
+                    workoutCount = @{ integerValue = '2' }
+                    status = @{ stringValue = 'active' }
+                    linkedAt = @{ timestampValue = $seedTimestamp }
+                    unlinkedAt = @{ nullValue = $null }
+                    unlinkReason = @{ nullValue = $null }
+                    propagationState = @{ stringValue = 'complete' }
+                    propagationTargetVersion = @{ integerValue = '1' }
+                    propagationAttempt = @{ integerValue = '0' }
+                    propagationCompletedAt = @{
+                        timestampValue = $seedTimestamp
+                    }
+                    createdAt = @{ timestampValue = $seedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $seedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutTemplates/$calendarTemplateId"
+                fields = @{
+                    name = @{ stringValue = 'Browser Calendar Workout' }
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    workoutType = @{ stringValue = 'fullBody' }
+                    currentVersion = @{ integerValue = '1' }
+                    createdAt = @{ timestampValue = $seedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $seedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutTemplates/$historyTemplateId"
+                fields = @{
+                    name = @{ stringValue = 'Browser Completed Workout' }
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    workoutType = @{ stringValue = 'fullBody' }
+                    currentVersion = @{ integerValue = '1' }
+                    createdAt = @{ timestampValue = $seedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $seedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    'workoutInstances/browser-calendar-workout'
+                fields = @{
+                    programId = @{ stringValue = $programId }
+                    programOwnerId = @{ stringValue = $trainer.Uid }
+                    programVersion = @{ integerValue = '1' }
+                    athleteProgramInstanceId = @{
+                        stringValue = $programInstanceId
+                    }
+                    programAssignmentId = @{
+                        stringValue = $programInstanceId
+                    }
+                    relationshipMode = @{ stringValue = 'subscribed' }
+                    athleteId = @{ stringValue = $athlete.Uid }
+                    workoutTemplateId = @{
+                        stringValue = $calendarTemplateId
+                    }
+                    workoutTemplateVersion = @{ integerValue = '1' }
+                    scheduledDate = @{ stringValue = $calendarDate }
+                    scheduledAt = @{ timestampValue = $calendarTimestamp }
+                    assignedBy = @{ stringValue = $trainer.Uid }
+                    assignedAt = @{ timestampValue = $seedTimestamp }
+                    status = @{ stringValue = 'scheduled' }
+                    workoutType = @{ stringValue = 'fullBody' }
+                    createdAt = @{ timestampValue = $seedTimestamp }
+                    updatedAt = @{ timestampValue = $seedTimestamp }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    'workoutInstances/browser-history-workout'
+                fields = @{
+                    programId = @{ stringValue = $programId }
+                    programOwnerId = @{ stringValue = $trainer.Uid }
+                    programVersion = @{ integerValue = '1' }
+                    athleteProgramInstanceId = @{
+                        stringValue = $programInstanceId
+                    }
+                    programAssignmentId = @{
+                        stringValue = $programInstanceId
+                    }
+                    relationshipMode = @{ stringValue = 'subscribed' }
+                    athleteId = @{ stringValue = $athlete.Uid }
+                    workoutTemplateId = @{ stringValue = $historyTemplateId }
+                    workoutTemplateVersion = @{ integerValue = '1' }
+                    scheduledDate = @{ stringValue = $historyDate }
+                    scheduledAt = @{ timestampValue = $historyTimestamp }
+                    assignedBy = @{ stringValue = $trainer.Uid }
+                    assignedAt = @{ timestampValue = $historyTimestamp }
+                    status = @{ stringValue = 'completed' }
+                    completedAt = @{ timestampValue = $historyTimestamp }
+                    rpe = @{ integerValue = '8' }
+                    durationMinutes = @{ integerValue = '45' }
+                    workoutType = @{ stringValue = 'fullBody' }
+                    createdAt = @{ timestampValue = $historyTimestamp }
+                    updatedAt = @{ timestampValue = $historyTimestamp }
+                }
+            }
+        }
+    )
+} | ConvertTo-Json -Depth 12
+Invoke-RestMethod `
+    -Method Post `
+    -Uri $commitUri `
+    -Headers @{ Authorization = 'Bearer owner' } `
+    -ContentType 'application/json' `
+    -Body $workspaceSeedBody | Out-Null
+
 $selectedIdentity = if ($Identity -eq 'trainer') { $trainer } else { $athlete }
 $attempt = $env:BROWSER_SMOKE_ATTEMPT
 if ($attempt -and $attempt -ne '1') {
@@ -205,14 +408,19 @@ if ($attempt -and $attempt -ne '1') {
 }
 $env:BROWSER_SMOKE_ARTIFACT_DIR = $artifactPath
 New-Item -ItemType Directory -Force -Path $artifactPath | Out-Null
-Remove-Item `
-    -LiteralPath (Join-Path $artifactPath "$Identity-auth-before-login.png") `
-    -Force `
-    -ErrorAction SilentlyContinue
-Remove-Item `
-    -LiteralPath (Join-Path $artifactPath "$Identity-app-after-login.png") `
-    -Force `
-    -ErrorAction SilentlyContinue
+foreach ($artifactName in @(
+        "$Identity-auth-before-login.png",
+        "$Identity-app-after-login.png",
+        "$Identity-header-identity.png",
+        'athlete-my-programs.png',
+        'athlete-workout-history.png',
+        'athlete-calendar.png'
+    )) {
+    Remove-Item `
+        -LiteralPath (Join-Path $artifactPath $artifactName) `
+        -Force `
+        -ErrorAction SilentlyContinue
+}
 
 Push-Location $stagePath
 $webServerProcess = $null
@@ -351,6 +559,21 @@ try {
         throw 'ChromeDriver did not return a browser session ID.'
     }
 
+    function Save-BrowserScreenshot {
+        param([string]$Name)
+
+        $screenshot = Invoke-RestMethod `
+            -Uri "$driverBaseUri/session/$browserSessionId/screenshot"
+        $screenshotBytes = [Convert]::FromBase64String($screenshot.value)
+        if ($screenshotBytes.Length -eq 0) {
+            throw "Browser smoke screenshot was empty: $Name"
+        }
+        [IO.File]::WriteAllBytes(
+            (Join-Path $artifactPath "$Name.png"),
+            $screenshotBytes
+        )
+    }
+
     $expectedWorkspace = if ($Identity -eq 'trainer') {
         'trainer'
     }
@@ -377,7 +600,8 @@ try {
         script = @'
 return document.body ? {
   email: document.body.getAttribute('data-browser-smoke-authenticated'),
-  workspace: document.body.getAttribute('data-browser-smoke-workspace')
+  workspace: document.body.getAttribute('data-browser-smoke-workspace'),
+  identity: document.body.getAttribute('data-browser-smoke-account-identity')
 } : null;
 '@
         args = @()
@@ -391,7 +615,8 @@ return document.body ? {
         $authenticatedState = $result.value
         if (
             $authenticatedState.email -eq $selectedIdentity.Email -and
-            $authenticatedState.workspace -eq $expectedWorkspace
+            $authenticatedState.workspace -eq $expectedWorkspace -and
+            $authenticatedState.identity -eq $identities[$Identity].DisplayName
         ) {
             break
         }
@@ -399,7 +624,8 @@ return document.body ? {
     }
     if (
         $authenticatedState.email -ne $selectedIdentity.Email -or
-        $authenticatedState.workspace -ne $expectedWorkspace
+        $authenticatedState.workspace -ne $expectedWorkspace -or
+        $authenticatedState.identity -ne $identities[$Identity].DisplayName
     ) {
         $currentUrl = Invoke-RestMethod `
             -Uri "$driverBaseUri/session/$browserSessionId/url"
@@ -420,17 +646,74 @@ return document.body ? {
     }
 
     Write-Host "BROWSER_SMOKE_ROUTE_ASSERTIONS_PASSED:$Identity"
-    $screenshotName = "$Identity-app-after-login"
-    $screenshot = Invoke-RestMethod `
-        -Uri "$driverBaseUri/session/$browserSessionId/screenshot"
-    $screenshotBytes = [Convert]::FromBase64String($screenshot.value)
-    if ($screenshotBytes.Length -eq 0) {
-        throw "Browser smoke screenshot was empty: $screenshotName"
+    Save-BrowserScreenshot -Name "$Identity-header-identity"
+
+    if ($Identity -eq 'athlete') {
+        $surfaceChecks = @(
+            [ordered]@{
+                Route = '/athlete/programs'
+                Marker = 'data-browser-smoke-surface-athlete-programs'
+                Screenshot = 'athlete-my-programs'
+            },
+            [ordered]@{
+                Route = '/athlete/history'
+                Marker = 'data-browser-smoke-surface-athlete-history'
+                Screenshot = 'athlete-workout-history'
+            },
+            [ordered]@{
+                Route = '/athlete/calendar'
+                Marker = 'data-browser-smoke-surface-athlete-calendar'
+                Screenshot = 'athlete-calendar'
+            }
+        )
+        foreach ($surface in $surfaceChecks) {
+            $navigateScript = @{
+                script = 'window.location.hash = arguments[0]; return true;'
+                args = @($surface.Route)
+            } | ConvertTo-Json
+            Invoke-RestMethod `
+                -Method Post `
+                -Uri "$driverBaseUri/session/$browserSessionId/execute/sync" `
+                -ContentType 'application/json' `
+                -Body $navigateScript | Out-Null
+
+            $surfaceReady = $false
+            $surfaceDeadline = [DateTime]::UtcNow.AddSeconds(30)
+            $surfaceScript = @{
+                script = @'
+return document.body
+  ? document.body.getAttribute(arguments[0])
+  : null;
+'@
+                args = @($surface.Marker)
+            } | ConvertTo-Json
+            while ([DateTime]::UtcNow -lt $surfaceDeadline) {
+                $result = Invoke-RestMethod `
+                    -Method Post `
+                    -Uri "$driverBaseUri/session/$browserSessionId/execute/sync" `
+                    -ContentType 'application/json' `
+                    -Body $surfaceScript
+                if ($result.value -eq 'ready') {
+                    $surfaceReady = $true
+                    break
+                }
+                Start-Sleep -Milliseconds 250
+            }
+            if (-not $surfaceReady) {
+                throw "Browser smoke did not load $($surface.Route)."
+            }
+            $currentUrl = Invoke-RestMethod `
+                -Uri "$driverBaseUri/session/$browserSessionId/url"
+            $currentRoute = ([Uri]$currentUrl.value).Fragment.TrimStart('#')
+            if ($currentRoute -ne $surface.Route) {
+                throw (
+                    "Browser smoke expected $($surface.Route) but reached " +
+                    "$currentRoute."
+                )
+            }
+            Save-BrowserScreenshot -Name $surface.Screenshot
+        }
     }
-    [IO.File]::WriteAllBytes(
-        (Join-Path $artifactPath "$screenshotName.png"),
-        $screenshotBytes
-    )
     Write-Host "BROWSER_SMOKE_ASSERTIONS_PASSED:$Identity"
 }
 finally {

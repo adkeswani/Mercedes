@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/core/browser_smoke_status.dart';
 import 'package:stage5/core/web_workspace/web_workspace_mode.dart';
+import 'package:stage5/features/auth/domain/user_profile.dart';
+import 'package:stage5/features/auth/presentation/app_entry_providers.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/auth/presentation/home_screen.dart';
 import 'package:stage5/features/profile/presentation/feedback_dialog.dart';
@@ -12,6 +14,27 @@ import 'package:stage5/features/profile/presentation/feedback_providers.dart';
 
 const webWorkspaceBreakpoint = 900.0;
 const webWorkspaceModeSwitcherKey = Key('web-workspace-mode-switcher');
+const webWorkspaceAccountIdentityKey = Key('web-workspace-account-identity');
+
+String webWorkspaceAccountIdentity({
+  UserProfile? profile,
+  String? authDisplayName,
+  String? authEmail,
+}) {
+  final displayName = profile?.displayName.trim();
+  if (displayName != null && displayName.isNotEmpty) return displayName;
+  final username = profile?.username?.trim();
+  if (username != null && username.isNotEmpty) return username;
+  final firebaseDisplayName = authDisplayName?.trim();
+  if (firebaseDisplayName != null && firebaseDisplayName.isNotEmpty) {
+    return firebaseDisplayName;
+  }
+  final email = profile?.email.trim();
+  if (email != null && email.isNotEmpty) return email;
+  final firebaseEmail = authEmail?.trim();
+  if (firebaseEmail != null && firebaseEmail.isNotEmpty) return firebaseEmail;
+  return 'Signed in';
+}
 
 enum WebWorkspaceDestination {
   athleteToday(
@@ -232,11 +255,19 @@ class _WebWorkspaceShellState extends ConsumerState<WebWorkspaceShell> {
 
   @override
   Widget build(BuildContext context) {
-    final authenticatedEmail = ref.watch(authStateProvider).valueOrNull?.email;
+    final authenticatedUser = ref.watch(authStateProvider).valueOrNull;
+    final authenticatedEmail = authenticatedUser?.email;
+    final profile = ref.watch(userProfileProvider).valueOrNull;
+    final accountIdentity = webWorkspaceAccountIdentity(
+      profile: profile,
+      authDisplayName: authenticatedUser?.displayName,
+      authEmail: authenticatedEmail,
+    );
     if (browserSmokeConfig.autoLoginEnabled && authenticatedEmail != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           markBrowserSmokeAuthenticated(authenticatedEmail, widget.mode.name);
+          markBrowserSmokeAccountIdentity(accountIdentity);
         }
       });
     }
@@ -274,6 +305,22 @@ class _WebWorkspaceShellState extends ConsumerState<WebWorkspaceShell> {
             ),
           ),
           const SizedBox(width: 8),
+          Semantics(
+            key: webWorkspaceAccountIdentityKey,
+            label: 'Signed in as $accountIdentity',
+            child: Tooltip(
+              message: 'Signed in as $accountIdentity',
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: Text(
+                  accountIdentity,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
           IconButton(
             icon: const Icon(Icons.feedback_outlined),
             tooltip: 'Send feedback',

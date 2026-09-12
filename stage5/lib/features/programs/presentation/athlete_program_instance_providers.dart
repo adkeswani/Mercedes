@@ -17,11 +17,17 @@ final myAthleteProgramInstancesProvider =
     return const Stream.empty();
   }
   final repository = ref.watch(athleteProgramInstanceRepositoryProvider);
-  final backfill =
-      ref.watch(athleteProgramInstanceBackfillProvider(user.uid).future);
-  return Stream.fromFuture(backfill).asyncExpand(
-    (_) => repository.watchForAthlete(user.uid),
-  );
+  ref.watch(myAthleteProgramInstanceBackfillStatusProvider);
+  return repository.watchForAthlete(user.uid);
+});
+
+final myAthleteProgramInstanceBackfillStatusProvider =
+    Provider<AsyncValue<int>>((ref) {
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) {
+    return const AsyncData(0);
+  }
+  return ref.watch(athleteProgramInstanceBackfillProvider(user.uid));
 });
 
 final managedAthleteProgramInstancesProvider =

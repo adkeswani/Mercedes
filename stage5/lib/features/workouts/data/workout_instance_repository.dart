@@ -36,6 +36,22 @@ class WorkoutInstanceRepository {
         '${now.day.toString().padLeft(2, '0')}';
   }
 
+  String get _localToday {
+    final now = _now();
+    return '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+  }
+
+  Duration get _untilNextLocalDay {
+    final now = _now();
+    final tomorrow = now.isUtc
+        ? DateTime.utc(now.year, now.month, now.day + 1)
+        : DateTime(now.year, now.month, now.day + 1);
+    final duration = tomorrow.difference(now);
+    return duration > Duration.zero ? duration : const Duration(seconds: 1);
+  }
+
   Future<void> _verifyActiveRelationship(
     String trainerId,
     String athleteId,
@@ -1147,6 +1163,65 @@ class WorkoutInstanceRepository {
           .snapshots()
           .asyncMap(_instancesFromSnapshot),
     );
+  }
+
+  /// Streams immutable terminal records and any overdue scheduled workouts.
+  ///
+  /// The query stays athlete-scoped for Firestore authorization and uses the
+  /// existing `(athleteId, scheduledDate)` index. Filtering the historical
+  /// subset client-side keeps legacy terminal records visible without a
+  /// second query or a status migration.
+  Stream<List<WorkoutInstance>> watchHistory({
+    required String athleteId,
+  }) {
+    final source = _collection
+        .where('athleteId', isEqualTo: athleteId)
+        .orderBy('scheduledDate', descending: true)
+        .snapshots()
+        .asyncMap(_instancesFromSnapshot);
+    late StreamController<List<WorkoutInstance>> controller;
+    StreamSubscription<List<WorkoutInstance>>? subscription;
+    Timer? dayRollover;
+    var latest = <WorkoutInstance>[];
+
+    void emit() {
+      final today = _localToday;
+      controller.add(
+        latest
+            .where(
+              (instance) =>
+                  !instance.isScheduled ||
+                  instance.scheduledDate.compareTo(today) < 0,
+            )
+            .toList(),
+      );
+    }
+
+    void scheduleDayRollover() {
+      dayRollover?.cancel();
+      dayRollover = Timer(_untilNextLocalDay, () {
+        emit();
+        scheduleDayRollover();
+      });
+    }
+
+    controller = StreamController<List<WorkoutInstance>>(
+      onListen: () {
+        subscription = source.listen(
+          (instances) {
+            latest = instances;
+            emit();
+          },
+          onError: controller.addError,
+        );
+        scheduleDayRollover();
+      },
+      onCancel: () async {
+        dayRollover?.cancel();
+        await subscription?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   /// Streams workout instances for a specific program-athlete pair.
