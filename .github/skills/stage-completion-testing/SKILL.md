@@ -34,9 +34,11 @@ complete.
 3. Treat any failed command as a blocked stage. Fix the failure and rerun the
    entry point; do not skip a gate merely because another gate passed.
 
-4. After validation, remove Firebase debug logs and restore only generated
-   Flutter plugin registrant changes caused by the validation run. Do not
-   discard intentional user changes.
+4. After validation, preserve every successful PNG artifact directory. Remove
+   only Firebase debug logs, temporary process output, Firebase caches,
+   generated Flutter plugin registrant noise, and failed transient attempt
+   directories. Do not discard intentional user changes or successful browser
+   screenshots.
 
 5. Report:
    - the validated stage and branch
@@ -55,3 +57,5 @@ local emulator ports.
 Each invocation writes only its own browser artifacts under
 `stageN/test-artifacts/stage-validation/<UTC timestamp>-<run ID>/`, so failure
 reports cannot include screenshots left by an earlier run.
+Successful artifact directories must remain in the worktree after validation;
+they are ignored by Git and must not be committed.

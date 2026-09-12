@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:stage5/core/browser_smoke_status.dart';
+import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
@@ -21,6 +23,11 @@ class WorkoutListScreen extends ConsumerWidget {
       body: workoutsAsync.when(
         data: (workouts) {
           if (workouts.isEmpty) {
+            if (browserAutomationEnabled) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                markBrowserSmokeSurfaceFailure('trainer-workouts', 'empty');
+              });
+            }
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -41,6 +48,14 @@ class WorkoutListScreen extends ConsumerWidget {
               ),
             );
           }
+          if (browserAutomationEnabled) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              markBrowserSmokeSurfaceReady(
+                'trainer-workouts',
+                content: workouts.first.name,
+              );
+            });
+          }
           return ListView.builder(
             itemCount: workouts.length,
             itemBuilder: (context, index) {
@@ -50,7 +65,14 @@ class WorkoutListScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) {
+          if (browserAutomationEnabled) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              markBrowserSmokeSurfaceFailure('trainer-workouts', 'error');
+            });
+          }
+          return Center(child: Text('Error: $e'));
+        },
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/workouts/new'),

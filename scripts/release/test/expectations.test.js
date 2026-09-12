@@ -7,8 +7,10 @@ const test = require("node:test");
 const {
   CANARY_CONTENT,
   CANARY_SURFACES,
+  EXPECTED_ATHLETE_SURFACES,
   EXPECTED_QUERY_LABELS,
   EXPECTED_SURFACES,
+  EXPECTED_TRAINER_SURFACES,
 } = require("../expectations.js");
 const {
   assertExpectedQueriesConfigured,
@@ -16,14 +18,22 @@ const {
 
 test("release canary exposes exact athlete surface expectations", () => {
   assert.deepEqual(CANARY_SURFACES, {
-    calendar: "athlete-calendar",
-    programs: "athlete-programs",
-    history: "athlete-history",
+    athleteCalendar: "athlete-calendar",
+    athletePrograms: "athlete-programs",
+    athleteHistory: "athlete-history",
+    trainerClients: "trainer-clients",
+    trainerExercises: "trainer-exercises",
+    trainerWorkouts: "trainer-workouts",
+    trainerPrograms: "trainer-programs",
+    trainerCalendar: "trainer-calendar",
   });
   assert.deepEqual(CANARY_CONTENT, {
     program: "Release Canary Program",
     workout: "Release Canary Workout",
+    exercise: "Release Canary Exercise",
+    athlete: "Release Canary Athlete",
   });
+  assert.equal(EXPECTED_SURFACES, EXPECTED_ATHLETE_SURFACES);
   assert.deepEqual(
     EXPECTED_SURFACES.map((surface) => surface.marker),
     ["athlete-calendar", "athlete-programs", "athlete-history"],
@@ -43,6 +53,46 @@ test("release canary exposes exact athlete surface expectations", () => {
   assert.equal(
     new Set(EXPECTED_SURFACES.map((surface) => surface.screenshot)).size,
     EXPECTED_SURFACES.length,
+  );
+});
+
+test("release canary exposes exact trainer surface expectations", () => {
+  assert.deepEqual(
+    EXPECTED_TRAINER_SURFACES.map((surface) => surface.marker),
+    [
+      "trainer-clients",
+      "trainer-exercises",
+      "trainer-workouts",
+      "trainer-programs",
+      "trainer-calendar",
+    ],
+  );
+  assert.deepEqual(
+    EXPECTED_TRAINER_SURFACES.map((surface) => surface.expectedContent),
+    [
+      "Release Canary Athlete",
+      "Release Canary Exercise",
+      "Release Canary Workout",
+      "Release Canary Program",
+      "Release Canary Athlete | Release Canary Program | " +
+        "Release Canary Workout",
+    ],
+  );
+  assert.deepEqual(
+    EXPECTED_TRAINER_SURFACES.map((surface) => surface.route),
+    [
+      "/trainer/clients",
+      "/trainer/exercises",
+      "/trainer/workouts",
+      "/trainer/programs",
+      "/trainer/calendar",
+    ],
+  );
+  assert.equal(
+    new Set(
+      EXPECTED_TRAINER_SURFACES.map((surface) => surface.screenshot),
+    ).size,
+    EXPECTED_TRAINER_SURFACES.length,
   );
 });
 

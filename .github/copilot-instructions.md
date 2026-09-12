@@ -39,7 +39,10 @@
   `.\scripts\run-stage-validation.ps1 -Stage <stage-directory>` so unit tests,
   analysis, Firestore rules tests, and every discovered browser integration
   test run together. Report the absolute artifact directory and each generated
-  artifact path.
+  artifact path. Preserve successful PNG artifact directories after testing;
+  clean only logs, temporary process output, Firebase caches, generated plugin
+  registrant noise, and failed transient attempts. PNGs remain gitignored and
+  must not be committed.
 
 ## Ownership and authorization
 

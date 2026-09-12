@@ -119,11 +119,18 @@ npm --prefix .\test-rules test
 ```
 
 The browser canary signs in through the deployed web app as the dedicated
-trainer and athlete. It verifies the selected Firebase project, header
-identity, trainer route, Athlete Calendar, My Programs, and Workout History.
-Each athlete surface must expose the exact seeded record name. Permission
-errors, app errors, missing templates, and empty results fail the run.
-Screenshots are retained only as diagnostic artifacts.
+trainer and athlete. It verifies the selected Firebase project and header
+identity, then checks backend-backed trainer Clients, Exercise Library,
+Workout Library, Program Library, and Calendar/Assignments plus Athlete
+Calendar, My Programs, and Workout History. Each surface must expose the exact
+seeded synthetic record name; trainer calendar additionally proves the
+athlete, program, and workout assignment tuple. Permission errors, app errors,
+missing templates, and empty results fail the run.
+
+Successful PNG directories are retained as diagnostic release artifacts and
+must remain in the worktree after validation. They are gitignored and must not
+be committed. Cleanup may remove logs, temporary process output, Firebase
+caches, generated plugin noise, and failed transient attempts only.
 
 ## Production promotion
 

@@ -28,7 +28,7 @@ test("fixture is deterministic, idempotent, and limited to exact paths", () => {
     first.documents.map((document) => document.path),
     expectedMutationPaths(),
   );
-  assert.equal(new Set(first.documents.map((item) => item.path)).size, 9);
+  assert.equal(new Set(first.documents.map((item) => item.path)).size, 13);
   assert.equal(
     first.documents.find(
       (item) => item.path.endsWith(CANARY_IDS.currentWorkout),
@@ -54,6 +54,29 @@ test("fixture is deterministic, idempotent, and limited to exact paths", () => {
     ).data.workoutType,
     "fullBody",
   );
+  assert.equal(
+    first.documents.find(
+      (item) => item.path ===
+        `exerciseTemplates/${CANARY_IDS.exerciseTemplate}/exerciseVersions/1`,
+    ).data.name,
+    "Release Canary Exercise",
+  );
+  assert.deepEqual(
+    first.documents.find(
+      (item) => item.path ===
+        `programs/${CANARY_IDS.program}/programVersions/1`,
+    ).data.entries,
+    [
+      {
+        entryId: CANARY_IDS.workoutTemplate,
+        workoutTemplateId: CANARY_IDS.workoutTemplate,
+        workoutTemplateVersion: 1,
+        dayOffset: 0,
+        sortOrder: 0,
+        workoutName: "Release Canary Workout",
+      },
+    ],
+  );
 });
 
 test("namespace guard rejects arbitrary paths, owners, and emails", () => {
@@ -70,6 +93,24 @@ test("namespace guard rejects arbitrary paths, owners, and emails", () => {
     /namespace/,
   );
   assert.throws(
+    () => assertCanaryMutation(
+      `programs/${CANARY_IDS.program}/programVersions/2`,
+      { versionNumber: 2 },
+    ),
+    /exact release-canary fixture path/,
+  );
+  assert.throws(
+    () => assertCanaryMutation(
+      `programs/${CANARY_IDS.program}/programVersions/1`,
+      {
+        entries: [{
+          workoutTemplateId: "ordinary-workout",
+        }],
+      },
+    ),
+    /namespace/,
+  );
+  assert.throws(
     () => assertCanaryEmail("person@example.com", "email"),
     /namespace/,
   );
@@ -80,6 +121,50 @@ test("all fixture ownership and reference fields pass the namespace guard", () =
   for (const document of fixture.documents) {
     assert.equal(assertCanaryMutation(document.path, document.data), true);
   }
+});
+
+test("seed refuses an existing nested reference owned by another canary", async () => {
+  const fixture = buildCanaryFixture(options);
+  const versionPath =
+    `programs/${CANARY_IDS.program}/programVersions/1`;
+  const expected = fixture.documents.find(
+    (document) => document.path === versionPath,
+  ).data;
+  const existing = structuredClone(expected);
+  existing.entries[0].workoutTemplateId = "release-canary-other-workout";
+  const authUsers = new Map(fixture.authUsers.map((user) => [user.uid, user]));
+  const context = {
+    admin: {
+      firestore: {
+        Timestamp: {
+          fromDate: (value) => value,
+        },
+      },
+    },
+    auth: {
+      getUser: async (uid) => authUsers.get(uid),
+    },
+    firestore: {
+      doc: (pathName) => ({
+        path: pathName,
+        get: async () => pathName === versionPath
+          ? { exists: true, data: () => existing }
+          : { exists: false },
+      }),
+      batch: () => ({
+        set: () => {},
+        commit: async () => {},
+      }),
+    },
+  };
+
+  await assert.rejects(
+    seedFixture(context, fixture, {
+      trainerPassword: "release-canary-local-trainer",
+      athletePassword: "release-canary-local-athlete",
+    }),
+    /unexpected protected field 'workoutTemplateId'/,
+  );
 });
 
 test("deployed credentials are loaded from the injected process environment", () => {

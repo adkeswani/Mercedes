@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:stage5/core/browser_smoke_status.dart';
+import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/programs/domain/program.dart';
 import 'package:stage5/features/programs/presentation/program_providers.dart';
@@ -21,6 +23,11 @@ class ProgramListScreen extends ConsumerWidget {
       body: programsAsync.when(
         data: (programs) {
           if (programs.isEmpty) {
+            if (browserAutomationEnabled) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                markBrowserSmokeSurfaceFailure('trainer-programs', 'empty');
+              });
+            }
             return Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -41,11 +48,26 @@ class ProgramListScreen extends ConsumerWidget {
               ),
             );
           }
+          if (browserAutomationEnabled) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              markBrowserSmokeSurfaceReady(
+                'trainer-programs',
+                content: programs.first.name,
+              );
+            });
+          }
           final folders = ref.watch(programFoldersProvider).valueOrNull ?? [];
           return _buildGroupedList(context, programs, folders);
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) {
+          if (browserAutomationEnabled) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              markBrowserSmokeSurfaceFailure('trainer-programs', 'error');
+            });
+          }
+          return Center(child: Text('Error: $e'));
+        },
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/programs/new'),

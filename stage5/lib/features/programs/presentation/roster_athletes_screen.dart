@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:stage5/core/browser_smoke_status.dart';
+import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/auth/domain/user_profile.dart';
 import 'package:stage5/features/auth/presentation/app_entry_providers.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
@@ -350,6 +352,11 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
                 for (final relationship in relationships) relationship.athleteId
               }.toList();
               if (athleteIds.isEmpty) {
+                if (browserAutomationEnabled) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    markBrowserSmokeSurfaceFailure('trainer-clients', 'empty');
+                  });
+                }
                 return const Padding(
                   padding: EdgeInsets.symmetric(vertical: 32),
                   child: Center(child: Text('No athletes on your roster yet')),
@@ -368,7 +375,14 @@ class _RosterAthletesScreenState extends ConsumerState<RosterAthletesScreen> {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Text('Error: $e'),
+            error: (e, _) {
+              if (browserAutomationEnabled) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  markBrowserSmokeSurfaceFailure('trainer-clients', 'error');
+                });
+              }
+              return Text('Error: $e');
+            },
           ),
         ],
       ),
@@ -397,6 +411,22 @@ class _AthleteRow extends ConsumerWidget {
       future: profileRepo.getUserProfile(athleteId),
       builder: (context, snapshot) {
         final profile = snapshot.data;
+        if (browserAutomationEnabled &&
+            snapshot.connectionState == ConnectionState.done) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (profile != null) {
+              markBrowserSmokeSurfaceReady(
+                'trainer-clients',
+                content: profile.displayName,
+              );
+            } else {
+              markBrowserSmokeSurfaceFailure(
+                'trainer-clients',
+                'missing-athlete',
+              );
+            }
+          });
+        }
         final baseName = profile?.displayName ?? athleteId;
         final displayName = isSelf ? '$baseName (You)' : baseName;
         final username = profile?.username;

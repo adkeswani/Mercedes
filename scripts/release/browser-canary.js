@@ -12,7 +12,10 @@ const {
   requireProductionOptIn,
   validateAppUrl,
 } = require("./environment.js");
-const { EXPECTED_SURFACES } = require("./expectations.js");
+const {
+  EXPECTED_ATHLETE_SURFACES,
+  EXPECTED_TRAINER_SURFACES,
+} = require("./expectations.js");
 
 const WEB_DRIVER_ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf";
 
@@ -316,10 +319,10 @@ async function runIdentity({
       artifactDirectory,
       `${role}-header-identity.png`,
     );
-    if (role === "trainer") {
-      return;
-    }
-    for (const surface of EXPECTED_SURFACES) {
+    const expectedSurfaces = role === "trainer"
+      ? EXPECTED_TRAINER_SURFACES
+      : EXPECTED_ATHLETE_SURFACES;
+    for (const surface of expectedSurfaces) {
       await execute(
         baseUrl,
         sessionId,
@@ -354,7 +357,7 @@ return document.body ? {
             `'${surface.expectedContent}'`,
           );
         }
-        if (/permission-denied|something went wrong|unable to load|error:/i
+        if (/permission-denied|something went wrong|unable to load|error:|no .* yet|unavailable/i
           .test(state?.text || "")) {
           throw new Error(`${surface.label} rendered an error state`);
         }

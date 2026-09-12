@@ -8,6 +8,7 @@ const CANARY_IDS = Object.freeze({
   trainer: "release-canary-trainer",
   athlete: "release-canary-athlete",
   relationship: "release-canary-trainer_release-canary-athlete",
+  exerciseTemplate: "release-canary-exercise-template",
   program: "release-canary-program",
   enrollment: "release-canary-program_release-canary-athlete",
   programInstance: "release-canary-program-instance",
@@ -31,6 +32,7 @@ const OWNERSHIP_FIELDS = new Set([
   "updatedBy",
   "deletedBy",
   "removedBy",
+  "publishedBy",
   "loadPointsOverriddenBy",
 ]);
 
@@ -42,6 +44,7 @@ const REFERENCE_FIELDS = new Set([
   "workoutTemplateId",
   "materializationKey",
   "programEntryId",
+  "exerciseId",
 ]);
 
 function assertCanaryToken(value, label) {
@@ -85,10 +88,14 @@ function expectedMutationPaths() {
     `users/${CANARY_IDS.trainer}`,
     `users/${CANARY_IDS.athlete}`,
     `trainerClientRelationships/${CANARY_IDS.relationship}`,
+    `exerciseTemplates/${CANARY_IDS.exerciseTemplate}`,
+    `exerciseTemplates/${CANARY_IDS.exerciseTemplate}/exerciseVersions/1`,
     `programs/${CANARY_IDS.program}`,
+    `programs/${CANARY_IDS.program}/programVersions/1`,
     `enrollments/${CANARY_IDS.enrollment}`,
     `athleteProgramInstances/${CANARY_IDS.programInstance}`,
     `workoutTemplates/${CANARY_IDS.workoutTemplate}`,
+    `workoutTemplates/${CANARY_IDS.workoutTemplate}/workoutTemplateVersions/1`,
     `workoutInstances/${CANARY_IDS.currentWorkout}`,
     `workoutInstances/${CANARY_IDS.historyWorkout}`,
   ]);
@@ -99,21 +106,42 @@ function assertCanaryMutation(path, data, allowedPaths = expectedMutationPaths()
     throw new Error(`Mutation path is not an exact release-canary fixture path: ${path}`);
   }
   const segments = path.split("/");
-  if (segments.length !== 2) {
+  if (segments.length !== 2 && segments.length !== 4) {
     throw new Error(`Mutation path must address one exact document: ${path}`);
   }
   assertCanaryToken(segments[1], "Mutation document ID");
-  for (const [key, value] of Object.entries(data || {})) {
-    if (value === null || value === undefined) {
-      continue;
-    }
-    if (OWNERSHIP_FIELDS.has(key) || REFERENCE_FIELDS.has(key)) {
-      assertCanaryToken(value, `Field '${key}'`);
-    }
-    if (key === "email") {
-      assertCanaryEmail(value, "Profile email");
+  if (segments.length === 4) {
+    const versionCollections = new Set([
+      "exerciseVersions",
+      "programVersions",
+      "workoutTemplateVersions",
+    ]);
+    if (!versionCollections.has(segments[2]) || segments[3] !== "1") {
+      throw new Error(`Mutation version path is not allowlisted: ${path}`);
     }
   }
+  function inspect(value) {
+    if (Array.isArray(value)) {
+      value.forEach(inspect);
+      return;
+    }
+    if (!value || typeof value !== "object") {
+      return;
+    }
+    for (const [key, nestedValue] of Object.entries(value)) {
+      if (nestedValue === null || nestedValue === undefined) {
+        continue;
+      }
+      if (OWNERSHIP_FIELDS.has(key) || REFERENCE_FIELDS.has(key)) {
+        assertCanaryToken(nestedValue, `Field '${key}'`);
+      }
+      if (key === "email") {
+        assertCanaryEmail(nestedValue, "Profile email");
+      }
+      inspect(nestedValue);
+    }
+  }
+  inspect(data);
   return true;
 }
 
@@ -217,6 +245,37 @@ function buildCanaryFixture({ trainerEmail, athleteEmail, today }) {
       },
     },
     {
+      path: `exerciseTemplates/${CANARY_IDS.exerciseTemplate}`,
+      data: {
+        ownerId: CANARY_IDS.trainer,
+        currentVersion: 1,
+        tags: [],
+        folderId: null,
+        provenance: null,
+        ...audit(CANARY_IDS.trainer),
+      },
+    },
+    {
+      path:
+        `exerciseTemplates/${CANARY_IDS.exerciseTemplate}/exerciseVersions/1`,
+      data: {
+        versionNumber: 1,
+        name: CANARY_CONTENT.exercise,
+        description: "Synthetic release verification exercise",
+        instructions: "Controlled canary movement",
+        videoUrl: null,
+        mediaUrls: [],
+        exerciseType: "strength",
+        measurementConfiguration: {
+          primary: "repetitions",
+          secondary: [],
+        },
+        gradingConfiguration: null,
+        publishedAt: timestamp,
+        publishedBy: CANARY_IDS.trainer,
+      },
+    },
+    {
       path: `programs/${CANARY_IDS.program}`,
       data: {
         name: CANARY_CONTENT.program,
@@ -229,6 +288,30 @@ function buildCanaryFixture({ trainerEmail, athleteEmail, today }) {
         folderId: null,
         provenance: null,
         ...audit(CANARY_IDS.trainer),
+      },
+    },
+    {
+      path: `programs/${CANARY_IDS.program}/programVersions/1`,
+      data: {
+        versionNumber: 1,
+        publishedAt: timestamp,
+        entries: [
+          {
+            entryId: CANARY_IDS.workoutTemplate,
+            workoutTemplateId: CANARY_IDS.workoutTemplate,
+            workoutTemplateVersion: 1,
+            dayOffset: 0,
+            sortOrder: 0,
+            workoutName: CANARY_CONTENT.workout,
+          },
+        ],
+        changeNote: "Synthetic release verification version",
+        propagationState: "complete",
+        propagationAttempt: 0,
+        propagationStartedAt: null,
+        propagationCompletedAt: timestamp,
+        propagationFailedAt: null,
+        propagationError: null,
       },
     },
     {
@@ -283,6 +366,26 @@ function buildCanaryFixture({ trainerEmail, athleteEmail, today }) {
         ...audit(CANARY_IDS.trainer),
       },
     },
+    {
+      path:
+        `workoutTemplates/${CANARY_IDS.workoutTemplate}/` +
+        "workoutTemplateVersions/1",
+      data: {
+        versionNumber: 1,
+        publishedAt: timestamp,
+        exercises: [
+          {
+            exerciseId: CANARY_IDS.exerciseTemplate,
+            exerciseVersion: 1,
+            exerciseName: CANARY_CONTENT.exercise,
+            mode: "reps",
+            sets: 3,
+            reps: "8",
+            sortOrder: 0,
+          },
+        ],
+      },
+    },
     workout(CANARY_IDS.currentWorkout, today, "scheduled"),
     workout(CANARY_IDS.historyWorkout, historyDate, "completed"),
   ];
@@ -311,6 +414,7 @@ module.exports = {
   CANARY_IDS,
   CANARY_PREFIX,
   OWNERSHIP_FIELDS,
+  REFERENCE_FIELDS,
   assertCanaryEmail,
   assertCanaryMutation,
   assertCanaryToken,

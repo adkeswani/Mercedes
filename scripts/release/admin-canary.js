@@ -4,6 +4,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
   CANARY_IDS,
+  OWNERSHIP_FIELDS,
+  REFERENCE_FIELDS,
   assertCanaryEmail,
   assertCanaryMutation,
   assertCanaryToken,
@@ -193,18 +195,28 @@ function materializeTimestamps(value, admin, key = "") {
 function assertExistingDocument(pathName, existing, expected) {
   assertCanaryMutation(pathName, existing);
   const guardedKeys = new Set([
-    "uid", "email", "ownerId", "trainerId", "athleteId", "athleteOwnerId",
-    "assigningTrainerId", "programOwnerId", "assignedBy", "addedBy",
-    "createdBy", "sourceProgramId", "programId", "workoutTemplateId",
-    "athleteProgramInstanceId", "programAssignmentId",
+    ...OWNERSHIP_FIELDS,
+    ...REFERENCE_FIELDS,
+    "email",
   ]);
-  for (const key of guardedKeys) {
-    if (existing[key] !== undefined && existing[key] !== expected[key]) {
-      throw new Error(
-        `Existing '${pathName}' has unexpected protected field '${key}'`,
-      );
+  function compare(actual, intended) {
+    if (Array.isArray(actual)) {
+      actual.forEach((item, index) => compare(item, intended?.[index]));
+      return;
+    }
+    if (!actual || typeof actual !== "object") {
+      return;
+    }
+    for (const [key, value] of Object.entries(actual)) {
+      if (guardedKeys.has(key) && value !== intended?.[key]) {
+        throw new Error(
+          `Existing '${pathName}' has unexpected protected field '${key}'`,
+        );
+      }
+      compare(value, intended?.[key]);
     }
   }
+  compare(existing, expected);
 }
 
 async function seedFixture(context, fixture, passwords) {

@@ -214,10 +214,59 @@ $historyTimestamp = [DateTime]::ParseExact(
 $seedTimestamp = $today.ToUniversalTime().ToString('o')
 $programId = 'browser-athlete-program'
 $programInstanceId = 'browser-athlete-program-instance'
+$exerciseTemplateId = 'browser-trainer-exercise'
 $calendarTemplateId = 'browser-calendar-workout'
 $historyTemplateId = 'browser-history-workout'
 $workspaceSeedBody = @{
     writes = @(
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "exerciseTemplates/$exerciseTemplateId"
+                fields = @{
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    currentVersion = @{ integerValue = '1' }
+                    tags = @{ arrayValue = @{} }
+                    folderId = @{ nullValue = $null }
+                    provenance = @{ nullValue = $null }
+                    createdAt = @{ timestampValue = $seedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $seedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "exerciseTemplates/$exerciseTemplateId/" +
+                    'exerciseVersions/1'
+                fields = @{
+                    versionNumber = @{ integerValue = '1' }
+                    name = @{ stringValue = 'Browser Trainer Exercise' }
+                    description = @{
+                        stringValue = 'Deterministic trainer exercise'
+                    }
+                    instructions = @{ stringValue = 'Controlled smoke movement' }
+                    videoUrl = @{ nullValue = $null }
+                    mediaUrls = @{ arrayValue = @{} }
+                    exerciseType = @{ stringValue = 'strength' }
+                    measurementConfiguration = @{
+                        mapValue = @{
+                            fields = @{
+                                primary = @{ stringValue = 'repetitions' }
+                                secondary = @{ arrayValue = @{} }
+                            }
+                        }
+                    }
+                    gradingConfiguration = @{ nullValue = $null }
+                    publishedAt = @{ timestampValue = $seedTimestamp }
+                    publishedBy = @{ stringValue = $trainer.Uid }
+                }
+            }
+        },
         @{
             update = @{
                 name = "projects/$projectId/databases/(default)/documents/" +
@@ -243,6 +292,53 @@ $workspaceSeedBody = @{
         @{
             update = @{
                 name = "projects/$projectId/databases/(default)/documents/" +
+                    "programs/$programId/programVersions/1"
+                fields = @{
+                    versionNumber = @{ integerValue = '1' }
+                    publishedAt = @{ timestampValue = $seedTimestamp }
+                    entries = @{
+                        arrayValue = @{
+                            values = @(
+                                @{
+                                    mapValue = @{
+                                        fields = @{
+                                            entryId = @{
+                                                stringValue = $calendarTemplateId
+                                            }
+                                            workoutTemplateId = @{
+                                                stringValue = $calendarTemplateId
+                                            }
+                                            workoutTemplateVersion = @{
+                                                integerValue = '1'
+                                            }
+                                            dayOffset = @{ integerValue = '0' }
+                                            sortOrder = @{ integerValue = '0' }
+                                            workoutName = @{
+                                                stringValue = 'Browser Calendar Workout'
+                                            }
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    changeNote = @{
+                        stringValue = 'Deterministic trainer program version'
+                    }
+                    propagationState = @{ stringValue = 'complete' }
+                    propagationAttempt = @{ integerValue = '0' }
+                    propagationStartedAt = @{ nullValue = $null }
+                    propagationCompletedAt = @{
+                        timestampValue = $seedTimestamp
+                    }
+                    propagationFailedAt = @{ nullValue = $null }
+                    propagationError = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
                     "enrollments/$($programId)_$($athlete.Uid)"
                 fields = @{
                     programId = @{ stringValue = $programId }
@@ -256,6 +352,18 @@ $workspaceSeedBody = @{
                     updatedBy = @{ stringValue = $trainer.Uid }
                     deletedAt = @{ nullValue = $null }
                     deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutTemplates/$calendarTemplateId/" +
+                    'workoutTemplateVersions/1'
+                fields = @{
+                    versionNumber = @{ integerValue = '1' }
+                    publishedAt = @{ timestampValue = $seedTimestamp }
+                    exercises = @{ arrayValue = @{} }
                 }
             }
         },
@@ -296,6 +404,18 @@ $workspaceSeedBody = @{
         @{
             update = @{
                 name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutTemplates/$historyTemplateId/" +
+                    'workoutTemplateVersions/1'
+                fields = @{
+                    versionNumber = @{ integerValue = '1' }
+                    publishedAt = @{ timestampValue = $seedTimestamp }
+                    exercises = @{ arrayValue = @{} }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
                     "workoutTemplates/$calendarTemplateId"
                 fields = @{
                     name = @{ stringValue = 'Browser Calendar Workout' }
@@ -322,7 +442,7 @@ $workspaceSeedBody = @{
                     currentVersion = @{ integerValue = '1' }
                     createdAt = @{ timestampValue = $seedTimestamp }
                     createdBy = @{ stringValue = $trainer.Uid }
-                    updatedAt = @{ timestampValue = $seedTimestamp }
+                    updatedAt = @{ timestampValue = $historyTimestamp }
                     updatedBy = @{ stringValue = $trainer.Uid }
                     deletedAt = @{ nullValue = $null }
                     deletedBy = @{ nullValue = $null }
@@ -408,14 +528,28 @@ if ($attempt -and $attempt -ne '1') {
 }
 $env:BROWSER_SMOKE_ARTIFACT_DIR = $artifactPath
 New-Item -ItemType Directory -Force -Path $artifactPath | Out-Null
-foreach ($artifactName in @(
-        "$Identity-auth-before-login.png",
-        "$Identity-app-after-login.png",
-        "$Identity-header-identity.png",
+$identityArtifacts = @(
+    "$Identity-auth-before-login.png",
+    "$Identity-app-after-login.png",
+    "$Identity-header-identity.png"
+)
+if ($Identity -eq 'trainer') {
+    $identityArtifacts += @(
+        'trainer-clients.png',
+        'trainer-exercise-library.png',
+        'trainer-workout-library.png',
+        'trainer-program-library.png',
+        'trainer-calendar-assignments.png'
+    )
+}
+else {
+    $identityArtifacts += @(
         'athlete-my-programs.png',
         'athlete-workout-history.png',
         'athlete-calendar.png'
-    )) {
+    )
+}
+foreach ($artifactName in $identityArtifacts) {
     Remove-Item `
         -LiteralPath (Join-Path $artifactPath $artifactName) `
         -Force `
@@ -654,19 +788,60 @@ return document.body ? {
                 Route = '/athlete/programs'
                 Marker = 'data-browser-smoke-surface-athlete-programs'
                 Screenshot = 'athlete-my-programs'
+                ExpectedContent = 'Browser Athlete Program'
             },
             [ordered]@{
                 Route = '/athlete/history'
                 Marker = 'data-browser-smoke-surface-athlete-history'
                 Screenshot = 'athlete-workout-history'
+                ExpectedContent = 'Browser Completed Workout'
             },
             [ordered]@{
                 Route = '/athlete/calendar'
                 Marker = 'data-browser-smoke-surface-athlete-calendar'
                 Screenshot = 'athlete-calendar'
+                ExpectedContent = 'Browser Calendar Workout'
             }
         )
-        foreach ($surface in $surfaceChecks) {
+    }
+    else {
+        $surfaceChecks = @(
+            [ordered]@{
+                Route = '/trainer/clients'
+                Marker = 'data-browser-smoke-surface-trainer-clients'
+                Screenshot = 'trainer-clients'
+                ExpectedContent = 'Browser Smoke Athlete'
+            },
+            [ordered]@{
+                Route = '/trainer/exercises'
+                Marker = 'data-browser-smoke-surface-trainer-exercises'
+                Screenshot = 'trainer-exercise-library'
+                ExpectedContent = 'Browser Trainer Exercise'
+            },
+            [ordered]@{
+                Route = '/trainer/workouts'
+                Marker = 'data-browser-smoke-surface-trainer-workouts'
+                Screenshot = 'trainer-workout-library'
+                ExpectedContent = 'Browser Calendar Workout'
+            },
+            [ordered]@{
+                Route = '/trainer/programs'
+                Marker = 'data-browser-smoke-surface-trainer-programs'
+                Screenshot = 'trainer-program-library'
+                ExpectedContent = 'Browser Athlete Program'
+            },
+            [ordered]@{
+                Route = '/trainer/calendar'
+                Marker = 'data-browser-smoke-surface-trainer-calendar'
+                Screenshot = 'trainer-calendar-assignments'
+                ExpectedContent = (
+                    'Browser Smoke Athlete | Browser Athlete Program | ' +
+                    'Browser Calendar Workout'
+                )
+            }
+        )
+    }
+    foreach ($surface in $surfaceChecks) {
             $navigateScript = @{
                 script = 'window.location.hash = arguments[0]; return true;'
                 args = @($surface.Route)
@@ -678,12 +853,15 @@ return document.body ? {
                 -Body $navigateScript | Out-Null
 
             $surfaceReady = $false
+            $surfaceState = $null
             $surfaceDeadline = [DateTime]::UtcNow.AddSeconds(30)
             $surfaceScript = @{
                 script = @'
-return document.body
-  ? document.body.getAttribute(arguments[0])
-  : null;
+return document.body ? {
+  state: document.body.getAttribute(arguments[0]),
+  content: document.body.getAttribute(arguments[0] + '-content'),
+  text: document.body.innerText || ''
+} : null;
 '@
                 args = @($surface.Marker)
             } | ConvertTo-Json
@@ -693,7 +871,33 @@ return document.body
                     -Uri "$driverBaseUri/session/$browserSessionId/execute/sync" `
                     -ContentType 'application/json' `
                     -Body $surfaceScript
-                if ($result.value -eq 'ready') {
+                $surfaceState = $result.value
+                if (
+                    $surfaceState.state -and
+                    $surfaceState.state -ne 'ready'
+                ) {
+                    throw (
+                        "$($surface.Route) reported " +
+                        "'$($surfaceState.state)' instead of populated."
+                    )
+                }
+                if (
+                    $surfaceState.text -match
+                    'permission-denied|something went wrong|unable to load|' +
+                    'error:|no .* yet|unavailable'
+                ) {
+                    throw "$($surface.Route) rendered an error or empty state."
+                }
+                if ($surfaceState.state -eq 'ready') {
+                    if (
+                        $surfaceState.content -ne $surface.ExpectedContent
+                    ) {
+                        throw (
+                            "$($surface.Route) loaded " +
+                            "'$($surfaceState.content)', expected " +
+                            "'$($surface.ExpectedContent)'."
+                        )
+                    }
                     $surfaceReady = $true
                     break
                 }
@@ -713,7 +917,6 @@ return document.body
             }
             Save-BrowserScreenshot -Name $surface.Screenshot
         }
-    }
     Write-Host "BROWSER_SMOKE_ASSERTIONS_PASSED:$Identity"
 }
 finally {

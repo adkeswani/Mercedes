@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:stage5/core/browser_smoke_status.dart';
 import 'package:stage5/core/enums.dart';
+import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/auth/presentation/app_entry_providers.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/programs/domain/program.dart';
@@ -10,6 +12,7 @@ import 'package:stage5/features/programs/presentation/athlete_program_instance_p
 import 'package:stage5/features/programs/presentation/enrollment_providers.dart';
 import 'package:stage5/features/programs/presentation/program_providers.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
+import 'package:stage5/features/workouts/presentation/trainer_calendar_canary_status.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
 
 /// Per-athlete trainer calendar.
@@ -327,12 +330,38 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
 
     return instancesAsync.when(
       data: (instances) {
+        if (browserAutomationEnabled && instances.isEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            markBrowserSmokeSurfaceFailure('trainer-calendar', 'empty');
+          });
+        }
         final byDate = <String, List<WorkoutInstance>>{};
         for (final i in instances) {
           byDate.putIfAbsent(i.scheduledDate, () => []).add(i);
         }
+        final canaryInstance = instances.isEmpty
+            ? null
+            : instances.firstWhere(
+                (instance) => instance.isScheduled,
+                orElse: () => instances.first,
+              );
+        String? canaryProgramName;
+        if (canaryInstance != null) {
+          for (final program in programs) {
+            if (program.id == canaryInstance.programId) {
+              canaryProgramName = program.name;
+              break;
+            }
+          }
+        }
         return Column(
           children: [
+            if (browserAutomationEnabled && canaryInstance != null)
+              TrainerCalendarCanaryStatus(
+                instance: canaryInstance,
+                athleteName: _athleteNames[athleteId],
+                programName: canaryProgramName,
+              ),
             Expanded(
               child: SingleChildScrollView(
                 child: _buildGrid(
@@ -349,7 +378,14 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('Error: $e')),
+      error: (e, _) {
+        if (browserAutomationEnabled) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            markBrowserSmokeSurfaceFailure('trainer-calendar', 'error');
+          });
+        }
+        return Center(child: Text('Error: $e'));
+      },
     );
   }
 

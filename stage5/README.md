@@ -212,11 +212,20 @@ stage5/test-artifacts/browser-login/
   athlete-my-programs.png
   athlete-workout-history.png
   athlete-calendar.png
+  trainer-header-identity.png
+  trainer-clients.png
+  trainer-exercise-library.png
+  trainer-workout-library.png
+  trainer-program-library.png
+  trainer-calendar-assignments.png
 ```
 
-The trainer run produces `trainer-header-identity.png`. Screenshots are
-diagnostic artifacts rather than golden assertions. The runner drives the real
-Flutter application through ChromeDriver and the emulator-only login seam.
+The trainer run verifies the active client roster, exercise, workout and
+program libraries, and Calendar/Assignments against deterministic emulator
+records. Screenshots are diagnostic artifacts rather than golden assertions.
+The runner drives the real Flutter application through ChromeDriver and the
+emulator-only login seam. Successful screenshot directories must remain in the
+worktree after validation; they are gitignored and must not be committed.
 
 On one Windows screenshot-based run, Chrome appeared to require a manual click
 or foreground focus before the test progressed. This is an intermittent
@@ -259,10 +268,11 @@ Authorization coverage is layered:
 3. The deployed-environment canary uses dedicated non-personal trainer and
    athlete Auth accounts plus deterministic synthetic documents in the
    reserved `release-canary-` namespace. It exercises the real deployed app's
-   login, header identity, trainer route, Athlete Calendar, My Programs, and
-   Workout History. Each backend-backed athlete surface must expose its exact
-   seeded record name; permission, application, missing-data, and empty-state
-   results fail before screenshots are accepted.
+   login and header identity; trainer Clients, Exercise Library, Workout
+   Library, Program Library, and Calendar/Assignments; and Athlete Calendar,
+   My Programs, and Workout History. Every backend-backed surface must expose
+   its exact seeded record name; permission, application, missing-data, and
+   empty-state results fail before screenshots are accepted.
 
 Firebase environments are separate projects rather than Hosting preview
 channels sharing one backend. The repository declares `dev`, `staging`, and
