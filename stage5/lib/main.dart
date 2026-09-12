@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:stage5/app.dart';
 import 'package:stage5/core/browser_smoke_config.dart';
+import 'package:stage5/core/browser_smoke_status.dart';
+import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/firebase_options.dart';
 
 Future<void> main() async {
@@ -16,7 +18,12 @@ Future<void> main() async {
 
 Future<void> initializeMercedesApp() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  final firebaseOptions = DefaultFirebaseOptions.currentPlatform;
+  await Firebase.initializeApp(options: firebaseOptions);
+
+  if (releaseCanaryMode) {
+    markBrowserSmokeFirebaseProject(firebaseOptions.projectId);
+  }
 
   if (browserSmokeConfig.emulatorsEnabled) {
     await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);

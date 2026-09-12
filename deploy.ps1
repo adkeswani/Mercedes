@@ -5,7 +5,7 @@
 
 .DESCRIPTION
   Runs Flutter tests, builds release artifacts, and deploys.
-  Web deploys Firebase Hosting together with Firestore rules and indexes.
+  Web deploys Firebase Functions and Firestore configuration before Hosting.
   Android builds an AAB for Play Store upload.
 
 .PARAMETER Target
@@ -15,16 +15,26 @@
   Skip the test suite (use for hotfixes only).
 
 .PARAMETER StageDir
-  Stage directory to build from. Default: 'stage3'.
+  Stage directory to build from. Default: 'stage5'. Web releases must use
+  the directory configured as Hosting public in firebase.json.
 
 .PARAMETER Project
   Explicit Firebase project ID or configured CLI alias. Required for web.
 
+.PARAMETER Environment
+  Explicit Firebase environment: dev, staging, or prod. Required for web.
+
+.PARAMETER EnableReleaseCanaryLogin
+  Compiles the URL-gated email/password release canary form into the web app.
+
+.PARAMETER AllowProductionCanary
+  Required with EnableReleaseCanaryLogin when Environment is prod.
+
 .EXAMPLE
-  .\deploy.ps1 -Target web -StageDir stage5 -Project mercedes-app-11ce2
-  .\deploy.ps1 -Target android
-  .\deploy.ps1 -Target all -Project mercedes-app-11ce2
-  .\deploy.ps1 -Target web -SkipTests -Project mercedes-app-11ce2
+  .\deploy.ps1 -Target web -StageDir stage5 -Environment staging -Project staging
+  .\deploy.ps1 -Target android -Environment prod
+  .\deploy.ps1 -Target all -Environment prod -Project prod
+  .\deploy.ps1 -Target web -SkipTests -Environment prod -Project mercedes-app-11ce2
 #>
 
 param(
@@ -33,9 +43,16 @@ param(
 
     [switch]$SkipTests,
 
-    [string]$StageDir = 'stage3',
+    [string]$StageDir = 'stage5',
 
-    [string]$Project
+    [string]$Project,
+
+    [ValidateSet('dev', 'staging', 'prod')]
+    [string]$Environment,
+
+    [switch]$EnableReleaseCanaryLogin,
+
+    [switch]$AllowProductionCanary
 )
 
 Set-StrictMode -Version Latest
@@ -43,14 +60,174 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = $PSScriptRoot
 $stageRoot = Join-Path $repoRoot $StageDir
+$environmentManifestPath =
+    Join-Path $repoRoot 'config\firebase-environments.json'
+$firebaseRcPath = Join-Path $repoRoot '.firebaserc'
+$productionProjectId = 'mercedes-app-11ce2'
 
 function Write-Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 function Write-Ok($msg) { Write-Host "  OK: $msg" -ForegroundColor Green }
 function Write-Fail($msg) { Write-Host "  FAIL: $msg" -ForegroundColor Red; exit 1 }
 
 $deploysWeb = $Target -eq 'web' -or $Target -eq 'all'
+$deploysAndroid = $Target -eq 'android' -or $Target -eq 'all'
 if ($deploysWeb -and [string]::IsNullOrWhiteSpace($Project)) {
     Write-Fail 'Web deployment requires an explicit -Project ID or CLI alias.'
+}
+if ($deploysWeb -and [string]::IsNullOrWhiteSpace($Environment)) {
+    Write-Fail 'Web deployment requires an explicit -Environment.'
+}
+if ($deploysAndroid -and $Environment -ne 'prod') {
+    Write-Fail (
+        'Android builds use the production Firebase configuration and ' +
+        'require -Environment prod.'
+    )
+}
+if ($AllowProductionCanary -and -not $EnableReleaseCanaryLogin) {
+    Write-Fail (
+        '-AllowProductionCanary is valid only with ' +
+        '-EnableReleaseCanaryLogin.'
+    )
+}
+if (
+    $deploysWeb -and
+    $Environment -eq 'prod' -and
+    $EnableReleaseCanaryLogin -and
+    -not $AllowProductionCanary
+) {
+    Write-Fail (
+        'A production canary-enabled build requires both ' +
+        '-EnableReleaseCanaryLogin and -AllowProductionCanary.'
+    )
+}
+$resolvedProjectId = $Project
+function Get-RequiredWebOption {
+    param([string]$Name)
+
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        Write-Fail (
+            "Environment '$Environment' requires environment variable $Name."
+        )
+    }
+    return $value
+}
+
+$webBuildArguments = @('build', 'web')
+if ($deploysWeb) {
+    $firebaseConfigPath = Join-Path $repoRoot 'firebase.json'
+    $firebaseConfig =
+        Get-Content -LiteralPath $firebaseConfigPath -Raw | ConvertFrom-Json
+    $hostingPublicPath =
+        [IO.Path]::GetFullPath((Join-Path $repoRoot $firebaseConfig.hosting.public))
+    $stageBuildPath =
+        [IO.Path]::GetFullPath((Join-Path $stageRoot 'build\web'))
+    if ($hostingPublicPath -ne $stageBuildPath) {
+        Write-Fail (
+            "StageDir '$StageDir' builds '$stageBuildPath', but firebase.json " +
+            "deploys '$hostingPublicPath'."
+        )
+    }
+    if (-not (
+            Test-Path -LiteralPath $environmentManifestPath -PathType Leaf
+        )) {
+        Write-Fail (
+            "Firebase environment manifest not found: " +
+            $environmentManifestPath
+        )
+    }
+    if (Test-Path -LiteralPath $firebaseRcPath -PathType Leaf) {
+        $firebaseRc =
+            Get-Content -LiteralPath $firebaseRcPath -Raw | ConvertFrom-Json
+        if ($firebaseRc.projects.PSObject.Properties.Name -contains 'default') {
+            Write-Fail (
+                "Firebase alias 'default' is forbidden; select dev, staging, " +
+                'or prod explicitly.'
+            )
+        }
+        $projectAlias = $firebaseRc.projects.PSObject.Properties |
+            Where-Object Name -EQ $Project |
+            Select-Object -First 1
+        if ($projectAlias) {
+            $resolvedProjectId = $projectAlias.Value
+        }
+    }
+
+    $environmentManifest = Get-Content `
+        -LiteralPath $environmentManifestPath `
+        -Raw |
+        ConvertFrom-Json
+    $environmentConfig = $environmentManifest.environments.$Environment
+    if (-not $environmentConfig) {
+        Write-Fail "Environment '$Environment' is missing from the manifest."
+    }
+    if (-not $environmentConfig.projectId -or
+        -not $environmentConfig.hostingUrl) {
+        Write-Fail (
+            "Environment '$Environment' is not provisioned in " +
+            'config\firebase-environments.json.'
+        )
+    }
+    if (
+        $environmentConfig.projectId -and
+        $resolvedProjectId -ne $environmentConfig.projectId
+    ) {
+        Write-Fail (
+            "Environment '$Environment' expects project " +
+            "'$($environmentConfig.projectId)', not '$resolvedProjectId'."
+        )
+    }
+    if (
+        $Environment -ne 'prod' -and
+        $resolvedProjectId -eq $productionProjectId
+    ) {
+        Write-Fail (
+            "Environment '$Environment' cannot target production project " +
+            "'$productionProjectId'."
+        )
+    }
+    if (
+        $Environment -eq 'prod' -and
+        $resolvedProjectId -ne $productionProjectId
+    ) {
+        Write-Fail (
+            "Production releases must target '$productionProjectId', not " +
+            "'$resolvedProjectId'."
+        )
+    }
+
+    $webBuildArguments +=
+        "--dart-define=FIREBASE_ENVIRONMENT=$Environment"
+    if ($Environment -ne 'prod') {
+        $webProjectId = Get-RequiredWebOption 'FIREBASE_WEB_PROJECT_ID'
+        if ($webProjectId -ne $resolvedProjectId) {
+            Write-Fail (
+                "FIREBASE_WEB_PROJECT_ID '$webProjectId' does not match " +
+                "selected project '$resolvedProjectId'."
+            )
+        }
+        foreach ($option in @(
+                'FIREBASE_WEB_API_KEY',
+                'FIREBASE_WEB_APP_ID',
+                'FIREBASE_WEB_MESSAGING_SENDER_ID',
+                'FIREBASE_WEB_PROJECT_ID',
+                'FIREBASE_WEB_AUTH_DOMAIN',
+                'FIREBASE_WEB_STORAGE_BUCKET'
+            )) {
+            $webBuildArguments +=
+                "--dart-define=$option=$(Get-RequiredWebOption $option)"
+        }
+        if ($env:FIREBASE_WEB_MEASUREMENT_ID) {
+            $webBuildArguments += (
+                '--dart-define=FIREBASE_WEB_MEASUREMENT_ID=' +
+                $env:FIREBASE_WEB_MEASUREMENT_ID
+            )
+        }
+    }
+    if ($EnableReleaseCanaryLogin) {
+        $webBuildArguments +=
+            '--dart-define=ENABLE_RELEASE_CANARY_LOGIN=true'
+    }
 }
 
 # Verify we're on main
@@ -81,33 +258,42 @@ if (-not $SkipTests) {
 if ($Target -eq 'web' -or $Target -eq 'all') {
     Write-Step "Building for web"
     Push-Location $stageRoot
-    flutter build web
+    & flutter @webBuildArguments
     if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Fail "Web build failed" }
     Pop-Location
     Write-Ok "Web build complete"
 
-    Write-Step "Deploying Firestore configuration"
+    Write-Step "Deploying Functions and Firestore configuration"
     Push-Location $repoRoot
-    firebase deploy --only "firestore:rules,firestore:indexes" --project $Project
+    firebase deploy --only "functions,firestore:rules,firestore:indexes" `
+        --project $resolvedProjectId
     if ($LASTEXITCODE -ne 0) {
         Pop-Location
-        Write-Fail "Firestore deployment failed"
+        Write-Fail "Functions or Firestore deployment failed"
     }
     & (Join-Path $repoRoot 'scripts\wait-firestore-indexes.ps1') `
-        -Project $Project
+        -Project $resolvedProjectId
     if ($LASTEXITCODE -ne 0) {
         Pop-Location
         Write-Fail "Firestore indexes did not become ready"
     }
 
     Write-Step "Deploying Firebase Hosting"
-    firebase deploy --only hosting --project $Project
+    firebase deploy --only hosting --project $resolvedProjectId
     if ($LASTEXITCODE -ne 0) {
         Pop-Location
         Write-Fail "Firebase Hosting deployment failed"
     }
     Pop-Location
-    Write-Ok "Firebase web release completed for $Project"
+    & (Join-Path $repoRoot 'scripts\verify-deployed-config.ps1') `
+        -Environment $Environment `
+        -Project $resolvedProjectId
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail 'Deployed Firestore configuration parity check failed'
+    }
+    Write-Ok (
+        "Firebase web release completed for $Environment/$resolvedProjectId"
+    )
 }
 
 # Android deployment

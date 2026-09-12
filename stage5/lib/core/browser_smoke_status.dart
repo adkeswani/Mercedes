@@ -10,6 +10,14 @@ void markBrowserSmokeAccountIdentity(String identity) {
   implementation.markBrowserSmokeAccountIdentity(identity);
 }
 
-void markBrowserSmokeSurfaceReady(String surface) {
-  implementation.markBrowserSmokeSurfaceReady(surface);
+void markBrowserSmokeFirebaseProject(String projectId) {
+  implementation.markBrowserSmokeFirebaseProject(projectId);
+}
+
+void markBrowserSmokeSurfaceReady(String surface, {String? content}) {
+  implementation.markBrowserSmokeSurfaceReady(surface, content: content);
+}
+
+void markBrowserSmokeSurfaceFailure(String surface, String state) {
+  implementation.markBrowserSmokeSurfaceFailure(surface, state);
 }

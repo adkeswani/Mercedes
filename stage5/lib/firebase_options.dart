@@ -15,6 +15,28 @@ import 'package:flutter/foundation.dart'
 /// );
 /// ```
 class DefaultFirebaseOptions {
+  static const _environment = String.fromEnvironment(
+    'FIREBASE_ENVIRONMENT',
+    defaultValue: 'prod',
+  );
+  static const _webApiKey = String.fromEnvironment('FIREBASE_WEB_API_KEY');
+  static const _webAppId = String.fromEnvironment('FIREBASE_WEB_APP_ID');
+  static const _webMessagingSenderId = String.fromEnvironment(
+    'FIREBASE_WEB_MESSAGING_SENDER_ID',
+  );
+  static const _webProjectId = String.fromEnvironment(
+    'FIREBASE_WEB_PROJECT_ID',
+  );
+  static const _webAuthDomain = String.fromEnvironment(
+    'FIREBASE_WEB_AUTH_DOMAIN',
+  );
+  static const _webStorageBucket = String.fromEnvironment(
+    'FIREBASE_WEB_STORAGE_BUCKET',
+  );
+  static const _webMeasurementId = String.fromEnvironment(
+    'FIREBASE_WEB_MEASUREMENT_ID',
+  );
+
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
       return web;
@@ -56,7 +78,47 @@ class DefaultFirebaseOptions {
     projectId: 'mercedes-app-11ce2',
     storageBucket: 'mercedes-app-11ce2.firebasestorage.app',
   );
-  static const FirebaseOptions web = FirebaseOptions(
+  static FirebaseOptions get web {
+    final values = [
+      _webApiKey,
+      _webAppId,
+      _webMessagingSenderId,
+      _webProjectId,
+      _webAuthDomain,
+      _webStorageBucket,
+    ];
+    final hasOverride = values.any((value) => value.isNotEmpty);
+    if (!hasOverride) {
+      if (_environment != 'prod') {
+        throw StateError(
+          'Non-production web builds require explicit Firebase web options.',
+        );
+      }
+      return _productionWeb;
+    }
+    if (values.any((value) => value.isEmpty)) {
+      throw StateError(
+        'Firebase web option overrides must provide API key, app ID, '
+        'messaging sender ID, project ID, auth domain, and storage bucket.',
+      );
+    }
+    if (_environment != 'prod' && _webProjectId == _productionWeb.projectId) {
+      throw StateError(
+        'A non-production build cannot use the production Firebase project.',
+      );
+    }
+    return FirebaseOptions(
+      apiKey: _webApiKey,
+      appId: _webAppId,
+      messagingSenderId: _webMessagingSenderId,
+      projectId: _webProjectId,
+      authDomain: _webAuthDomain,
+      storageBucket: _webStorageBucket,
+      measurementId: _webMeasurementId.isEmpty ? null : _webMeasurementId,
+    );
+  }
+
+  static const FirebaseOptions _productionWeb = FirebaseOptions(
     apiKey: 'AIzaSyBaHuB8J9KkfGUNjsOJ_k_Wh3FN7OmnPNw',
     appId: '1:848903261685:web:74006d1a0ef614ee20e4bc',
     messagingSenderId: '848903261685',

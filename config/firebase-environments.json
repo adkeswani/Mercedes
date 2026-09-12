@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "description": "Set projectId and hostingUrl together when provisioning an environment; release commands require an explicit alias or project ID.",
+  "productionProjectId": "mercedes-app-11ce2",
+  "environments": {
+    "dev": {
+      "alias": "dev",
+      "projectId": null,
+      "hostingUrl": null
+    },
+    "staging": {
+      "alias": "staging",
+      "projectId": null,
+      "hostingUrl": null
+    },
+    "prod": {
+      "alias": "prod",
+      "projectId": "mercedes-app-11ce2",
+      "hostingUrl": "https://mercedes-app-11ce2.web.app"
+    }
+  }
+}

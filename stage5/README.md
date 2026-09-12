@@ -232,7 +232,11 @@ contract as one ordered release. Pass an explicit Firebase project ID or CLI
 alias:
 
 ```powershell
-.\deploy.ps1 -Target web -StageDir stage5 -Project mercedes-app-11ce2
+.\deploy.ps1 `
+  -Target web `
+  -StageDir stage5 `
+  -Environment prod `
+  -Project prod
 ```
 
 The script deploys Firestore rules and indexes first, waits until every
@@ -252,22 +256,29 @@ Authorization coverage is layered:
 2. Stage validation checks the combined deployment contract above. Release
    operators must select the intended Firebase project explicitly and review
    the active alias before deploying.
-3. A deployed-environment canary should exercise login, Calendar, My Programs,
-   and workout history using dedicated non-personal trainer and athlete
-   accounts plus deterministic synthetic documents. Use a reserved
-   `release-canary-` ID namespace, delete or overwrite that namespace on each
-   run, store credentials only in the release system's secret store, and never
-   read or mutate real user data. Run it manually as a staging promotion gate
-   first; move it into CI after staging project aliases and protected secrets
-   are configured.
+3. The deployed-environment canary uses dedicated non-personal trainer and
+   athlete Auth accounts plus deterministic synthetic documents in the
+   reserved `release-canary-` namespace. It exercises the real deployed app's
+   login, header identity, trainer route, Athlete Calendar, My Programs, and
+   Workout History. Each backend-backed athlete surface must expose its exact
+   seeded record name; permission, application, missing-data, and empty-state
+   results fail before screenshots are accepted.
 
-Firebase environments should be separate projects for development, staging,
-and production rather than Hosting preview channels sharing one backend. Add
-explicit CLI aliases such as `dev`, `staging`, and `prod`, seed only synthetic
-Auth/Firestore data in staging, deploy the full Hosting/rules/index bundle to
-staging, run the canary, and then promote the same commit and configuration to
-production with an explicit `--project` or selected alias. Creating those
-projects, aliases, accounts, and secrets is intentionally deferred.
+Firebase environments are separate projects rather than Hosting preview
+channels sharing one backend. The repository declares `dev`, `staging`, and
+`prod`, pins only the existing production ID, removes the dangerous default
+alias, and fails closed while development or staging is unprovisioned. Web
+builds for non-production projects require explicit Firebase SDK values from
+environment variables. The canary login form is compiled only with
+`-EnableReleaseCanaryLogin` and is then exposed only at
+`?release-canary=1`; no credentials are embedded in the application.
+Production canary builds and runs require separate explicit opt-ins.
+
+The complete manual provisioning, secret configuration, staging validation,
+canary, cleanup, parity, and production promotion flow is documented in
+`../docs/release-process.md`. Creating cloud projects, enabling billing/APIs,
+deploying, and creating canary accounts remain explicit operator actions; no
+cloud resources are modified by local validation.
 
 Screenshots remain useful diagnostics for layout and identity rendering, but
 they are supplemental: they cannot establish that deployed rules and indexes

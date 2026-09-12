@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/core/browser_smoke_status.dart';
+import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
@@ -68,9 +68,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final scheduleAsync = ref.watch(athleteScheduleProvider(range));
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Schedule'),
-      ),
+      appBar: AppBar(title: const Text('My Schedule')),
       body: Column(
         children: [
           // Week navigation
@@ -99,10 +97,23 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           // Day-by-day schedule
           Expanded(
             child: scheduleAsync.when(
-              data: (instances) => _buildWeekView(context, instances),
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
+              data: (instances) {
+                if (browserAutomationEnabled && instances.isEmpty) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    markBrowserSmokeSurfaceFailure('athlete-calendar', 'empty');
+                  });
+                }
+                return _buildWeekView(context, instances);
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) {
+                if (browserAutomationEnabled) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    markBrowserSmokeSurfaceFailure('athlete-calendar', 'error');
+                  });
+                }
+                return Center(child: Text('Error: $e'));
+              },
             ),
           ),
         ],
@@ -110,10 +121,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  Widget _buildWeekView(
-    BuildContext context,
-    List<WorkoutInstance> instances,
-  ) {
+  Widget _buildWeekView(BuildContext context, List<WorkoutInstance> instances) {
     // Group instances by date
     final byDate = <String, List<WorkoutInstance>>{};
     for (final instance in instances) {
@@ -136,8 +144,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               color: isToday
                   ? Theme.of(context).colorScheme.primaryContainer
                   : null,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
                   Text(
@@ -160,12 +167,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                       ),
                       child: Text(
                         'Today',
-                        style:
-                            Theme.of(context).textTheme.labelSmall?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onPrimary,
-                                ),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onPrimary,
+                            ),
                       ),
                     ),
                   ],
@@ -241,9 +245,20 @@ class _WorkoutInstanceTile extends ConsumerWidget {
       title: FutureBuilder(
         future: template,
         builder: (context, snapshot) {
-          if (browserSmokeConfig.autoLoginEnabled && snapshot.hasData) {
+          if (browserAutomationEnabled &&
+              snapshot.connectionState == ConnectionState.done) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              markBrowserSmokeSurfaceReady('athlete-calendar');
+              if (snapshot.hasData) {
+                markBrowserSmokeSurfaceReady(
+                  'athlete-calendar',
+                  content: snapshot.data!.name,
+                );
+              } else {
+                markBrowserSmokeSurfaceFailure(
+                  'athlete-calendar',
+                  'missing-workout',
+                );
+              }
             });
           }
           final title = snapshot.connectionState != ConnectionState.done
@@ -258,9 +273,8 @@ class _WorkoutInstanceTile extends ConsumerWidget {
       ),
       trailing: instance.isScheduled
           ? FilledButton(
-              onPressed: () => context.push(
-                '/workouts/complete/${instance.id}',
-              ),
+              onPressed: () =>
+                  context.push('/workouts/complete/${instance.id}'),
               child: const Text('Complete'),
             )
           : instance.isCompleted

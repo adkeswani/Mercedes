@@ -29,6 +29,8 @@ It also attempts to auto-accept Android SDK licenses and runs `flutter doctor -v
 - Third-party notices: `THIRD_PARTY_NOTICES.md`
 - Copilot repo instructions: `.github/copilot-instructions.md`
 - App legal templates: `docs/legal/EULA.md` and `docs/legal/PRIVACY_POLICY.md`
+- Firebase environment and release canary runbook:
+  `docs/release-process.md`
 
 This repository is public for visibility but all rights are reserved (see `LICENSE`).
 

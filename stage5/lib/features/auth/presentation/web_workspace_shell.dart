@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/core/browser_smoke_status.dart';
+import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/core/web_workspace/web_workspace_mode.dart';
 import 'package:stage5/features/auth/domain/user_profile.dart';
 import 'package:stage5/features/auth/presentation/app_entry_providers.dart';
@@ -263,7 +264,7 @@ class _WebWorkspaceShellState extends ConsumerState<WebWorkspaceShell> {
       authDisplayName: authenticatedUser?.displayName,
       authEmail: authenticatedEmail,
     );
-    if (browserSmokeConfig.autoLoginEnabled && authenticatedEmail != null) {
+    if (browserAutomationEnabled && authenticatedEmail != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           markBrowserSmokeAuthenticated(authenticatedEmail, widget.mode.name);

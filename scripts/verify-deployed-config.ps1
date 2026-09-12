@@ -2,22 +2,20 @@
 
 param(
     [Parameter(Mandatory)]
+    [ValidateSet('dev', 'staging', 'prod')]
+    [string]$Environment,
+
+    [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
-    [string]$Project,
-
-    [ValidateRange(1, 7200)]
-    [int]$TimeoutSeconds = 1800,
-
-    [ValidateRange(1, 300)]
-    [int]$PollSeconds = 15
+    [string]$Project
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$nodeScript = Join-Path $PSScriptRoot 'release\wait-firestore-indexes.js'
+$nodeScript = Join-Path $PSScriptRoot 'release\verify-deployed-config.js'
 if (-not (Test-Path -LiteralPath $nodeScript -PathType Leaf)) {
-    throw "Missing Firestore index readiness implementation: $nodeScript"
+    throw "Missing deployed configuration verifier: $nodeScript"
 }
 $npmRoot = (& npm root -g).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($npmRoot)) {
@@ -25,18 +23,15 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($npmRoot)) {
 }
 $firebaseToolsLib = Join-Path $npmRoot 'firebase-tools\lib'
 if (-not (Test-Path -LiteralPath $firebaseToolsLib -PathType Container)) {
-    throw 'firebase-tools must be installed globally before deployment.'
+    throw 'firebase-tools must be installed globally for parity verification.'
 }
 
 $previousToolsLib = $env:RELEASE_FIREBASE_TOOLS_LIB
 $env:RELEASE_FIREBASE_TOOLS_LIB = $firebaseToolsLib
 try {
-    & node $nodeScript `
-        --project $Project `
-        --timeout $TimeoutSeconds `
-        --poll $PollSeconds
+    & node $nodeScript --environment $Environment --project $Project
     if ($LASTEXITCODE -ne 0) {
-        throw 'Firestore index readiness check failed.'
+        throw 'Deployed Firestore configuration parity check failed.'
     }
 }
 finally {

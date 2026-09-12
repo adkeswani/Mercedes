@@ -8,11 +8,9 @@ import 'package:google_sign_in/google_sign_in.dart';
 /// interface for auth operations. On mobile, uses the GoogleSignIn
 /// plugin; on web, uses Firebase Auth's built-in popup flow.
 class AuthRepository {
-  AuthRepository({
-    FirebaseAuth? firebaseAuth,
-    GoogleSignIn? googleSignIn,
-  })  : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
-        _injectedGoogleSignIn = googleSignIn;
+  AuthRepository({FirebaseAuth? firebaseAuth, GoogleSignIn? googleSignIn})
+    : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
+      _injectedGoogleSignIn = googleSignIn;
 
   final FirebaseAuth _firebaseAuth;
   final GoogleSignIn? _injectedGoogleSignIn;
@@ -44,8 +42,9 @@ class AuthRepository {
 
   /// Signs in with email and password.
   ///
-  /// Stage 5 exposes this only through the debug, emulator-gated browser smoke
-  /// test seam. The production UI continues to offer Google Sign-In only.
+  /// Stage 5 exposes this through the debug emulator smoke seam and through an
+  /// explicitly compiled, URL-gated release canary form. Neither path embeds
+  /// credentials; Firebase Auth still validates the supplied account.
   Future<UserCredential> signInWithEmailAndPassword({
     required String email,
     required String password,

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/core/browser_smoke_status.dart';
+import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/auth/presentation/home_screen.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
@@ -20,17 +20,29 @@ class AthleteWorkoutHistoryScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Workout history')),
       body: history.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              'Unable to load workout history: $error',
-              textAlign: TextAlign.center,
+        error: (error, _) {
+          if (browserAutomationEnabled) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              markBrowserSmokeSurfaceFailure('athlete-history', 'error');
+            });
+          }
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Unable to load workout history: $error',
+                textAlign: TextAlign.center,
+              ),
             ),
-          ),
-        ),
+          );
+        },
         data: (instances) {
           if (instances.isEmpty) {
+            if (browserAutomationEnabled) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                markBrowserSmokeSurfaceFailure('athlete-history', 'empty');
+              });
+            }
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
@@ -68,9 +80,20 @@ class _WorkoutHistoryCard extends ConsumerWidget {
     return FutureBuilder(
       future: template,
       builder: (context, snapshot) {
-        if (browserSmokeConfig.autoLoginEnabled && snapshot.hasData) {
+        if (browserAutomationEnabled &&
+            snapshot.connectionState == ConnectionState.done) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            markBrowserSmokeSurfaceReady('athlete-history');
+            if (snapshot.hasData) {
+              markBrowserSmokeSurfaceReady(
+                'athlete-history',
+                content: snapshot.data!.name,
+              );
+            } else {
+              markBrowserSmokeSurfaceFailure(
+                'athlete-history',
+                'missing-workout',
+              );
+            }
           });
         }
         final title = snapshot.connectionState != ConnectionState.done

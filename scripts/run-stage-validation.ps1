@@ -352,6 +352,21 @@ try {
 
     if ($Stage -eq 'stage5') {
         & (Join-Path $repoRoot 'scripts\verify-web-deploy-contract.ps1')
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Web deployment contract verification failed.'
+        }
+        $releaseTests = @(
+            Get-ChildItem `
+                -LiteralPath (Join-Path $repoRoot 'scripts\release\test') `
+                -Filter '*.test.js' `
+                -File |
+                Sort-Object Name |
+                ForEach-Object FullName
+        )
+        & node --test @releaseTests
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Release safety tests failed.'
+        }
     }
 
     Push-Location $stagePath

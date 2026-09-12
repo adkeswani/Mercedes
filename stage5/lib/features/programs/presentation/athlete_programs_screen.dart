@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/core/browser_smoke_status.dart';
+import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/programs/domain/athlete_program_instance.dart';
 import 'package:stage5/features/programs/presentation/athlete_program_instance_providers.dart';
 import 'package:stage5/features/programs/presentation/program_providers.dart';
@@ -14,24 +14,35 @@ class AthleteProgramsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final instances = ref.watch(myAthleteProgramInstancesProvider);
-    final backfill =
-        ref.watch(myAthleteProgramInstanceBackfillStatusProvider);
+    final backfill = ref.watch(myAthleteProgramInstanceBackfillStatusProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('My programs')),
       body: instances.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              'Unable to load your programs: $error',
-              textAlign: TextAlign.center,
+        error: (error, _) {
+          if (browserAutomationEnabled) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              markBrowserSmokeSurfaceFailure('athlete-programs', 'error');
+            });
+          }
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Unable to load your programs: $error',
+                textAlign: TextAlign.center,
+              ),
             ),
-          ),
-        ),
+          );
+        },
         data: (items) {
           if (items.isEmpty) {
+            if (browserAutomationEnabled && !backfill.isLoading) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                markBrowserSmokeSurfaceFailure('athlete-programs', 'empty');
+              });
+            }
             if (backfill.isLoading) {
               return const Center(child: CircularProgressIndicator());
             }
@@ -97,9 +108,20 @@ class _AthleteProgramCard extends ConsumerWidget {
     return FutureBuilder(
       future: program,
       builder: (context, snapshot) {
-        if (browserSmokeConfig.autoLoginEnabled && snapshot.hasData) {
+        if (browserAutomationEnabled &&
+            snapshot.connectionState == ConnectionState.done) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            markBrowserSmokeSurfaceReady('athlete-programs');
+            if (snapshot.hasData) {
+              markBrowserSmokeSurfaceReady(
+                'athlete-programs',
+                content: snapshot.data!.name,
+              );
+            } else {
+              markBrowserSmokeSurfaceFailure(
+                'athlete-programs',
+                'missing-program',
+              );
+            }
           });
         }
         final title = snapshot.connectionState != ConnectionState.done

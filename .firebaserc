@@ -1,5 +1,5 @@
 {
   "projects": {
-    "default": "mercedes-app-11ce2"
+    "prod": "mercedes-app-11ce2"
   }
 }

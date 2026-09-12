@@ -15,6 +15,9 @@ build/
 *.jks
 *.keystore
 key.properties
+*service-account*.json
+*firebase-adminsdk*.json
+*application-credentials*.json
 
 # IDE
 .idea/
@@ -27,6 +30,8 @@ test-rules/node_modules/
 # Firebase emulator logs
 firestore-debug.log
 ui-debug.log
+firebase-debug.log
+firebase-debug.*.log
 
 # Browser integration test artifacts
 stage5/test-artifacts/
