@@ -479,22 +479,29 @@ step 6, and server-side subscription propagation in step 8.
 
 #### Current checkpoint
 
-Stage 5 now includes the domain foundations, immutable exercise versioning,
-shared library metadata/copy provenance, typed workout blocks with stable
-exercise slots, the `AthleteProgramInstance` lifecycle, and authoritative
-subscription propagation. Browser login integration is complete: Chrome runs
-against local Firebase emulators with deterministic trainer and athlete
-identities linked by an active relationship, exercises the real login/bootstrap
-path, and captures signed-out and signed-in screenshots as gitignored
-artifacts. Full stage validation is automated across Flutter tests, analysis,
-Firestore rules, and discovered browser integration tests. Stage 4 remains
-unchanged.
+The Stage 5 model and migration foundation remains complete; Stage 4 is
+unchanged. Authenticated desktop web now provides Athlete and Trainer
+workspaces with namespaced routes, remembered mode, and header identity while
+preserving the existing mobile experience below the responsive breakpoint.
 
-Pause here. The next work session should begin with UX/product decisions and
-responsive UX implementation. Broad business-workflow browser E2E remains
-deferred until the UX stabilizes. The deferred **Delete my account**
-requirement, including owned-data deletion/anonymization and explicit
-relationship/history handling, is recorded in the technical design.
+Athlete Calendar, My Programs, and Workout History are implemented, and the
+production authorization/index drift affecting those queries has been fixed.
+History pagination remains deferred. Trainer read surfaces are wired for
+Clients, Exercise Library, Workout Library, Program Library, and
+Calendar/Assignments. Trainer Dashboard remains a placeholder and is the next
+recommended slice, followed by the client workspace and creation, editing, and
+assignment workflows.
+
+Local release validation now includes exact-query Firestore emulator coverage,
+populated trainer and athlete browser canaries with retained screenshot
+artifacts, deployed rules/index parity checks, and ordered full-configuration
+deployment. A separate staging Firebase project remains optional and deferred.
+Browser coverage is intentionally read-surface focused; creation/editing,
+assignment, propagation, completion, immutable-history, and permission-boundary
+mutation workflows remain to be covered. Athlete Progress and Messages are
+still placeholders, mobile-specific UX refinement is later work, and the
+deferred **Delete my account** requirement still needs owned-data
+deletion/anonymization plus explicit relationship/history handling.
 
 - Trainer-client relationships use deterministic
   `{trainerId}_{athleteId}` document IDs, retain ended relationships for audit,
