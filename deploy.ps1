@@ -6,6 +6,8 @@
 .DESCRIPTION
   Runs Flutter tests, builds release artifacts, and deploys.
   Web deploys Firebase Functions and Firestore configuration before Hosting.
+  The backend deploy explicitly acknowledges the existing retry/failure policy
+  because onProgramVersionPublished is retryable and idempotent.
   Android builds an AAB for Play Store upload.
 
 .PARAMETER Target
@@ -266,7 +268,8 @@ if ($Target -eq 'web' -or $Target -eq 'all') {
     Write-Step "Deploying Functions and Firestore configuration"
     Push-Location $repoRoot
     firebase deploy --only "functions,firestore:rules,firestore:indexes" `
-        --project $resolvedProjectId
+        --project $resolvedProjectId `
+        --force
     if ($LASTEXITCODE -ne 0) {
         Pop-Location
         Write-Fail "Functions or Firestore deployment failed"

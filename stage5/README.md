@@ -263,13 +263,17 @@ alias:
   -Project prod
 ```
 
-The script deploys Firestore rules and indexes first, waits until every
-composite index in `firestore.indexes.json` reports `READY`, and deploys
-Hosting only after that gate succeeds. `scripts/verify-web-deploy-contract.ps1`
-is part of Stage 5 validation and fails if this ordering, the explicit project
-requirement, or the repository Firestore configuration is removed. A
-Hosting-only release is not a complete Stage 5 release because new client
-queries can depend on newer rules and composite indexes.
+The script deploys Functions, Firestore rules, and indexes first with
+`--force`, waits until every composite index in `firestore.indexes.json`
+reports `READY`, and deploys Hosting only after that gate succeeds. The force
+flag is the explicit Firebase CLI acknowledgement of the existing
+failure/retry policy on the retryable, idempotent
+`onProgramVersionPublished` propagation function; it does not bypass
+application authorization or validation. `scripts/verify-web-deploy-contract.ps1`
+is part of Stage 5 validation and fails if this acknowledgement, ordering,
+explicit project requirement, or repository Firestore configuration is
+removed. A Hosting-only release is not a complete Stage 5 release because new
+client queries can depend on newer rules and composite indexes.
 
 Authorization coverage is layered:
 

@@ -89,8 +89,9 @@ npm --prefix .\test-rules test
   -Environment staging `
   -Project staging
 
-# 4. Build against staging config, deploy Functions + Firestore configuration,
-#    wait for all indexes, deploy Hosting, then verify parity.
+# 4. Build against staging config, deploy Functions + Firestore configuration
+#    with the required retry-policy acknowledgement, wait for all indexes,
+#    deploy Hosting, then verify parity.
 .\deploy.ps1 `
   -Target web `
   -StageDir stage5 `
@@ -117,6 +118,14 @@ npm --prefix .\test-rules test
   -Project staging `
   -AppUrl https://<staging-project-id>.web.app
 ```
+
+`deploy.ps1` passes `--force` only to the combined Functions and Firestore
+deployment. Firebase requires this explicit acknowledgement because the
+existing `onProgramVersionPublished` function has a failure/retry policy.
+That trigger is designed to be retryable and idempotent: its durable
+propagation state, operation identity, and ownership checks make repeated
+invocations safe. The flag is not applied to Hosting and does not replace the
+index-readiness or deployed-parity gates.
 
 The browser canary signs in through the deployed web app as the dedicated
 trainer and athlete. It verifies the selected Firebase project and header

@@ -31,6 +31,16 @@ if ($backendPosition -lt 0 -or
         'wait for every composite index, release Hosting, and verify parity.'
     )
 }
+$backendBlock = $deploySource.Substring(
+    $backendPosition,
+    $waitPosition - $backendPosition
+)
+if (-not $backendBlock.Contains('--force')) {
+    throw (
+        'The Functions and Firestore deployment must pass --force to ' +
+        'acknowledge the retry policy on the idempotent propagation function.'
+    )
+}
 if (-not $deploySource.Contains(
         "Web deployment requires an explicit -Project ID or CLI alias."
     )) {
@@ -95,6 +105,6 @@ foreach ($path in @($config.firestore.rules, $config.firestore.indexes)) {
 }
 
 Write-Host (
-    'Web deployment contract verified: explicit environment, backend, ready ' +
-    'indexes, Hosting, then deployed parity.'
+    'Web deployment contract verified: explicit environment, forced backend ' +
+    'policy acknowledgement, ready indexes, Hosting, then deployed parity.'
 ) -ForegroundColor Green
