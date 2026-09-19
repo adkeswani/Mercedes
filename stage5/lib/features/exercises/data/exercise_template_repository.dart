@@ -42,6 +42,7 @@ class ExerciseTemplateRepository {
         .where('createdBy', isEqualTo: userId)
         .where('deletedAt', isNull: true)
         .orderBy('updatedAt', descending: true)
+        .limit(maxLibraryItemsPerView)
         .snapshots()
         .asyncMap((snapshot) async {
       final templates = await Future.wait(

@@ -50,9 +50,12 @@ complete.
 ## Browser prerequisites
 
 Browser integration tests require the prerequisites documented by the selected
-stage. For Stage 5 these include Chrome, a matching ChromeDriver on `PATH` or
-in `CHROMEDRIVER_PATH`, Firebase CLI and Java, Windows Developer Mode, and free
-local emulator ports.
+stage. For Stage 5 these include Chrome, Firebase CLI and Java, Windows
+Developer Mode, and free local emulator ports. The validation runner resolves
+ChromeDriver in this order: explicit `-ChromeDriverPath`,
+`CHROMEDRIVER_PATH`, `PATH`, the persistent user cache, then a secure automatic
+download from Chrome for Testing. The cached driver must match the installed
+Chrome major and is reused by later sessions.
 
 Each invocation writes only its own browser artifacts under
 `stageN/test-artifacts/stage-validation/<UTC timestamp>-<run ID>/`, so failure

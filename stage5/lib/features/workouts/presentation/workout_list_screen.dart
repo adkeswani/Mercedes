@@ -5,6 +5,10 @@ import 'package:go_router/go_router.dart';
 import 'package:stage5/core/browser_smoke_status.dart';
 import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
+import 'package:stage5/features/library/presentation/library_organizer.dart';
+import 'package:stage5/features/library/presentation/library_providers.dart';
+import 'package:stage5/features/relationships/presentation/trainer_client_relationship_providers.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
@@ -15,11 +19,15 @@ class WorkoutListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final workoutsAsync = ref.watch(workoutTemplatesProvider);
+    final foldersAsync = ref.watch(
+      libraryFoldersProvider(LibraryItemType.workout),
+    );
+    final clientNames =
+        ref.watch(activeTrainerClientNamesProvider).valueOrNull ?? const {};
+    final userId = ref.watch(authStateProvider).valueOrNull?.uid;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Workout Templates'),
-      ),
+      appBar: AppBar(title: const Text('Workout Templates')),
       body: workoutsAsync.when(
         data: (workouts) {
           if (workouts.isEmpty) {
@@ -28,40 +36,88 @@ class WorkoutListScreen extends ConsumerWidget {
                 markBrowserSmokeSurfaceFailure('trainer-workouts', 'empty');
               });
             }
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.sports_gymnastics,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No workout templates yet',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  const Text('Tap + to create your first workout'),
-                ],
-              ),
-            );
           }
-          if (browserAutomationEnabled) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              markBrowserSmokeSurfaceReady(
-                'trainer-workouts',
-                content: workouts.first.name,
+          if (userId == null) {
+            return const Center(child: Text('Sign in to view your library.'));
+          }
+          return foldersAsync.when(
+            data: (folders) {
+              final scopedClientIds = workouts
+                  .map((workout) => workout.clientAthleteId)
+                  .whereType<String>();
+              if (browserAutomationEnabled &&
+                  workouts.isNotEmpty &&
+                  scopedClientIds.every(clientNames.containsKey)) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  markBrowserSmokeSurfaceReady(
+                    'trainer-workouts',
+                    content: [
+                      workouts.first.name,
+                      ...workouts.first.tags,
+                      ...folders.map((folder) => folder.name),
+                      'Clients',
+                      'Unfiled',
+                    ].join(' | '),
+                  );
+                });
+              }
+              return LibraryOrganizer<WorkoutTemplate>(
+                userId: userId,
+                itemType: LibraryItemType.workout,
+                items: workouts,
+                folders: folders,
+                emptyMessage: 'No workout templates yet. Tap + to create one.',
+                nameOf: (item) => item.name,
+                tagsOf: (item) => item.tags,
+                folderIdOf: (item) => item.folderId,
+                clientAthleteIdOf: (item) => item.clientAthleteId,
+                activeClientNames: clientNames,
+                supportsClientScope: true,
+                tileBuilder: (context, item, organizationButton) =>
+                    _WorkoutTile(
+                  workout: item,
+                  organizationButton: organizationButton,
+                ),
+                updateOrganization: (
+                  item, {
+                  required tags,
+                  required folderId,
+                  required clientAthleteId,
+                }) =>
+                    ref
+                        .read(workoutTemplateRepositoryProvider)
+                        .updateOrganization(
+                          id: item.id,
+                          tags: tags,
+                          folderId: folderId,
+                          clientAthleteId: clientAthleteId,
+                          updateClientScope: true,
+                          userId: userId,
+                        ),
+                createFolder: (name) => ref
+                    .read(
+                      libraryFolderRepositoryProvider(LibraryItemType.workout),
+                    )
+                    .create(name: name, userId: userId),
+                renameFolder: (folder, name) => ref
+                    .read(
+                      libraryFolderRepositoryProvider(LibraryItemType.workout),
+                    )
+                    .rename(folderId: folder.id, name: name, userId: userId),
+                deleteFolder: (folder) => ref
+                    .read(
+                      libraryFolderRepositoryProvider(LibraryItemType.workout),
+                    )
+                    .delete(folderId: folder.id, userId: userId),
               );
-            });
-          }
-          return ListView.builder(
-            itemCount: workouts.length,
-            itemBuilder: (context, index) {
-              final workout = workouts[index];
-              return _WorkoutTile(workout: workout);
             },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => LibraryLoadError(
+              message: 'Could not load folders: $error',
+              onRetry: () => ref.invalidate(
+                libraryFoldersProvider(LibraryItemType.workout),
+              ),
+            ),
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -71,7 +127,10 @@ class WorkoutListScreen extends ConsumerWidget {
               markBrowserSmokeSurfaceFailure('trainer-workouts', 'error');
             });
           }
-          return Center(child: Text('Error: $e'));
+          return LibraryLoadError(
+            message: 'Could not load workouts: $e',
+            onRetry: () => ref.invalidate(workoutTemplatesProvider),
+          );
         },
       ),
       floatingActionButton: FloatingActionButton(
@@ -84,15 +143,15 @@ class WorkoutListScreen extends ConsumerWidget {
 }
 
 class _WorkoutTile extends ConsumerWidget {
-  const _WorkoutTile({required this.workout});
+  const _WorkoutTile({required this.workout, required this.organizationButton});
 
   final WorkoutTemplate workout;
+  final Widget organizationButton;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final versionLabel = workout.hasPublishedVersion
-        ? 'v${workout.currentVersion}'
-        : 'Draft';
+    final versionLabel =
+        workout.hasPublishedVersion ? 'v${workout.currentVersion}' : 'Draft';
 
     return Dismissible(
       key: Key(workout.id),
@@ -101,10 +160,7 @@ class _WorkoutTile extends ConsumerWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 16),
         color: Theme.of(context).colorScheme.error,
-        child: Icon(
-          Icons.delete,
-          color: Theme.of(context).colorScheme.onError,
-        ),
+        child: Icon(Icons.delete, color: Theme.of(context).colorScheme.onError),
       ),
       confirmDismiss: (direction) async {
         final repo = ref.read(workoutTemplateRepositoryProvider);
@@ -125,9 +181,7 @@ class _WorkoutTile extends ConsumerWidget {
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Delete workout template?'),
-            content: Text(
-              'Are you sure you want to delete "${workout.name}"?',
-            ),
+            content: Text('Are you sure you want to delete "${workout.name}"?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
@@ -144,19 +198,31 @@ class _WorkoutTile extends ConsumerWidget {
       onDismissed: (_) {
         final uid = ref.read(authStateProvider).value?.uid;
         if (uid == null) return;
-        ref.read(workoutTemplateRepositoryProvider).softDelete(
-          workout.id,
-          uid,
-        );
+        ref.read(workoutTemplateRepositoryProvider).softDelete(workout.id, uid);
       },
       child: ListTile(
         title: Text(workout.name),
-        subtitle: Text(
-          '${workout.workoutType.name} · $versionLabel',
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${workout.workoutType.name} · $versionLabel'),
+            if (workout.tags.isNotEmpty)
+              Wrap(
+                spacing: 4,
+                children: [
+                  for (final tag in workout.tags)
+                    Chip(
+                      label: Text(tag),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+          ],
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            organizationButton,
             if (workout.hasPublishedVersion)
               IconButton(
                 icon: const Icon(Icons.copy),
@@ -183,16 +249,16 @@ class _WorkoutTile extends ConsumerWidget {
       );
 
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Workout duplicated')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Workout duplicated')));
         context.push('/workouts/$newId?copyFrom=${workout.id}');
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to duplicate: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to duplicate: $e')));
       }
     }
   }

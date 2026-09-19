@@ -29,6 +29,18 @@ void main() {
       );
     });
 
+    test('rejects an empty client scope identifier', () {
+      expect(
+        () => validateLibraryMetadata(
+          tags: const [],
+          folderId: null,
+          provenance: null,
+          clientAthleteId: ' ',
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('validates immutable provenance', () {
       final provenance = TemplateProvenance(
         sourceTemplateId: 'source',
@@ -144,6 +156,40 @@ void main() {
       expect(await exercises.watchFolders('coach').first, isEmpty);
     });
 
+    test('finds program folders after bounded mixed-type folders', () async {
+      final batch = firestore.batch();
+      for (var i = 0; i < 100; i++) {
+        batch.set(firestore.collection('programFolders').doc('exercise-$i'), {
+          'ownerId': 'coach',
+          'itemType': 'exercise',
+          'name': 'A exercise $i',
+          'createdBy': 'coach',
+        });
+        batch.set(firestore.collection('programFolders').doc('workout-$i'), {
+          'ownerId': 'coach',
+          'itemType': 'workout',
+          'name': 'B workout $i',
+          'createdBy': 'coach',
+        });
+      }
+      batch.set(firestore.collection('programFolders').doc('program'), {
+        'ownerId': 'coach',
+        'itemType': 'program',
+        'name': 'Z program',
+        'createdBy': 'coach',
+      });
+      await batch.commit();
+
+      final programs = LibraryFolderRepository(
+        firestore: firestore,
+        itemType: LibraryItemType.program,
+      );
+      expect(
+        (await programs.watchFolders('coach').first).map((folder) => folder.id),
+        ['program'],
+      );
+    });
+
     test('keeps interrupted deletion tombstones visible for retry', () async {
       final programs = LibraryFolderRepository(
         firestore: firestore,
@@ -159,6 +205,25 @@ void main() {
       final folders = await programs.watchFolders('coach').first;
       expect(folders.single.id, folderId);
       expect(folders.single.deletedAt, isNotNull);
+
+      for (var i = 0; i < 451; i++) {
+        await firestore.collection('programs').doc('program-$i').set({
+          'ownerId': 'coach',
+          'folderId': folderId,
+        });
+      }
+      await programs.delete(folderId: folderId, userId: 'coach');
+
+      expect(
+        (await firestore.collection('programFolders').doc(folderId).get())
+            .exists,
+        isFalse,
+      );
+      expect(
+        (await firestore.collection('programs').doc('program-450').get())
+            .data()!['folderId'],
+        isNull,
+      );
     });
 
     test('delete only clears members of the matching template type', () async {
@@ -187,6 +252,22 @@ void main() {
         (await firestore.collection('workoutTemplates').doc('workout').get())
             .data()!['folderId'],
         folderId,
+      );
+    });
+
+    test('rejects a soft-deleted folder as a mutation target', () async {
+      final folders = LibraryFolderRepository(
+        firestore: firestore,
+        itemType: LibraryItemType.exercise,
+      );
+      final folderId = await folders.create(name: 'Archived', userId: 'coach');
+      await firestore.collection('programFolders').doc(folderId).update({
+        'deletedAt': DateTime.utc(2026),
+      });
+
+      expect(
+        () => folders.verifyOwnership(folderId, 'coach'),
+        throwsStateError,
       );
     });
   });

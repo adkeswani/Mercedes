@@ -114,6 +114,7 @@ void main() {
       expect(doc.data()!['ownerId'], 'user1');
       expect(doc.data()!['tags'], isEmpty);
       expect(doc.data()!['folderId'], isNull);
+      expect(doc.data()!['clientAthleteId'], isNull);
       expect(doc.data()!['provenance'], isNull);
     });
 
@@ -654,6 +655,60 @@ void main() {
       expect(workout.currentVersion, 0);
     });
 
+    test('creates and moves a workout into an active client scope', () async {
+      await fakeFirestore
+          .collection('trainerClientRelationships')
+          .doc('user1_athlete1')
+          .set({
+        'trainerId': 'user1',
+        'athleteId': 'athlete1',
+        'status': 'active',
+        'deletedAt': null,
+      });
+      final id = await repo.create(
+        name: 'Client Session',
+        workoutType: WorkoutType.fullBody,
+        userId: 'user1',
+        clientAthleteId: 'athlete1',
+      );
+
+      expect((await repo.getById(id))!.clientAthleteId, 'athlete1');
+
+      await repo.updateOrganization(
+        id: id,
+        tags: const ['Specific'],
+        folderId: null,
+        clientAthleteId: null,
+        updateClientScope: true,
+        userId: 'user1',
+      );
+      expect((await repo.getById(id))!.clientAthleteId, isNull);
+    });
+
+    test('rejects ended and unrelated client scopes', () async {
+      await fakeFirestore
+          .collection('trainerClientRelationships')
+          .doc('user1_ended')
+          .set({
+        'trainerId': 'user1',
+        'athleteId': 'ended',
+        'status': 'ended',
+        'deletedAt': null,
+      });
+
+      for (final athleteId in ['ended', 'unrelated']) {
+        expect(
+          () => repo.create(
+            name: 'Invalid client',
+            workoutType: WorkoutType.fullBody,
+            userId: 'user1',
+            clientAthleteId: athleteId,
+          ),
+          throwsStateError,
+        );
+      }
+    });
+
     test('publishVersion increments from existing version', () async {
       final id = await repo.create(
         name: 'Evolving Workout',
@@ -843,6 +898,7 @@ void main() {
       expect(template!.ownerId, 'user1');
       expect(template.tags, isEmpty);
       expect(template.folderId, isNull);
+      expect(template.clientAthleteId, isNull);
       expect(template.provenance, isNull);
     });
 

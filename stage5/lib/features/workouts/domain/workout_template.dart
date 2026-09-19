@@ -27,6 +27,7 @@ class WorkoutTemplate with Auditable implements LibraryItem {
     required this.updatedBy,
     this.tags = const [],
     this.folderId,
+    this.clientAthleteId,
     this.provenance,
     this.deletedAt,
     this.deletedBy,
@@ -41,6 +42,7 @@ class WorkoutTemplate with Auditable implements LibraryItem {
   final List<String> tags;
   @override
   final String? folderId;
+  final String? clientAthleteId;
   @override
   final TemplateProvenance? provenance;
   @override
@@ -71,6 +73,7 @@ class WorkoutTemplate with Auditable implements LibraryItem {
     int? currentVersion,
     List<String>? tags,
     String? folderId,
+    String? clientAthleteId,
     TemplateProvenance? provenance,
     DateTime? createdAt,
     String? createdBy,
@@ -87,6 +90,7 @@ class WorkoutTemplate with Auditable implements LibraryItem {
       currentVersion: currentVersion ?? this.currentVersion,
       tags: tags ?? this.tags,
       folderId: folderId ?? this.folderId,
+      clientAthleteId: clientAthleteId ?? this.clientAthleteId,
       provenance: provenance ?? this.provenance,
       createdAt: createdAt ?? this.createdAt,
       createdBy: createdBy ?? this.createdBy,
@@ -121,6 +125,7 @@ class WorkoutTemplate with Auditable implements LibraryItem {
       tags: tags,
       folderId: folderId,
       provenance: provenance,
+      clientAthleteId: clientAthleteId,
     );
     Auditable.validateTimestamps(
       createdAt: createdAt,

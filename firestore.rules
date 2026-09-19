@@ -109,6 +109,51 @@ service cloud.firestore {
              || (data.tags is list && data.tags.size() <= 20);
     }
 
+    function hasActiveClientRelationship(trainerId, athleteId) {
+      let relationship = get(
+        /databases/$(database)/documents/trainerClientRelationships/$(trainerId + '_' + athleteId)
+      );
+      return relationship.data.trainerId == trainerId
+             && relationship.data.athleteId == athleteId
+             && relationship.data.status == 'active'
+             && (!('deletedAt' in relationship.data)
+                 || relationship.data.deletedAt == null);
+    }
+
+    function hasValidClientScope(data) {
+      return !('clientAthleteId' in data)
+             || data.clientAthleteId == null
+             || (data.clientAthleteId is string
+                 && data.clientAthleteId.size() > 0
+                 && data.clientAthleteId != request.auth.uid
+                 && data.ownerId == request.auth.uid
+                 && hasActiveClientRelationship(
+                      request.auth.uid, data.clientAthleteId
+                    ));
+    }
+
+    function hasValidClientScopeUpdate(data) {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['clientAthleteId'])
+             || hasValidClientScope(data);
+    }
+
+    function canReadClientScopedTemplate(data) {
+      return !('clientAthleteId' in data)
+             || data.clientAthleteId == null
+             || data.ownerId == request.auth.uid
+             || (data.clientAthleteId == request.auth.uid
+                 && hasActiveClientRelationship(
+                      data.ownerId, request.auth.uid
+                    ));
+    }
+
+    function isActiveTargetClient(data) {
+      return ('clientAthleteId' in data)
+             && data.clientAthleteId == request.auth.uid
+             && hasActiveClientRelationship(data.ownerId, request.auth.uid);
+    }
+
     function hasValidProvenance(data) {
       return !('provenance' in data)
              || data.provenance == null
@@ -224,12 +269,14 @@ service cloud.firestore {
       return hasValidTags(data)
              && hasValidProvenance(data)
              && hasValidProvenanceSource(data, itemType)
-             && hasValidLibraryFolder(data, itemType);
+             && hasValidLibraryFolder(data, itemType)
+             && (itemType == 'exercise' || hasValidClientScope(data));
     }
 
     function hasValidLibraryMetadataUpdate(data, itemType) {
       return hasValidTags(data)
              && hasValidProvenance(data)
+             && (itemType == 'exercise' || hasValidClientScopeUpdate(data))
              && (!request.resource.data.diff(resource.data).affectedKeys()
                     .hasAny(['folderId'])
                  || hasValidLibraryFolder(data, itemType));
@@ -1247,7 +1294,8 @@ service cloud.firestore {
     // Create/update/delete: owner only.
 
     match /workoutTemplates/{templateId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn()
+                    && canReadClientScopedTemplate(resource.data);
       allow create: if isSignedIn()
                       && request.resource.data.ownerId == request.auth.uid
                       && request.resource.data.createdBy == request.auth.uid
@@ -1280,6 +1328,11 @@ service cloud.firestore {
       // Workout template versions (subcollection)
       match /workoutTemplateVersions/{versionNumber} {
         allow read: if isSignedIn()
+                    && canReadClientScopedTemplate(
+                         get(
+                           /databases/$(database)/documents/workoutTemplates/$(templateId)
+                         ).data
+                       )
                     && (!('publishState' in resource.data)
                         || resource.data.publishState == 'published'
                         || resource.data.ownerId == request.auth.uid);
@@ -1536,7 +1589,8 @@ service cloud.firestore {
     match /programs/{programId} {
       allow read: if isSignedIn()
                     && (resource.data.ownerId == request.auth.uid
-                        || isEnrolledActive(programId));
+                        || isEnrolledActive(programId)
+                        || isActiveTargetClient(resource.data));
       allow create: if isSignedIn()
                       && request.resource.data.ownerId == request.auth.uid
                       && request.resource.data.createdBy == request.auth.uid
@@ -1572,7 +1626,12 @@ service cloud.firestore {
         allow read: if isSignedIn()
                       && (get(/databases/$(database)/documents/programs/$(programId)).data.ownerId
                           == request.auth.uid
-                          || isEnrolledActive(programId));
+                          || isEnrolledActive(programId)
+                          || isActiveTargetClient(
+                               get(
+                                 /databases/$(database)/documents/programs/$(programId)
+                               ).data
+                             ));
         allow create: if isSignedIn()
                        && get(
                             /databases/$(database)/documents/programs/$(programId)

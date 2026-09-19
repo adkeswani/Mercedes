@@ -29,26 +29,34 @@ class LibraryFolderRepository {
   }
 
   Stream<List<LibraryFolder>> watchFolders(String userId) {
-    Query<Map<String, dynamic>> query =
-        _collection.where('ownerId', isEqualTo: userId);
+    Query<Map<String, dynamic>> query = _collection.where(
+      'ownerId',
+      isEqualTo: userId,
+    );
     if (itemType != LibraryItemType.program) {
       query = query.where('itemType', isEqualTo: itemType.name);
     }
-    return query.orderBy('name').snapshots().map(
+    return query
+        .orderBy('name')
+        .limit(
+          itemType == LibraryItemType.program
+              ? maxLibraryFolderDocumentsPerOwnerRead
+              : maxLibraryFoldersPerType,
+        )
+        .snapshots()
+        .map(
           (snapshot) => snapshot.docs
               .where(
                 (doc) =>
                     libraryItemTypeFromMap(doc.data()['itemType']) == itemType,
               )
               .map((doc) => _fromMap(doc.data(), doc.id))
+              .take(maxLibraryFoldersPerType)
               .toList(),
         );
   }
 
-  Future<String> create({
-    required String name,
-    required String userId,
-  }) async {
+  Future<String> create({required String name, required String userId}) async {
     final trimmedName = name.trim();
     if (trimmedName.isEmpty) {
       throw ArgumentError('name cannot be empty');
@@ -90,14 +98,21 @@ class LibraryFolderRepository {
     required String folderId,
     required String userId,
   }) async {
-    await verifyOwnership(folderId, userId);
-    await _collection.doc(folderId).update({
-      'itemType': itemType.name,
-      'deletedAt': FieldValue.serverTimestamp(),
-      'deletedBy': userId,
-      'updatedBy': userId,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    final deletionAlreadyStarted = await verifyLibraryFolderDeletionOwnership(
+      firestore: _firestore,
+      folderId: folderId,
+      itemType: itemType,
+      userId: userId,
+    );
+    if (!deletionAlreadyStarted) {
+      await _collection.doc(folderId).update({
+        'itemType': itemType.name,
+        'deletedAt': FieldValue.serverTimestamp(),
+        'deletedBy': userId,
+        'updatedBy': userId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
     final members = await _firestore
         .collection(_templateCollection)
         .where('ownerId', isEqualTo: userId)

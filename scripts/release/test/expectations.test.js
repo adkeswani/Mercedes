@@ -80,9 +80,11 @@ test("release canary exposes exact trainer surface expectations", () => {
         "Comment: Release Canary dashboard comment | " +
         "Completion: Release Canary Workout",
       "Release Canary Athlete",
-      "Release Canary Exercise",
-      "Release Canary Workout",
-      "Release Canary Program",
+      "Release Canary Exercise | Strength | Canary exercises | Unfiled",
+      "Release Canary Workout | Client | Full Body | Canary workouts | " +
+        "Clients | Unfiled",
+      "Release Canary Program | Client | Strength | Canary programs | " +
+        "Clients | Unfiled",
       "Release Canary Athlete | Release Canary Program | " +
         "Release Canary Workout",
     ],

@@ -5,8 +5,12 @@ import 'package:go_router/go_router.dart';
 import 'package:stage5/core/browser_smoke_status.dart';
 import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
+import 'package:stage5/features/library/presentation/library_organizer.dart';
+import 'package:stage5/features/library/presentation/library_providers.dart';
 import 'package:stage5/features/programs/domain/program.dart';
 import 'package:stage5/features/programs/presentation/program_providers.dart';
+import 'package:stage5/features/relationships/presentation/trainer_client_relationship_providers.dart';
 
 /// Displays the user's program library.
 class ProgramListScreen extends ConsumerWidget {
@@ -15,11 +19,13 @@ class ProgramListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final programsAsync = ref.watch(programsProvider);
+    final foldersAsync = ref.watch(programFoldersProvider);
+    final clientNames =
+        ref.watch(activeTrainerClientNamesProvider).valueOrNull ?? const {};
+    final userId = ref.watch(authStateProvider).valueOrNull?.uid;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Programs'),
-      ),
+      appBar: AppBar(title: const Text('Programs')),
       body: programsAsync.when(
         data: (programs) {
           if (programs.isEmpty) {
@@ -28,36 +34,85 @@ class ProgramListScreen extends ConsumerWidget {
                 markBrowserSmokeSurfaceFailure('trainer-programs', 'empty');
               });
             }
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.folder_outlined,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No programs yet',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  const Text('Tap + to create your first program'),
-                ],
-              ),
-            );
           }
-          if (browserAutomationEnabled) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              markBrowserSmokeSurfaceReady(
-                'trainer-programs',
-                content: programs.first.name,
+          if (userId == null) {
+            return const Center(child: Text('Sign in to view your library.'));
+          }
+          return foldersAsync.when(
+            data: (folders) {
+              final scopedClientIds = programs
+                  .map((program) => program.clientAthleteId)
+                  .whereType<String>();
+              if (browserAutomationEnabled &&
+                  programs.isNotEmpty &&
+                  scopedClientIds.every(clientNames.containsKey)) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  markBrowserSmokeSurfaceReady(
+                    'trainer-programs',
+                    content: [
+                      programs.first.name,
+                      ...programs.first.tags,
+                      ...folders.map((folder) => folder.name),
+                      'Clients',
+                      'Unfiled',
+                    ].join(' | '),
+                  );
+                });
+              }
+              return LibraryOrganizer<Program>(
+                userId: userId,
+                itemType: LibraryItemType.program,
+                items: programs,
+                folders: folders,
+                emptyMessage: 'No programs yet. Tap + to create one.',
+                nameOf: (item) => item.name,
+                tagsOf: (item) => item.tags,
+                folderIdOf: (item) => item.folderId,
+                clientAthleteIdOf: (item) => item.clientAthleteId,
+                activeClientNames: clientNames,
+                supportsClientScope: true,
+                tileBuilder: (context, item, organizationButton) =>
+                    _ProgramTile(
+                  program: item,
+                  organizationButton: organizationButton,
+                ),
+                updateOrganization: (
+                  item, {
+                  required tags,
+                  required folderId,
+                  required clientAthleteId,
+                }) =>
+                    ref.read(programRepositoryProvider).updateOrganization(
+                          id: item.id,
+                          tags: tags,
+                          folderId: folderId,
+                          clientAthleteId: clientAthleteId,
+                          updateClientScope: true,
+                          userId: userId,
+                        ),
+                createFolder: (name) => ref
+                    .read(
+                      libraryFolderRepositoryProvider(LibraryItemType.program),
+                    )
+                    .create(name: name, userId: userId),
+                renameFolder: (folder, name) => ref
+                    .read(
+                      libraryFolderRepositoryProvider(LibraryItemType.program),
+                    )
+                    .rename(folderId: folder.id, name: name, userId: userId),
+                deleteFolder: (folder) => ref
+                    .read(
+                      libraryFolderRepositoryProvider(LibraryItemType.program),
+                    )
+                    .delete(folderId: folder.id, userId: userId),
               );
-            });
-          }
-          final folders = ref.watch(programFoldersProvider).valueOrNull ?? [];
-          return _buildGroupedList(context, programs, folders);
+            },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => LibraryLoadError(
+              message: 'Could not load folders: $error',
+              onRetry: () => ref.invalidate(programFoldersProvider),
+            ),
+          );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) {
@@ -66,7 +121,10 @@ class ProgramListScreen extends ConsumerWidget {
               markBrowserSmokeSurfaceFailure('trainer-programs', 'error');
             });
           }
-          return Center(child: Text('Error: $e'));
+          return LibraryLoadError(
+            message: 'Could not load programs: $e',
+            onRetry: () => ref.invalidate(programsProvider),
+          );
         },
       ),
       floatingActionButton: FloatingActionButton(
@@ -76,172 +134,18 @@ class ProgramListScreen extends ConsumerWidget {
       ),
     );
   }
-
-  /// Groups programs under their folders, with an "Ungrouped" section last.
-  Widget _buildGroupedList(
-    BuildContext context,
-    List<Program> programs,
-    List<ProgramFolder> folders,
-  ) {
-    final folderById = {for (final f in folders) f.id: f};
-    final grouped = <String?, List<Program>>{};
-    for (final p in programs) {
-      final key = folderById.containsKey(p.folderId) ? p.folderId : null;
-      grouped.putIfAbsent(key, () => []).add(p);
-    }
-
-    final sortedFolders = [...folders]
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
-    final items = <Widget>[];
-    for (final folder in sortedFolders) {
-      final progs = grouped[folder.id] ?? const [];
-      items.add(_FolderHeader(folder: folder, count: progs.length));
-      for (final p in progs) {
-        items.add(_ProgramTile(program: p));
-      }
-    }
-
-    final ungrouped = grouped[null] ?? const [];
-    if (ungrouped.isNotEmpty) {
-      if (sortedFolders.isNotEmpty) {
-        items.add(
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text(
-              'Ungrouped',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-        );
-      }
-      for (final p in ungrouped) {
-        items.add(_ProgramTile(program: p));
-      }
-    }
-    return ListView(children: items);
-  }
-}
-
-/// Section header for a program folder with rename/delete actions.
-class _FolderHeader extends ConsumerWidget {
-  const _FolderHeader({required this.folder, required this.count});
-
-  final ProgramFolder folder;
-  final int count;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
-      child: Row(
-        children: [
-          const Icon(Icons.folder, size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '${folder.name} ($count)',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'rename') {
-                _rename(context, ref);
-              } else if (value == 'delete') {
-                _delete(context, ref);
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'rename', child: Text('Rename')),
-              PopupMenuItem(value: 'delete', child: Text('Delete')),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _rename(BuildContext context, WidgetRef ref) async {
-    final uid = ref.read(authStateProvider).value?.uid;
-    if (uid == null) return;
-    final controller = TextEditingController(text: folder.name);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rename folder'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(labelText: 'Folder name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (name == null || name.trim().isEmpty) return;
-    await ref.read(programFolderRepositoryProvider).rename(
-          folderId: folder.id,
-          name: name.trim(),
-          userId: uid,
-        );
-  }
-
-  Future<void> _delete(BuildContext context, WidgetRef ref) async {
-    final uid = ref.read(authStateProvider).value?.uid;
-    if (uid == null) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete folder?'),
-        content: const Text(
-          'Programs in this folder will be moved to Ungrouped.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    await ref.read(programFolderRepositoryProvider).delete(
-          folderId: folder.id,
-          userId: uid,
-        );
-  }
 }
 
 class _ProgramTile extends ConsumerWidget {
-  const _ProgramTile({required this.program});
+  const _ProgramTile({required this.program, required this.organizationButton});
 
   final Program program;
+  final Widget organizationButton;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final versionLabel = program.currentVersion > 0
-        ? 'v${program.currentVersion}'
-        : 'Draft';
+    final versionLabel =
+        program.currentVersion > 0 ? 'v${program.currentVersion}' : 'Draft';
     final typeLabel = program.isAssignable ? 'Assignable' : 'Personal';
 
     return Dismissible(
@@ -251,19 +155,14 @@ class _ProgramTile extends ConsumerWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 16),
         color: Theme.of(context).colorScheme.error,
-        child: Icon(
-          Icons.delete,
-          color: Theme.of(context).colorScheme.onError,
-        ),
+        child: Icon(Icons.delete, color: Theme.of(context).colorScheme.onError),
       ),
       confirmDismiss: (direction) async {
         return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Delete program?'),
-            content: Text(
-              'Are you sure you want to delete "${program.name}"?',
-            ),
+            content: Text('Are you sure you want to delete "${program.name}"?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
@@ -284,10 +183,27 @@ class _ProgramTile extends ConsumerWidget {
       },
       child: ListTile(
         title: Text(program.name),
-        subtitle: Text('$typeLabel · ${program.status.name} · $versionLabel'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$typeLabel · ${program.status.name} · $versionLabel'),
+            if (program.tags.isNotEmpty)
+              Wrap(
+                spacing: 4,
+                children: [
+                  for (final tag in program.tags)
+                    Chip(
+                      label: Text(tag),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+          ],
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            organizationButton,
             if (program.currentVersion > 0)
               IconButton(
                 icon: const Icon(Icons.copy),
@@ -314,16 +230,16 @@ class _ProgramTile extends ConsumerWidget {
       );
 
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Program copied')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Program copied')));
         context.push('/programs/$newId?copyFrom=${program.id}');
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to copy: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to copy: $e')));
       }
     }
   }

@@ -66,6 +66,15 @@ alias, service-account `project_id`, Hosting URL, reserved
 `release-canary-` namespace, and every ownership field before using Admin SDK
 privileges. They never query, enumerate, or mutate non-canary user data.
 
+Browser validation requires Google Chrome. The stage, browser-smoke, and
+release-canary runners share one ChromeDriver resolver. It honors an explicit
+`-ChromeDriverPath`, then `CHROMEDRIVER_PATH`, then `PATH`; otherwise it
+provisions the matching Chrome for Testing driver into
+`%LOCALAPPDATA%\Copilot\Mercedes\ChromeDriver` and reuses that cache. Supplied
+and cached drivers are rejected when their major version differs from Chrome.
+The download is runtime-selected rather than pinned in the repository tooling
+inventory.
+
 ## Manual staging release
 
 Run this sequence from a clean `main` checkout. Substitute the provisioned

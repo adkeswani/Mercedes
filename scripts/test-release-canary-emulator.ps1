@@ -3,7 +3,7 @@
 param(
     [switch]$InsideEmulators,
     [switch]$SkipBuild,
-    [string]$ChromeDriverPath = $env:CHROMEDRIVER_PATH
+    [string]$ChromeDriverPath
 )
 
 Set-StrictMode -Version Latest
@@ -12,6 +12,10 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $stagePath = Join-Path $repoRoot 'stage5'
 $projectId = 'demo-mercedes-canary'
+. (Join-Path $repoRoot 'scripts\lib\chromedriver.ps1')
+$ChromeDriverPath = Resolve-CompatibleChromeDriver `
+    -ChromeDriverPath $ChromeDriverPath
+$env:CHROMEDRIVER_PATH = $ChromeDriverPath
 
 if (-not $InsideEmulators) {
     $arguments = @(

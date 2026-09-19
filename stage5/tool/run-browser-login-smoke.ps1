@@ -1,7 +1,7 @@
 param(
     [switch]$InsideEmulators,
     [switch]$SkipPubGet,
-    [string]$ChromeDriverPath = $env:CHROMEDRIVER_PATH,
+    [string]$ChromeDriverPath,
     [string]$TestTarget = $env:BROWSER_SMOKE_TEST_TARGET,
     [string]$StartGateName = $env:BROWSER_SMOKE_START_GATE,
     [ValidateSet('trainer', 'athlete')]
@@ -27,6 +27,10 @@ $projectId = 'mercedes-app-11ce2'
 $stagePath = Split-Path -Parent $PSScriptRoot
 $repoRoot = Split-Path -Parent $stagePath
 $stageName = Split-Path -Leaf $stagePath
+. (Join-Path $repoRoot 'scripts\lib\chromedriver.ps1')
+$ChromeDriverPath = Resolve-CompatibleChromeDriver `
+    -ChromeDriverPath $ChromeDriverPath
+$env:CHROMEDRIVER_PATH = $ChromeDriverPath
 $artifactRoot = Join-Path $stagePath 'test-artifacts'
 $artifactPath = Join-Path $artifactRoot 'browser-login'
 if ($env:BROWSER_SMOKE_ARTIFACT_DIR_OVERRIDE) {
@@ -60,9 +64,6 @@ $identities = @{
 }
 
 if (-not $InsideEmulators) {
-    if ($ChromeDriverPath) {
-        $env:CHROMEDRIVER_PATH = (Resolve-Path $ChromeDriverPath).Path
-    }
     $env:BROWSER_SMOKE_TEST_TARGET = $TestTarget
 
     Push-Location $repoRoot
@@ -221,11 +222,37 @@ $programInstanceId = 'browser-athlete-program-instance'
 $exerciseTemplateId = 'browser-trainer-exercise'
 $calendarTemplateId = 'browser-calendar-workout'
 $historyTemplateId = 'browser-history-workout'
+$exerciseFolderId = 'browser-exercise-folder'
+$workoutFolderId = 'browser-workout-folder'
+$programFolderId = 'browser-program-folder'
 $discussionThreadId = 'browser-history-workout'
 $discussionMessageId = 'browser-workout-discussion-message'
 $celebrate = [char]::ConvertFromUtf32(0x1F389)
 $workspaceSeedBody = @{
     writes = @(
+        @(
+            @('exercise', $exerciseFolderId, 'Browser exercises'),
+            @('workout', $workoutFolderId, 'Browser workouts'),
+            @('program', $programFolderId, 'Browser programs')
+        ) | ForEach-Object {
+            @{
+                update = @{
+                    name = "projects/$projectId/databases/(default)/documents/" +
+                        "programFolders/$($_[1])"
+                    fields = @{
+                        ownerId = @{ stringValue = $trainer.Uid }
+                        itemType = @{ stringValue = $_[0] }
+                        name = @{ stringValue = $_[2] }
+                        createdBy = @{ stringValue = $trainer.Uid }
+                        createdAt = @{ timestampValue = $seedTimestamp }
+                        updatedBy = @{ stringValue = $trainer.Uid }
+                        updatedAt = @{ timestampValue = $seedTimestamp }
+                        deletedAt = @{ nullValue = $null }
+                        deletedBy = @{ nullValue = $null }
+                    }
+                }
+            }
+        }
         @{
             update = @{
                 name = "projects/$projectId/databases/(default)/documents/" +
@@ -233,8 +260,12 @@ $workspaceSeedBody = @{
                 fields = @{
                     ownerId = @{ stringValue = $trainer.Uid }
                     currentVersion = @{ integerValue = '1' }
-                    tags = @{ arrayValue = @{} }
-                    folderId = @{ nullValue = $null }
+                    tags = @{
+                        arrayValue = @{
+                            values = @(@{ stringValue = 'Strength' })
+                        }
+                    }
+                    folderId = @{ stringValue = $exerciseFolderId }
                     provenance = @{ nullValue = $null }
                     createdAt = @{ timestampValue = $seedTimestamp }
                     createdBy = @{ stringValue = $trainer.Uid }
@@ -287,6 +318,16 @@ $workspaceSeedBody = @{
                     type = @{ stringValue = 'assignable' }
                     status = @{ stringValue = 'published' }
                     currentVersion = @{ integerValue = '1' }
+                    tags = @{
+                        arrayValue = @{
+                            values = @(
+                                @{ stringValue = 'Client' },
+                                @{ stringValue = 'Strength' }
+                            )
+                        }
+                    }
+                    folderId = @{ stringValue = $programFolderId }
+                    clientAthleteId = @{ stringValue = $athlete.Uid }
                     createdAt = @{ timestampValue = $seedTimestamp }
                     createdBy = @{ stringValue = $trainer.Uid }
                     updatedAt = @{ timestampValue = $seedTimestamp }
@@ -429,6 +470,16 @@ $workspaceSeedBody = @{
                     ownerId = @{ stringValue = $trainer.Uid }
                     workoutType = @{ stringValue = 'fullBody' }
                     currentVersion = @{ integerValue = '1' }
+                    tags = @{
+                        arrayValue = @{
+                            values = @(
+                                @{ stringValue = 'Client' },
+                                @{ stringValue = 'Full Body' }
+                            )
+                        }
+                    }
+                    folderId = @{ stringValue = $workoutFolderId }
+                    clientAthleteId = @{ stringValue = $athlete.Uid }
                     createdAt = @{ timestampValue = $seedTimestamp }
                     createdBy = @{ stringValue = $trainer.Uid }
                     updatedAt = @{ timestampValue = $seedTimestamp }
@@ -588,8 +639,11 @@ if ($Identity -eq 'trainer') {
     $identityArtifacts += @(
         'trainer-clients.png',
         'trainer-exercise-library.png',
+        'trainer-exercise-library-collapsed.png',
         'trainer-workout-library.png',
+        'trainer-workout-library-collapsed.png',
         'trainer-program-library.png',
+        'trainer-program-library-collapsed.png',
         'trainer-calendar-assignments.png',
         'trainer-dashboard.png'
     )
@@ -614,16 +668,6 @@ $chromeDriverProcess = $null
 $browserSessionId = $null
 $driverBaseUri = $null
 try {
-    if (-not $ChromeDriverPath) {
-        $chromeDriver = Get-Command 'chromedriver' -ErrorAction SilentlyContinue
-        if ($chromeDriver) {
-            $ChromeDriverPath = $chromeDriver.Source
-        }
-    }
-    if (-not $ChromeDriverPath -or -not (Test-Path $ChromeDriverPath)) {
-        throw 'ChromeDriver was not found. Set CHROMEDRIVER_PATH to a driver that matches the installed Chrome version.'
-    }
-
     if (-not $SkipPubGet) {
         & flutter pub get
         if ($LASTEXITCODE -ne 0) {
@@ -902,19 +946,31 @@ return document.body ? {
                 Route = '/trainer/exercises'
                 Marker = 'data-browser-smoke-surface-trainer-exercises'
                 Screenshot = 'trainer-exercise-library'
-                ExpectedContent = 'Browser Trainer Exercise'
+                ExpectedContent = (
+                    'Browser Trainer Exercise | Strength | ' +
+                    'Browser exercises | Unfiled'
+                )
+                CollapseControl = 'Collapse Browser exercises'
             },
             [ordered]@{
                 Route = '/trainer/workouts'
                 Marker = 'data-browser-smoke-surface-trainer-workouts'
                 Screenshot = 'trainer-workout-library'
-                ExpectedContent = 'Browser Calendar Workout'
+                ExpectedContent = (
+                    'Browser Calendar Workout | Client | Full Body | ' +
+                    'Browser workouts | Clients | Unfiled'
+                )
+                CollapseControl = 'Collapse Browser Smoke Athlete'
             },
             [ordered]@{
                 Route = '/trainer/programs'
                 Marker = 'data-browser-smoke-surface-trainer-programs'
                 Screenshot = 'trainer-program-library'
-                ExpectedContent = 'Browser Athlete Program'
+                ExpectedContent = (
+                    'Browser Athlete Program | Client | Strength | ' +
+                    'Browser programs | Clients | Unfiled'
+                )
+                CollapseControl = 'Collapse Browser Smoke Athlete'
             },
             [ordered]@{
                 Route = '/trainer/calendar'
@@ -975,28 +1031,31 @@ return document.body ? {
                     throw "$($surface.Route) rendered an error or empty state."
                 }
                 if ($surfaceState.state -eq 'ready') {
-                    if (
-                        $surfaceState.content -ne $surface.ExpectedContent
-                    ) {
-                        throw (
-                            "$($surface.Route) loaded " +
-                            "'$($surfaceState.content)', expected " +
-                            "'$($surface.ExpectedContent)'."
-                        )
+                    if ($surfaceState.content -eq $surface.ExpectedContent) {
+                        $surfaceReady = $true
+                        break
                     }
-                    $surfaceReady = $true
-                    break
                 }
                 Start-Sleep -Milliseconds 250
             }
             if (-not $surfaceReady) {
+                if ($surfaceState.state -eq 'ready') {
+                    throw (
+                        "$($surface.Route) loaded " +
+                        "'$($surfaceState.content)', expected " +
+                        "'$($surface.ExpectedContent)'."
+                    )
+                }
                 throw "Browser smoke did not load $($surface.Route)."
             }
             $expectedControls = @()
             if ($surface.Contains('ExpectedControls')) {
                 $expectedControls = @($surface['ExpectedControls'])
             }
-            if ($expectedControls.Count -gt 0) {
+            if (
+                $expectedControls.Count -gt 0 -or
+                $surface.Contains('CollapseControl')
+            ) {
                 $semanticsScript = @{
                     script = @'
 const placeholder = document.querySelector('flt-semantics-placeholder');
@@ -1035,14 +1094,24 @@ return element ? {
 '@
                     args = @($control.Label)
                 } | ConvertTo-Json
-                $controlResult = Invoke-RestMethod `
-                    -Method Post `
-                    -Uri (
-                        "$driverBaseUri/session/$browserSessionId/" +
-                        'execute/sync'
-                    ) `
-                    -ContentType 'application/json' `
-                    -Body $controlScript
+                $controlResult = $null
+                $controlDeadline = [DateTime]::UtcNow.AddSeconds(10)
+                do {
+                    $controlResult = Invoke-RestMethod `
+                        -Method Post `
+                        -Uri (
+                            "$driverBaseUri/session/$browserSessionId/" +
+                            'execute/sync'
+                        ) `
+                        -ContentType 'application/json' `
+                        -Body $controlScript
+                    if (-not $controlResult.value.found) {
+                        Start-Sleep -Milliseconds 200
+                    }
+                } while (
+                    -not $controlResult.value.found -and
+                    [DateTime]::UtcNow -lt $controlDeadline
+                )
                 if (-not $controlResult.value.found) {
                     throw (
                         "$($surface.Route) did not expose accessible control " +
@@ -1058,6 +1127,112 @@ return element ? {
                         'reported the wrong disabled state.'
                     )
                 }
+            }
+            if ($surface.Contains('CollapseControl')) {
+                $labelsScript = @{
+                    script = @'
+return Array.from(document.querySelectorAll('[aria-label]'))
+  .map((candidate) => candidate.getAttribute('aria-label'))
+  .filter(Boolean);
+'@
+                    args = @()
+                } | ConvertTo-Json
+                $collapseScript = @{
+                    script = @'
+const expected = arguments[0];
+const element = Array.from(document.querySelectorAll('[aria-label]'))
+  .find((candidate) =>
+    (candidate.getAttribute('aria-label') || '').includes(expected)
+  );
+if (!element) return false;
+element.click();
+return true;
+'@
+                    args = @($surface.CollapseControl)
+                } | ConvertTo-Json
+                $collapseResult = $null
+                $collapseDeadline = [DateTime]::UtcNow.AddSeconds(10)
+                do {
+                    $collapseResult = Invoke-RestMethod `
+                        -Method Post `
+                        -Uri (
+                            "$driverBaseUri/session/$browserSessionId/" +
+                            'execute/sync'
+                        ) `
+                        -ContentType 'application/json' `
+                        -Body $collapseScript
+                    if (-not $collapseResult.value) {
+                        Start-Sleep -Milliseconds 200
+                    }
+                } while (
+                    -not $collapseResult.value -and
+                    [DateTime]::UtcNow -lt $collapseDeadline
+                )
+                if (-not $collapseResult.value) {
+                    $labelsResult = Invoke-RestMethod `
+                        -Method Post `
+                        -Uri (
+                            "$driverBaseUri/session/$browserSessionId/" +
+                            'execute/sync'
+                        ) `
+                        -ContentType 'application/json' `
+                        -Body $labelsScript
+                    throw (
+                        "$($surface.Route) did not expose collapse control " +
+                        "'$($surface.CollapseControl)'. Available labels: " +
+                        (@($labelsResult.value) -join ' | ')
+                    )
+                }
+                Start-Sleep -Milliseconds 500
+                Save-BrowserScreenshot -Name "$($surface.Screenshot)-collapsed"
+                $expandLabel = $surface.CollapseControl -replace '^Collapse ', 'Expand '
+                $expandScript = @{
+                    script = @'
+const expected = arguments[0];
+const element = Array.from(document.querySelectorAll('[aria-label]'))
+  .find((candidate) =>
+    (candidate.getAttribute('aria-label') || '').includes(expected)
+  );
+if (!element) return false;
+element.click();
+return true;
+'@
+                    args = @($expandLabel)
+                } | ConvertTo-Json
+                $expandResult = $null
+                $expandDeadline = [DateTime]::UtcNow.AddSeconds(10)
+                do {
+                    $expandResult = Invoke-RestMethod `
+                        -Method Post `
+                        -Uri (
+                            "$driverBaseUri/session/$browserSessionId/" +
+                            'execute/sync'
+                        ) `
+                        -ContentType 'application/json' `
+                        -Body $expandScript
+                    if (-not $expandResult.value) {
+                        Start-Sleep -Milliseconds 200
+                    }
+                } while (
+                    -not $expandResult.value -and
+                    [DateTime]::UtcNow -lt $expandDeadline
+                )
+                if (-not $expandResult.value) {
+                    $labelsResult = Invoke-RestMethod `
+                        -Method Post `
+                        -Uri (
+                            "$driverBaseUri/session/$browserSessionId/" +
+                            'execute/sync'
+                        ) `
+                        -ContentType 'application/json' `
+                        -Body $labelsScript
+                    throw (
+                        "$($surface.Route) did not expose expand control " +
+                        "'$expandLabel' after collapsing. Available labels: " +
+                        (@($labelsResult.value) -join ' | ')
+                    )
+                }
+                Start-Sleep -Milliseconds 500
             }
             $currentUrl = Invoke-RestMethod `
                 -Uri "$driverBaseUri/session/$browserSessionId/url"

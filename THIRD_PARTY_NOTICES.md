@@ -30,8 +30,10 @@ This repository uses and/or depends on third-party tools and packages with their
 
 ### Browser smoke-test tooling
 
-- ChromeDriver — BSD-3-Clause; the locally installed driver must match Chrome
-  and is not installed or version-pinned by this repository.
+- ChromeDriver — BSD-3-Clause; browser validation resolves a driver matching
+  the installed Chrome major from the official Chrome for Testing service and
+  caches it outside the repository. It is runtime-resolved rather than pinned
+  in the repository tooling inventory.
 
 ### Node.js packages (functions/)
 

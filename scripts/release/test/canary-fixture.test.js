@@ -28,7 +28,7 @@ test("fixture is deterministic, idempotent, and limited to exact paths", () => {
     first.documents.map((document) => document.path),
     expectedMutationPaths(),
   );
-  assert.equal(new Set(first.documents.map((item) => item.path)).size, 16);
+  assert.equal(new Set(first.documents.map((item) => item.path)).size, 19);
   assert.equal(
     first.documents.find(
       (item) => item.path.endsWith(CANARY_IDS.currentWorkout),
@@ -71,6 +71,20 @@ test("fixture is deterministic, idempotent, and limited to exact paths", () => {
         `workoutTemplates/${CANARY_IDS.workoutTemplate}`,
     ).data.workoutType,
     "fullBody",
+  );
+  assert.deepEqual(
+    first.documents.find(
+      (item) => item.path ===
+        `workoutTemplates/${CANARY_IDS.workoutTemplate}`,
+    ).data.tags,
+    ["Client", "Full Body"],
+  );
+  assert.equal(
+    first.documents.find(
+      (item) => item.path ===
+        `programs/${CANARY_IDS.program}`,
+    ).data.clientAthleteId,
+    CANARY_IDS.athlete,
   );
   assert.equal(
     first.documents.find(

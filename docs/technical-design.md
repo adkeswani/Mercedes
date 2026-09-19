@@ -56,6 +56,9 @@ usernames/{username}           # uniqueness helper
 
 ```
 exerciseTemplates/{exerciseId}
+  ownerId: string
+  tags: string[]                       # <= 20, each <= 40 chars in domain
+  folderId: string?                    # owner/type-matched programFolders doc
   name: string
   description: string
   videoUrl: string?
@@ -91,6 +94,10 @@ workoutTemplates/{workoutTemplateId}
   name: string
   workoutType: string (enum — see Workout Type Taxonomy in architecture plan)
   currentVersion: int
+  ownerId: string
+  tags: string[]
+  folderId: string?
+  clientAthleteId: string?             # null=shared; active trainer client only
   createdBy: string (userId)
   createdAt: timestamp
   updatedAt: timestamp
@@ -134,6 +141,9 @@ programs/{programId}
   type: string ("assignable" | "personal")
   status: string ("draft" | "published" | "archived")
   currentVersion: int
+  tags: string[]
+  folderId: string?
+  clientAthleteId: string?             # null=shared; active trainer client only
   typeWeightOverrides: map?              # per-program load weight overrides (e.g. { "power": 3 })
   loadStrategyId: string?               # alternative load strategy (null = default_v1)
   createdBy: string (userId)
@@ -155,6 +165,12 @@ programs/{programId}
 ```
 
 There is no `programWorkouts` sub-collection. The owner edits workout list/order in a **local draft state** (Riverpod, not persisted to Firestore). On publish, the snapshot goes directly into `programVersions/{n}`. The latest published version is the source of truth for the current program structure.
+
+Trainer library grouping is virtual and non-mutating beyond the stable header
+metadata. Shared and client-scoped workout/program items form top-level
+partitions; type-scoped folders are rendered inside each partition. Exercise
+templates remain trainer-global. Collapse state is a per-user, per-library,
+per-scope local preference and is not synchronized through Firestore.
 
 **Program versioning strategy:** mirrors workout template versioning. Each publish snapshots the full workout list + order into `programVersions/{n}`. Enrollments and workout instances reference a `(programId, programVersion)` pair. This preserves the exact program structure each athlete was assigned, even if the owner later adds/removes/reorders workouts.
 

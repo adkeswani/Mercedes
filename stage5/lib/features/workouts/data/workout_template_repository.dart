@@ -12,9 +12,8 @@ import 'package:stage5/features/workouts/domain/workout_template.dart';
 /// Targets `workoutTemplates/{id}` with sub-collection
 /// `workoutTemplateVersions/{versionNumber}`.
 class WorkoutTemplateRepository {
-  WorkoutTemplateRepository({
-    FirebaseFirestore? firestore,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance;
+  WorkoutTemplateRepository({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -42,10 +41,13 @@ class WorkoutTemplateRepository {
         .where('createdBy', isEqualTo: userId)
         .where('deletedAt', isNull: true)
         .orderBy('updatedAt', descending: true)
+        .limit(maxLibraryItemsPerView)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => _headerFromMap(doc.data(), doc.id))
-            .toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => _headerFromMap(doc.data(), doc.id))
+              .toList(),
+        );
   }
 
   /// Returns the workout template header with [id], or null if not found
@@ -65,12 +67,14 @@ class WorkoutTemplateRepository {
     required String userId,
     List<String> tags = const [],
     String? folderId,
+    String? clientAthleteId,
     TemplateProvenance? provenance,
   }) async {
     final normalizedTags = normalizeLibraryTags(tags);
     await _validateCreationMetadata(
       userId: userId,
       folderId: folderId,
+      clientAthleteId: clientAthleteId,
       provenance: provenance,
     );
     final docRef = _collection.doc();
@@ -81,6 +85,7 @@ class WorkoutTemplateRepository {
       'ownerId': userId,
       'tags': normalizedTags,
       'folderId': folderId,
+      'clientAthleteId': clientAthleteId,
       'provenance': provenanceToMap(
         provenance,
         copiedAt: FieldValue.serverTimestamp(),
@@ -101,6 +106,8 @@ class WorkoutTemplateRepository {
     required List<String> tags,
     required String? folderId,
     required String userId,
+    String? clientAthleteId,
+    bool updateClientScope = false,
   }) async {
     await _verifyOwnership(id, userId);
     final normalizedTags = normalizeLibraryTags(tags);
@@ -112,10 +119,18 @@ class WorkoutTemplateRepository {
         userId: userId,
       );
     }
+    if (updateClientScope && clientAthleteId != null) {
+      await verifyActiveClientScope(
+        firestore: _firestore,
+        trainerId: userId,
+        clientAthleteId: clientAthleteId,
+      );
+    }
     await _collection.doc(id).update({
       'ownerId': userId,
       'tags': normalizedTags,
       'folderId': folderId,
+      if (updateClientScope) 'clientAthleteId': clientAthleteId,
       'updatedAt': FieldValue.serverTimestamp(),
       'updatedBy': userId,
     });
@@ -440,6 +455,7 @@ class WorkoutTemplateRepository {
       userId: userId,
       tags: source.tags,
       folderId: source.ownerId == userId ? source.folderId : null,
+      clientAthleteId: source.ownerId == userId ? source.clientAthleteId : null,
       provenance: TemplateProvenance(
         sourceTemplateId: source.id,
         sourceOwnerId: source.ownerId,
@@ -514,6 +530,7 @@ class WorkoutTemplateRepository {
       currentVersion: (data['currentVersion'] as int?) ?? 0,
       tags: libraryTagsFromMap(data['tags']),
       folderId: data['folderId'] as String?,
+      clientAthleteId: data['clientAthleteId'] as String?,
       provenance: provenanceFromMap(data['provenance']),
       createdBy: data['createdBy'] as String? ?? '',
       createdAt: _toDateTime(data['createdAt']),
@@ -735,9 +752,7 @@ class WorkoutTemplateRepository {
   List<WorkoutBlock> _canonicalBlocks(List<WorkoutBlock> blocks) {
     final sorted = blocks.toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-    return [
-      for (final block in sorted) _canonicalBlock(block),
-    ];
+    return [for (final block in sorted) _canonicalBlock(block)];
   }
 
   WorkoutBlock _canonicalBlock(WorkoutBlock block) {
@@ -872,6 +887,7 @@ class WorkoutTemplateRepository {
   Future<void> _validateCreationMetadata({
     required String userId,
     required String? folderId,
+    String? clientAthleteId,
     required TemplateProvenance? provenance,
   }) async {
     if (userId.isEmpty) throw ArgumentError('userId cannot be empty');
@@ -885,6 +901,13 @@ class WorkoutTemplateRepository {
         folderId: folderId,
         itemType: LibraryItemType.workout,
         userId: userId,
+      );
+    }
+    if (clientAthleteId != null) {
+      await verifyActiveClientScope(
+        firestore: _firestore,
+        trainerId: userId,
+        clientAthleteId: clientAthleteId,
       );
     }
   }

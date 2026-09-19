@@ -57,6 +57,7 @@ void main() {
       expect(doc.data()!['currentVersion'], 0);
       expect(doc.data()!['tags'], isEmpty);
       expect(doc.data()!['folderId'], isNull);
+      expect(doc.data()!['clientAthleteId'], isNull);
       expect(doc.data()!['provenance'], isNull);
     });
 
@@ -669,7 +670,44 @@ void main() {
       final program = await repo.getById('legacy');
       expect(program!.tags, isEmpty);
       expect(program.folderId, isNull);
+      expect(program.clientAthleteId, isNull);
       expect(program.provenance, isNull);
+    });
+
+    test('client-specific program requires an active owned relationship',
+        () async {
+      await fakeFirestore
+          .collection('trainerClientRelationships')
+          .doc('coach1_athlete1')
+          .set({
+        'trainerId': 'coach1',
+        'athleteId': 'athlete1',
+        'status': 'active',
+        'deletedAt': null,
+      });
+      final id = await repo.create(
+        name: 'Athlete Plan',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+        clientAthleteId: 'athlete1',
+      );
+      expect((await repo.getById(id))!.clientAthleteId, 'athlete1');
+
+      await fakeFirestore
+          .collection('trainerClientRelationships')
+          .doc('coach1_athlete1')
+          .update({'status': 'ended'});
+      expect(
+        () => repo.updateOrganization(
+          id: id,
+          tags: const [],
+          folderId: null,
+          clientAthleteId: 'athlete1',
+          updateClientScope: true,
+          userId: 'coach1',
+        ),
+        throwsStateError,
+      );
     });
 
     test('publishVersion round-trips dayOffset', () async {

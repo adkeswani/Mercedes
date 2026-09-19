@@ -1,6 +1,6 @@
 param(
     [string]$Stage,
-    [string]$ChromeDriverPath = $env:CHROMEDRIVER_PATH
+    [string]$ChromeDriverPath
 )
 
 Set-StrictMode -Version Latest
@@ -336,6 +336,16 @@ $stagePath = Join-Path $repoRoot $Stage
 if (-not (Test-Path -LiteralPath $stagePath -PathType Container)) {
     throw "Stage directory not found: $stagePath"
 }
+if ($Stage -eq 'stage5') {
+    & (Join-Path $repoRoot 'scripts\test\resolve-chromedriver.tests.ps1')
+    if ($LASTEXITCODE -ne 0) {
+        throw 'ChromeDriver resolver tests failed.'
+    }
+    . (Join-Path $repoRoot 'scripts\lib\chromedriver.ps1')
+    $ChromeDriverPath = Resolve-CompatibleChromeDriver `
+        -ChromeDriverPath $ChromeDriverPath
+    $env:CHROMEDRIVER_PATH = $ChromeDriverPath
+}
 $validationRunId = '{0}-{1}' -f (
     (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ'),
     [Guid]::NewGuid().ToString('N').Substring(0, 8)
@@ -345,9 +355,6 @@ $artifactPath = Join-Path `
     "test-artifacts\stage-validation\$validationRunId"
 try {
     $env:BROWSER_SMOKE_ARTIFACT_DIR_OVERRIDE = $artifactPath
-    if ($ChromeDriverPath) {
-        $env:CHROMEDRIVER_PATH = (Resolve-Path $ChromeDriverPath).Path
-    }
     Write-Host "Validating $Stage" -ForegroundColor Cyan
 
     if ($Stage -eq 'stage5') {

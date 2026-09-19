@@ -58,9 +58,19 @@ Implemented in this slice:
 - Workout completion actuals keyed by slot ID so repeated exercises are
   unambiguous.
 - Shared stable tags, type-scoped flat folders, and immutable copy provenance
-  for exercise, workout, and program headers.
-- A common library metadata/folder abstraction used by all three template
-  repositories without changing the current program-folder UX.
+  for exercise, workout, and program headers. All three Trainer libraries now
+  expose folder CRUD, safe move-to-Unfiled deletion, item move/tag editing,
+  multi-tag filtering, visible tag chips, item counts, and accessible
+  independently collapsible sections.
+- Web collapse state is retained per authenticated user, library type, client
+  scope, and folder in `localStorage`; mobile retains it in memory.
+- Trainer-owned workout and program headers support nullable
+  `clientAthleteId`. Active-relationship validation guards create and scope
+  mutations in both repositories and Firestore rules. Null remains the legacy
+  shared-library default, and exercises remain trainer-global.
+- Workout and program libraries render one non-duplicating shared/client
+  partition, with folders nested inside each client scope. Only explicit
+  header scope is used; names and assignment side effects are never inferred.
 - Active-relationship checks for new enrollments and workout assignments.
 - First-class athlete-owned `AthleteProgramInstance` records with pinned source
   program versions, lifecycle dates/status, and explicit `subscribed` or
@@ -172,8 +182,11 @@ athlete-owned calendar query before capturing each surface.
 Prerequisites:
 
 - Flutter 3.41.2 with Chrome installed.
-- ChromeDriver matching the installed Chrome version, available on `PATH` or
-  through the `CHROMEDRIVER_PATH` environment variable.
+- ChromeDriver is resolved automatically for the installed Chrome major. An
+  explicit `-ChromeDriverPath`, `CHROMEDRIVER_PATH`, or `PATH` driver takes
+  precedence; otherwise the official Chrome for Testing driver is downloaded
+  once and reused from
+  `%LOCALAPPDATA%\Copilot\Mercedes\ChromeDriver\<major>\<version>\<platform>\`.
 - Firebase CLI 15.15.0 and a Java runtime supported by the Firestore emulator.
 - Windows Developer Mode enabled before the initial `flutter pub get`, because
   Flutter plugins require symbolic-link support.
@@ -228,19 +241,32 @@ stage5/test-artifacts/browser-login/
   trainer-dashboard.png
   trainer-clients.png
   trainer-exercise-library.png
+  trainer-exercise-library-collapsed.png
   trainer-workout-library.png
+  trainer-workout-library-collapsed.png
   trainer-program-library.png
+  trainer-program-library-collapsed.png
   trainer-calendar-assignments.png
 ```
 
 The trainer run verifies the unified Dashboard feed and filters, active client
-roster, exercise, workout and program libraries, and Calendar/Assignments
-against deterministic emulator records. The Dashboard assertion covers the
-exact program-ending, reaction, comment, and completion event sequence.
+roster, grouped/tagged exercise, workout and program libraries, each library's
+collapse/expand control, client-specific workout/program sections, and
+Calendar/Assignments against deterministic emulator records. The Dashboard
+assertion covers the exact program-ending, reaction, comment, and completion
+event sequence.
 Screenshots are diagnostic artifacts rather than golden assertions.
 The runner drives the real Flutter application through ChromeDriver and the
 emulator-only login seam. Successful screenshot directories must remain in the
 worktree after validation; they are gitignored and must not be committed.
+The shared resolver validates the ChromeDriver major before launch, downloads
+only over HTTPS from the official Chrome for Testing metadata and artifact
+hosts, safely extracts under a locked temporary cache directory, and atomically
+promotes a valid driver. `tooling-config.json`, `tooling-lock.json`, and
+`tooling-versions.md` remain unchanged because no repository tool version is
+pinned: the runtime driver intentionally follows the locally installed Chrome
+major. ChromeDriver's existing BSD-3-Clause notice remains in
+`THIRD_PARTY_NOTICES.md`.
 
 On one Windows screenshot-based run, Chrome appeared to require a manual click
 or foreground focus before the test progressed. This is an intermittent

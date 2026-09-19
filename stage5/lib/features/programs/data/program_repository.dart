@@ -37,6 +37,7 @@ class ProgramRepository {
         .where('ownerId', isEqualTo: userId)
         .where('deletedAt', isNull: true)
         .orderBy('updatedAt', descending: true)
+        .limit(maxLibraryItemsPerView)
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
@@ -61,12 +62,14 @@ class ProgramRepository {
     String? description,
     List<String> tags = const [],
     String? folderId,
+    String? clientAthleteId,
     TemplateProvenance? provenance,
   }) async {
     final normalizedTags = normalizeLibraryTags(tags);
     await _validateCreationMetadata(
       userId: userId,
       folderId: folderId,
+      clientAthleteId: clientAthleteId,
       provenance: provenance,
     );
     final docRef = _collection.doc();
@@ -79,6 +82,7 @@ class ProgramRepository {
       'currentVersion': 0,
       'tags': normalizedTags,
       'folderId': folderId,
+      'clientAthleteId': clientAthleteId,
       'provenance': provenanceToMap(
         provenance,
         copiedAt: FieldValue.serverTimestamp(),
@@ -159,6 +163,8 @@ class ProgramRepository {
     required List<String> tags,
     required String? folderId,
     required String userId,
+    String? clientAthleteId,
+    bool updateClientScope = false,
   }) async {
     await verifyOwnership(id, userId);
     final normalizedTags = normalizeLibraryTags(tags);
@@ -170,9 +176,17 @@ class ProgramRepository {
         userId: userId,
       );
     }
+    if (updateClientScope && clientAthleteId != null) {
+      await verifyActiveClientScope(
+        firestore: _firestore,
+        trainerId: userId,
+        clientAthleteId: clientAthleteId,
+      );
+    }
     await _collection.doc(id).update({
       'tags': normalizedTags,
       'folderId': folderId,
+      if (updateClientScope) 'clientAthleteId': clientAthleteId,
       'updatedAt': FieldValue.serverTimestamp(),
       'updatedBy': userId,
     });
@@ -322,6 +336,7 @@ class ProgramRepository {
       description: source.description,
       tags: source.tags,
       folderId: source.ownerId == userId ? source.folderId : null,
+      clientAthleteId: source.ownerId == userId ? source.clientAthleteId : null,
       provenance: TemplateProvenance(
         sourceTemplateId: source.id,
         sourceOwnerId: source.ownerId,
@@ -364,6 +379,7 @@ class ProgramRepository {
       currentVersion: (data['currentVersion'] as int?) ?? 0,
       tags: libraryTagsFromMap(data['tags']),
       folderId: data['folderId'] as String?,
+      clientAthleteId: data['clientAthleteId'] as String?,
       provenance: provenanceFromMap(data['provenance']),
       typeWeightOverrides: _parseTypeWeightOverrides(
         data['typeWeightOverrides'] as Map<String, dynamic>?,
@@ -471,6 +487,7 @@ class ProgramRepository {
   Future<void> _validateCreationMetadata({
     required String userId,
     required String? folderId,
+    String? clientAthleteId,
     required TemplateProvenance? provenance,
   }) async {
     if (userId.isEmpty) throw ArgumentError('userId cannot be empty');
@@ -484,6 +501,13 @@ class ProgramRepository {
         folderId: folderId,
         itemType: LibraryItemType.program,
         userId: userId,
+      );
+    }
+    if (clientAthleteId != null) {
+      await verifyActiveClientScope(
+        firestore: _firestore,
+        trainerId: userId,
+        clientAthleteId: clientAthleteId,
       );
     }
   }

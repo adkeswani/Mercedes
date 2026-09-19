@@ -731,6 +731,45 @@ describe('workoutTemplates', () => {
     await assertSucceeds(db.collection('workoutTemplates').doc('w1').get());
   });
 
+  it('limits client-scoped workout reads and writes to an active relationship', async () => {
+    await seedActiveRelationship();
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    const ref = ownerDb.collection('workoutTemplates').doc('client-workout');
+    await assertSucceeds(ref.set({
+      name: 'Client workout',
+      workoutType: 'fullBody',
+      currentVersion: 0,
+      ownerId: OWNER,
+      tags: ['Specific'],
+      folderId: null,
+      clientAthleteId: ATHLETE,
+      provenance: null,
+      createdBy: OWNER,
+      updatedBy: OWNER,
+    }));
+    await assertSucceeds(
+      testEnv.authenticatedContext(ATHLETE).firestore()
+        .collection('workoutTemplates').doc('client-workout').get()
+    );
+    await assertFails(
+      testEnv.authenticatedContext(STRANGER).firestore()
+        .collection('workoutTemplates').doc('client-workout').get()
+    );
+
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('trainerClientRelationships')
+        .doc(RELATIONSHIP_ID).update({ status: 'ended', endedAt: new Date() });
+    });
+    await assertSucceeds(ref.update({
+      clientAthleteId: null,
+      updatedBy: OWNER,
+    }));
+    await assertFails(ref.update({
+      clientAthleteId: ATHLETE,
+      updatedBy: OWNER,
+    }));
+  });
+
   it('allows reading workout template versions by any signed-in user', async () => {
     await seedActiveRelationship();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -1528,6 +1567,62 @@ describe('programs', () => {
         type: 'personal',
         tags: [],
         folderId: null,
+        provenance: null,
+        createdBy: OWNER,
+        updatedBy: OWNER,
+      })
+    );
+  });
+
+  it('allows active client scope and denies ended or unrelated scope', async () => {
+    await seedActiveRelationship();
+    const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+    const active = ownerDb.collection('programs').doc('active-client-program');
+    await assertSucceeds(active.set({
+      ownerId: OWNER,
+      name: 'Client plan',
+      type: 'assignable',
+      tags: ['Strength'],
+      folderId: null,
+      clientAthleteId: ATHLETE,
+      provenance: null,
+      createdBy: OWNER,
+      updatedBy: OWNER,
+    }));
+    await assertSucceeds(
+      testEnv.authenticatedContext(ATHLETE).firestore()
+        .collection('programs').doc('active-client-program').get()
+    );
+    await assertFails(
+      testEnv.authenticatedContext(STRANGER).firestore()
+        .collection('programs').doc('active-client-program').get()
+    );
+
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('trainerClientRelationships')
+        .doc(RELATIONSHIP_ID).update({ status: 'ended', endedAt: new Date() });
+    });
+    await assertFails(
+      ownerDb.collection('programs').doc('ended-client-program').set({
+        ownerId: OWNER,
+        name: 'Ended',
+        type: 'assignable',
+        tags: [],
+        folderId: null,
+        clientAthleteId: ATHLETE,
+        provenance: null,
+        createdBy: OWNER,
+        updatedBy: OWNER,
+      })
+    );
+    await assertFails(
+      ownerDb.collection('programs').doc('unrelated-client-program').set({
+        ownerId: OWNER,
+        name: 'Unrelated',
+        type: 'assignable',
+        tags: [],
+        folderId: null,
+        clientAthleteId: STRANGER,
         provenance: null,
         createdBy: OWNER,
         updatedBy: OWNER,

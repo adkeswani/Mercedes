@@ -2,6 +2,10 @@ import 'package:stage5/features/auth/domain/foundation_models.dart';
 
 const maxLibraryTags = 20;
 const maxLibraryTagLength = 40;
+const maxLibraryItemsPerView = 500;
+const maxLibraryFoldersPerType = 100;
+const maxLibraryFolderDocumentsPerOwnerRead =
+    maxLibraryFoldersPerType * 3;
 
 /// Template kind used to scope shared organizational abstractions.
 enum LibraryItemType { exercise, workout, program }
@@ -89,9 +93,7 @@ List<String> normalizeLibraryTags(Iterable<String> tags) {
       throw ArgumentError('tags cannot contain empty values');
     }
     if (tag.length > maxLibraryTagLength) {
-      throw ArgumentError(
-        'tags cannot exceed $maxLibraryTagLength characters',
-      );
+      throw ArgumentError('tags cannot exceed $maxLibraryTagLength characters');
     }
     if (seen.add(tag.toLowerCase())) {
       normalized.add(tag);
@@ -107,6 +109,7 @@ void validateLibraryMetadata({
   required List<String> tags,
   required String? folderId,
   required TemplateProvenance? provenance,
+  String? clientAthleteId,
 }) {
   final normalized = normalizeLibraryTags(tags);
   if (normalized.length != tags.length) {
@@ -119,6 +122,9 @@ void validateLibraryMetadata({
   }
   if (folderId != null && folderId.isEmpty) {
     throw ArgumentError('folderId cannot be empty');
+  }
+  if (clientAthleteId != null && clientAthleteId.trim().isEmpty) {
+    throw ArgumentError('clientAthleteId cannot be empty');
   }
   provenance?.validate();
 }

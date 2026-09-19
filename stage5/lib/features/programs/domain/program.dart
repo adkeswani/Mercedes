@@ -27,6 +27,7 @@ class Program with Auditable implements LibraryItem {
     this.description,
     this.tags = const [],
     this.folderId,
+    this.clientAthleteId,
     this.provenance,
     this.typeWeightOverrides,
     this.loadStrategyId,
@@ -49,6 +50,7 @@ class Program with Auditable implements LibraryItem {
   /// When null, the program is treated as "Uncategorized". Folders are
   /// flat (no nesting) and owner-scoped — see [ProgramFolder].
   final String? folderId;
+  final String? clientAthleteId;
   @override
   final TemplateProvenance? provenance;
 
@@ -108,6 +110,7 @@ class Program with Auditable implements LibraryItem {
     int? currentVersion,
     List<String>? tags,
     String? folderId,
+    String? clientAthleteId,
     TemplateProvenance? provenance,
     Map<WorkoutType, int>? typeWeightOverrides,
     String? loadStrategyId,
@@ -128,6 +131,7 @@ class Program with Auditable implements LibraryItem {
       currentVersion: currentVersion ?? this.currentVersion,
       tags: tags ?? this.tags,
       folderId: folderId ?? this.folderId,
+      clientAthleteId: clientAthleteId ?? this.clientAthleteId,
       provenance: provenance ?? this.provenance,
       typeWeightOverrides: typeWeightOverrides ?? this.typeWeightOverrides,
       loadStrategyId: loadStrategyId ?? this.loadStrategyId,
@@ -164,6 +168,7 @@ class Program with Auditable implements LibraryItem {
       tags: tags,
       folderId: folderId,
       provenance: provenance,
+      clientAthleteId: clientAthleteId,
     );
 
     if (typeWeightOverrides != null) {

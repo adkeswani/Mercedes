@@ -60,8 +60,8 @@ was prescribed.
 | Object | Stable/live fields | Versioned fields |
 | --- | --- | --- |
 | Exercise | ID, owner, tags, folder, archival state | Name, instructions, media, exercise type, measurement configuration, grading configuration |
-| Workout | ID, owner, tags, folder, archival state | Name, format, ordered blocks, exercise-version references, prescriptions |
-| Program | ID, owner, tags, folder, archival state | Name, description, ordered workouts, phase separators, relative schedule |
+| Workout | ID, owner, tags, folder, optional client scope, archival state | Name, format, ordered blocks, exercise-version references, prescriptions |
+| Program | ID, owner, tags, folder, optional client scope, archival state | Name, description, ordered workouts, phase separators, relative schedule |
 
 An explicit copy creates a new logical object and records provenance to its
 source. Normal editing publishes a new version of the same logical object.
@@ -130,6 +130,7 @@ Required concepts:
 - Trainer owner ID.
 - Current version number.
 - Tags and optional folder.
+- Optional `clientAthleteId` for a trainer-owned client-specific copy.
 - Source provenance when copied.
 - Archival and audit fields.
 
@@ -168,6 +169,7 @@ Required concepts:
 - Trainer owner ID.
 - Current version number.
 - Tags and optional folder.
+- Optional `clientAthleteId` for a trainer-owned client-specific copy.
 - Source provenance when copied.
 - Archival and audit fields.
 
@@ -552,6 +554,18 @@ deletion/anonymization plus explicit relationship/history handling.
 - Exercise, workout, and program headers now share stable tags, an optional
   type-scoped flat folder, and immutable copy provenance. Repository
   organization mutations verify both template and folder ownership.
+- Trainer-owned workout and program headers may additionally carry a nullable
+  `clientAthleteId`. Null means the shared library. Setting or changing the
+  field requires an active relationship owned by the trainer; exercise
+  templates never carry client scope. The Trainer UI partitions shared content
+  from one collapsible section per client, then applies the same folder metadata
+  inside each partition, so an item appears exactly once.
+- Tags are trimmed, case-insensitively deduplicated while preserving the first
+  display spelling, limited to 20 values and 40 characters each, and filtered
+  client-side over the bounded owner library query.
+- Folder and client sections default expanded. Web collapse preferences are
+  keyed by authenticated user, library type, client/shared scope, and folder in
+  `localStorage`; non-web platforms retain the same state in memory.
 - Existing headers safely resolve missing metadata as empty tags, no folder,
   and no provenance; the next owner organization mutation materializes tags and
   folder state. Legacy provenance remains null because copy history cannot be
@@ -559,7 +573,14 @@ deletion/anonymization plus explicit relationship/history handling.
 - The existing `programFolders` collection and IDs are retained as the shared
   folder store. Missing `itemType` means `program`, while new exercise and
   workout folders are explicitly discriminated. This preserves the Stage 4
-  program-folder UX and prevents cross-type folder assignment.
+  program-folder UX and prevents cross-type folder assignment. Each library
+  returns at most 100 folders. The program compatibility read scans at most 300
+  owner folders before type filtering so up to 100 folders for each of the
+  three supported types cannot hide a legacy or typed program folder.
+- Folder deletion first tombstones the folder, then moves matching templates
+  to Unfiled in bounded batches before removing the folder. A retry accepts an
+  owner/type-matching tombstone and resumes that cleanup; tombstones remain
+  invalid for rename and item assignment.
 - Workout and program copies record the source's current version; copied
   exercises atomically materialize source content as version 1. Provenance is
   created with the copy and cannot be rewritten.

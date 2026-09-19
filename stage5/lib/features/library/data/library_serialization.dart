@@ -56,9 +56,59 @@ Future<void> verifyLibraryFolderOwnership({
   final data = folder.data()!;
   final ownerId = data['ownerId'] as String?;
   final actualType = libraryItemTypeFromMap(data['itemType']);
+  if (ownerId != userId ||
+      actualType != itemType ||
+      data['deletedAt'] != null) {
+    throw StateError(
+      'User $userId does not own a ${itemType.name} folder $folderId',
+    );
+  }
+}
+
+/// Verifies deletion authority and returns whether cleanup is being resumed.
+Future<bool> verifyLibraryFolderDeletionOwnership({
+  required FirebaseFirestore firestore,
+  required String folderId,
+  required LibraryItemType itemType,
+  required String userId,
+}) async {
+  final folder =
+      await firestore.collection('programFolders').doc(folderId).get();
+  if (!folder.exists || folder.data() == null) {
+    throw StateError('Folder $folderId not found');
+  }
+  final data = folder.data()!;
+  final ownerId = data['ownerId'] as String?;
+  final actualType = libraryItemTypeFromMap(data['itemType']);
   if (ownerId != userId || actualType != itemType) {
     throw StateError(
       'User $userId does not own a ${itemType.name} folder $folderId',
+    );
+  }
+  return data['deletedAt'] != null;
+}
+
+Future<void> verifyActiveClientScope({
+  required FirebaseFirestore firestore,
+  required String trainerId,
+  required String clientAthleteId,
+}) async {
+  if (clientAthleteId.trim().isEmpty || clientAthleteId == trainerId) {
+    throw StateError('Client scope must reference an active athlete');
+  }
+  final relationship = await firestore
+      .collection('trainerClientRelationships')
+      .doc('${trainerId}_$clientAthleteId')
+      .get();
+  final data = relationship.data();
+  if (!relationship.exists ||
+      data == null ||
+      data['trainerId'] != trainerId ||
+      data['athleteId'] != clientAthleteId ||
+      data['status'] != 'active' ||
+      data['deletedAt'] != null) {
+    throw StateError(
+      'User $trainerId has no active relationship with $clientAthleteId',
     );
   }
 }

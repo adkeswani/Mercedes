@@ -7,6 +7,9 @@ import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/exercises/domain/exercise_template.dart';
 import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
+import 'package:stage5/features/library/presentation/library_organizer.dart';
+import 'package:stage5/features/library/presentation/library_providers.dart';
 
 /// Displays the user's exercise template library.
 ///
@@ -18,11 +21,13 @@ class ExerciseListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final exercisesAsync = ref.watch(exerciseTemplatesProvider);
+    final foldersAsync = ref.watch(
+      libraryFoldersProvider(LibraryItemType.exercise),
+    );
+    final userId = ref.watch(authStateProvider).valueOrNull?.uid;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Exercise Library'),
-      ),
+      appBar: AppBar(title: const Text('Exercise Library')),
       body: exercisesAsync.when(
         data: (exercises) {
           if (exercises.isEmpty) {
@@ -31,40 +36,78 @@ class ExerciseListScreen extends ConsumerWidget {
                 markBrowserSmokeSurfaceFailure('trainer-exercises', 'empty');
               });
             }
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.fitness_center,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No exercises yet',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  const Text('Tap + to create your first exercise'),
-                ],
-              ),
-            );
           }
-          if (browserAutomationEnabled) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              markBrowserSmokeSurfaceReady(
-                'trainer-exercises',
-                content: exercises.first.name,
+          if (userId == null) {
+            return const Center(child: Text('Sign in to view your library.'));
+          }
+          return foldersAsync.when(
+            data: (folders) {
+              if (browserAutomationEnabled && exercises.isNotEmpty) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  markBrowserSmokeSurfaceReady(
+                    'trainer-exercises',
+                    content: [
+                      exercises.first.name,
+                      ...exercises.first.tags,
+                      ...folders.map((folder) => folder.name),
+                      'Unfiled',
+                    ].join(' | '),
+                  );
+                });
+              }
+              return LibraryOrganizer<ExerciseTemplate>(
+                userId: userId,
+                itemType: LibraryItemType.exercise,
+                items: exercises,
+                folders: folders,
+                emptyMessage: 'No exercises yet. Tap + to create one.',
+                nameOf: (item) => item.name,
+                tagsOf: (item) => item.tags,
+                folderIdOf: (item) => item.folderId,
+                clientAthleteIdOf: (_) => null,
+                tileBuilder: (context, item, organizationButton) =>
+                    _ExerciseTile(
+                  exercise: item,
+                  organizationButton: organizationButton,
+                ),
+                updateOrganization: (
+                  item, {
+                  required tags,
+                  required folderId,
+                  required clientAthleteId,
+                }) =>
+                    ref
+                        .read(exerciseTemplateRepositoryProvider)
+                        .updateOrganization(
+                          id: item.id,
+                          tags: tags,
+                          folderId: folderId,
+                          userId: userId,
+                        ),
+                createFolder: (name) => ref
+                    .read(
+                      libraryFolderRepositoryProvider(LibraryItemType.exercise),
+                    )
+                    .create(name: name, userId: userId),
+                renameFolder: (folder, name) => ref
+                    .read(
+                      libraryFolderRepositoryProvider(LibraryItemType.exercise),
+                    )
+                    .rename(folderId: folder.id, name: name, userId: userId),
+                deleteFolder: (folder) => ref
+                    .read(
+                      libraryFolderRepositoryProvider(LibraryItemType.exercise),
+                    )
+                    .delete(folderId: folder.id, userId: userId),
               );
-            });
-          }
-          return ListView.builder(
-            itemCount: exercises.length,
-            itemBuilder: (context, index) {
-              final exercise = exercises[index];
-              return _ExerciseTile(exercise: exercise);
             },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => LibraryLoadError(
+              message: 'Could not load folders: $error',
+              onRetry: () => ref.invalidate(
+                libraryFoldersProvider(LibraryItemType.exercise),
+              ),
+            ),
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -74,7 +117,10 @@ class ExerciseListScreen extends ConsumerWidget {
               markBrowserSmokeSurfaceFailure('trainer-exercises', 'error');
             });
           }
-          return Center(child: Text('Error: $e'));
+          return LibraryLoadError(
+            message: 'Could not load exercises: $e',
+            onRetry: () => ref.invalidate(exerciseTemplatesProvider),
+          );
         },
       ),
       floatingActionButton: FloatingActionButton(
@@ -87,9 +133,13 @@ class ExerciseListScreen extends ConsumerWidget {
 }
 
 class _ExerciseTile extends ConsumerWidget {
-  const _ExerciseTile({required this.exercise});
+  const _ExerciseTile({
+    required this.exercise,
+    required this.organizationButton,
+  });
 
   final ExerciseTemplate exercise;
+  final Widget organizationButton;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -100,10 +150,7 @@ class _ExerciseTile extends ConsumerWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 16),
         color: Theme.of(context).colorScheme.error,
-        child: Icon(
-          Icons.delete,
-          color: Theme.of(context).colorScheme.onError,
-        ),
+        child: Icon(Icons.delete, color: Theme.of(context).colorScheme.onError),
       ),
       confirmDismiss: (direction) async {
         final repo = ref.read(exerciseTemplateRepositoryProvider);
@@ -143,19 +190,37 @@ class _ExerciseTile extends ConsumerWidget {
       onDismissed: (_) {
         final uid = ref.read(authStateProvider).value?.uid;
         if (uid == null) return;
-        ref.read(exerciseTemplateRepositoryProvider).softDelete(
-          exercise.id,
-          uid,
-        );
+        ref
+            .read(exerciseTemplateRepositoryProvider)
+            .softDelete(exercise.id, uid);
       },
       child: ListTile(
         title: Text(exercise.name),
-        subtitle: Text(
-          exercise.description,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              exercise.description,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (exercise.tags.isNotEmpty)
+              Wrap(
+                spacing: 4,
+                children: [
+                  for (final tag in exercise.tags)
+                    Chip(
+                      label: Text(tag),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+          ],
         ),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [organizationButton, const Icon(Icons.chevron_right)],
+        ),
         onTap: () => context.push('/exercises/${exercise.id}'),
       ),
     );

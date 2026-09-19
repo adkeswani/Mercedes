@@ -13,7 +13,7 @@ param(
     [ValidateNotNullOrEmpty()]
     [uri]$AppUrl,
 
-    [string]$ChromeDriverPath = $env:CHROMEDRIVER_PATH,
+    [string]$ChromeDriverPath,
 
     [string]$ArtifactDirectory,
 
@@ -37,19 +37,9 @@ $nodeScript = Join-Path $PSScriptRoot 'release\browser-canary.js'
 if (-not (Test-Path -LiteralPath $nodeScript -PathType Leaf)) {
     throw "Missing deployed browser canary implementation: $nodeScript"
 }
-if (-not $ChromeDriverPath) {
-    $chromeDriver = Get-Command 'chromedriver' -ErrorAction SilentlyContinue
-    if ($chromeDriver) {
-        $ChromeDriverPath = $chromeDriver.Source
-    }
-}
-if (-not $ChromeDriverPath -or
-    -not (Test-Path -LiteralPath $ChromeDriverPath -PathType Leaf)) {
-    throw (
-        'ChromeDriver was not found. Set CHROMEDRIVER_PATH to a driver that ' +
-        'matches the installed Chrome version.'
-    )
-}
+. (Join-Path $repoRoot 'scripts\lib\chromedriver.ps1')
+$ChromeDriverPath = Resolve-CompatibleChromeDriver `
+    -ChromeDriverPath $ChromeDriverPath
 if (-not $ArtifactDirectory) {
     $runId = '{0}-{1}' -f (
         (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ'),
@@ -65,7 +55,7 @@ $nodeArguments = @(
     '--environment', $Environment,
     '--project', $Project,
     '--app-url', $AppUrl.AbsoluteUri,
-    '--chrome-driver', (Resolve-Path $ChromeDriverPath).Path,
+    '--chrome-driver', $ChromeDriverPath,
     '--artifact-dir', [IO.Path]::GetFullPath($ArtifactDirectory)
 )
 if ($UseEmulator) {
