@@ -191,11 +191,7 @@ class _ProgramTile extends ConsumerWidget {
               Wrap(
                 spacing: 4,
                 children: [
-                  for (final tag in program.tags)
-                    Chip(
-                      label: Text(tag),
-                      visualDensity: VisualDensity.compact,
-                    ),
+                  for (final tag in program.tags) LibraryTagLabel(tag: tag),
                 ],
               ),
           ],

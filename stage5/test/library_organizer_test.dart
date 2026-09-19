@@ -233,6 +233,19 @@ void main() {
     expect(find.text('Alex Session'), findsNothing);
     expect(find.byTooltip('Expand Alex Athlete'), findsOneWidget);
   });
+
+  testWidgets('renders compact library tag labels', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: LibraryTagLabel(tag: 'Strength')),
+      ),
+    );
+
+    expect(
+      tester.getSize(find.byType(LibraryTagLabel)).height,
+      lessThanOrEqualTo(24),
+    );
+  });
 }
 
 class _Item {

@@ -14,6 +14,32 @@ typedef LibraryOrganizationUpdater<T> = Future<void> Function(
   required String? clientAthleteId,
 });
 
+class LibraryTagLabel extends StatelessWidget {
+  const LibraryTagLabel({required this.tag, super.key});
+
+  final String tag;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        child: Text(
+          tag,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+        ),
+      ),
+    );
+  }
+}
+
 class LibraryLoadError extends StatelessWidget {
   const LibraryLoadError({
     required this.message,
@@ -194,7 +220,18 @@ class _LibraryOrganizerState<T> extends ConsumerState<LibraryOrganizer<T>> {
             children: [
               for (final entry in tags)
                 FilterChip(
-                  label: Text(entry.value),
+                  label: Text(
+                    entry.value,
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: EdgeInsets.zero,
+                  visualDensity: const VisualDensity(
+                    horizontal: -2,
+                    vertical: -3,
+                  ),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  showCheckmark: false,
                   selected: _selectedTags.contains(entry.key),
                   onSelected: (selected) {
                     setState(() {

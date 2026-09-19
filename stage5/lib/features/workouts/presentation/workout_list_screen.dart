@@ -210,11 +210,7 @@ class _WorkoutTile extends ConsumerWidget {
               Wrap(
                 spacing: 4,
                 children: [
-                  for (final tag in workout.tags)
-                    Chip(
-                      label: Text(tag),
-                      visualDensity: VisualDensity.compact,
-                    ),
+                  for (final tag in workout.tags) LibraryTagLabel(tag: tag),
                 ],
               ),
           ],
