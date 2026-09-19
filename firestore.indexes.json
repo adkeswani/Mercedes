@@ -216,6 +216,16 @@
       ]
     },
     {
+      "collectionGroup": "workoutInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "programOwnerId", "order": "ASCENDING" },
+        { "fieldPath": "athleteId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "completedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "athleteProgramInstances",
       "queryScope": "COLLECTION",
       "fields": [
@@ -256,6 +266,34 @@
         { "fieldPath": "sourceProgramId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "relationshipMode", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "athleteProgramInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "assigningTrainerId", "order": "ASCENDING" },
+        { "fieldPath": "athleteOwnerId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "expectedEndDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "workoutDiscussionThreads",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "trainerId", "order": "ASCENDING" },
+        { "fieldPath": "athleteId", "order": "ASCENDING" },
+        { "fieldPath": "lastActivityAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "workoutDiscussionThreads",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "trainerId", "order": "ASCENDING" },
+        { "fieldPath": "athleteId", "order": "ASCENDING" },
+        { "fieldPath": "completedAt", "order": "DESCENDING" }
       ]
     }
   ],

@@ -2374,6 +2374,517 @@ describe('workoutInstances', () => {
     });
   }
 
+    // ─── Stage 5 Trainer Dashboard ───
+
+    describe('Stage 5 trainer dashboard activity', () => {
+      const WORKOUT_ID = 'completed-workout-1';
+      const OTHER_ATHLETE = 'other-athlete-uid';
+      const COMPLETED_AT = new Date('2026-09-18T18:00:00Z');
+
+      async function seedCompletedActivity(relationshipStatus = 'active') {
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+          const db = ctx.firestore();
+          await db.collection('trainerClientRelationships')
+            .doc(RELATIONSHIP_ID).set({
+              trainerId: OWNER,
+              athleteId: ATHLETE,
+              status: relationshipStatus,
+            });
+          await db.collection('workoutInstances').doc(WORKOUT_ID).set({
+            programId: PROGRAM_ID,
+            programOwnerId: OWNER,
+            athleteId: ATHLETE,
+            assignedBy: OWNER,
+            status: 'completed',
+            completedAt: COMPLETED_AT,
+            scheduledDate: '2026-09-18',
+          });
+          const thread = db.collection('workoutDiscussionThreads').doc(WORKOUT_ID);
+          await thread.set({
+            workoutInstanceId: WORKOUT_ID,
+            athleteId: ATHLETE,
+            trainerId: OWNER,
+            completedAt: COMPLETED_AT,
+            createdAt: COMPLETED_AT,
+            createdBy: ATHLETE,
+            lastActivityAt: COMPLETED_AT,
+          });
+          const message =
+            thread.collection('threadMessages').doc('athlete-message');
+          await message.set({
+            authorId: ATHLETE,
+            body: 'Workout complete.',
+            createdAt: COMPLETED_AT,
+          });
+          await message.collection('reactions').doc(ATHLETE).set({
+            actorId: ATHLETE,
+            reactionId: 'strong',
+            createdAt: COMPLETED_AT,
+          });
+        });
+      }
+
+      it('allows the active program trainer to read activity and add discussion',
+          async () => {
+        await seedCompletedActivity();
+        const db = testEnv.authenticatedContext(OWNER).firestore();
+        const workout = db.collection('workoutInstances').doc(WORKOUT_ID);
+        const thread = db.collection('workoutDiscussionThreads').doc(WORKOUT_ID);
+
+        await assertSucceeds(workout.get());
+        await assertSucceeds(thread.get());
+        await assertSucceeds(
+          thread.collection('threadMessages').doc('athlete-message').get()
+        );
+        await assertSucceeds(
+          thread.collection('threadMessages').doc('athlete-message')
+            .collection('reactions').doc(ATHLETE).get()
+        );
+        await assertSucceeds(
+          db.runTransaction(async (transaction) => {
+            transaction.update(thread, {
+              lastActivityAt: serverTimestamp(),
+            });
+            transaction.set(
+              thread.collection('threadMessages').doc('trainer-message'),
+              {
+                authorId: OWNER,
+                body: 'Strong session.',
+                createdAt: serverTimestamp(),
+              }
+            );
+          })
+        );
+        const ownReaction = thread.collection('threadMessages')
+          .doc('athlete-message').collection('reactions').doc(OWNER);
+        await assertSucceeds(
+          db.runTransaction(async (transaction) => {
+            transaction.update(thread, {
+              lastActivityAt: serverTimestamp(),
+            });
+            transaction.set(ownReaction, {
+              actorId: OWNER,
+              reactionId: 'support',
+              createdAt: serverTimestamp(),
+            });
+          })
+        );
+        await assertSucceeds(ownReaction.delete());
+      });
+
+      it('allows the athlete to participate in their completed workout thread',
+          async () => {
+        await seedCompletedActivity();
+        const db = testEnv.authenticatedContext(ATHLETE).firestore();
+        const thread = db.collection('workoutDiscussionThreads').doc(WORKOUT_ID);
+        await assertSucceeds(thread.get());
+        await assertSucceeds(
+          db.runTransaction(async (transaction) => {
+            transaction.update(thread, {
+              lastActivityAt: serverTimestamp(),
+            });
+            transaction.set(
+              thread.collection('threadMessages').doc('athlete-follow-up'),
+              {
+                authorId: ATHLETE,
+                body: 'Thanks!',
+                createdAt: serverTimestamp(),
+              }
+            );
+          })
+        );
+        await assertSucceeds(
+          thread.collection('threadMessages').doc('athlete-message')
+            .collection('reactions').doc(ATHLETE).delete()
+        );
+      });
+
+      it('denies unrelated trainers and athletes', async () => {
+        await seedCompletedActivity();
+        for (const userId of [STRANGER, OTHER_ATHLETE]) {
+          const db = testEnv.authenticatedContext(userId).firestore();
+          const thread = db.collection('workoutDiscussionThreads').doc(WORKOUT_ID);
+          await assertFails(thread.get());
+          await assertFails(
+            thread.collection('threadMessages').doc(`${userId}-message`).set({
+              authorId: userId,
+              body: 'Not a participant.',
+              createdAt: serverTimestamp(),
+            })
+          );
+          await assertFails(
+            thread.collection('threadMessages').doc('athlete-message')
+              .collection('reactions').doc(userId).set({
+              actorId: userId,
+              reactionId: 'support',
+              createdAt: serverTimestamp(),
+            })
+          );
+        }
+      });
+
+      it('denies the trainer after the relationship ends', async () => {
+        await seedCompletedActivity('ended');
+        const db = testEnv.authenticatedContext(OWNER).firestore();
+        const thread = db.collection('workoutDiscussionThreads').doc(WORKOUT_ID);
+        await assertFails(
+          db.collection('workoutInstances').doc(WORKOUT_ID).get()
+        );
+        await assertFails(thread.get());
+        await assertFails(
+          thread.collection('threadMessages').doc('ended-message').set({
+            authorId: OWNER,
+            body: 'No longer authorized.',
+            createdAt: serverTimestamp(),
+          })
+        );
+        await assertFails(
+          thread.collection('threadMessages').doc('athlete-message')
+            .collection('reactions').doc(OWNER).set({
+            actorId: OWNER,
+            reactionId: 'support',
+            createdAt: serverTimestamp(),
+          })
+        );
+
+        const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+        await assertSucceeds(
+          athleteDb.collection('workoutDiscussionThreads').doc(WORKOUT_ID).get()
+        );
+      });
+
+      it('keeps the completed workout and discussion messages immutable',
+          async () => {
+        await seedCompletedActivity();
+        const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+        const trainerDb = testEnv.authenticatedContext(OWNER).firestore();
+        await assertFails(
+          athleteDb.collection('workoutInstances').doc(WORKOUT_ID)
+            .update({ rpe: 10 })
+        );
+        await assertFails(
+          trainerDb.collection('workoutInstances').doc(WORKOUT_ID)
+            .update({ scheduledDate: '2026-09-20' })
+        );
+        await assertFails(
+          trainerDb.collection('workoutDiscussionThreads').doc(WORKOUT_ID)
+            .update({ createdBy: OWNER })
+        );
+        await assertFails(
+          athleteDb.collection('workoutDiscussionThreads').doc(WORKOUT_ID)
+            .collection('threadMessages').doc('athlete-message')
+            .update({ body: 'Edited' })
+        );
+      });
+
+      it('allows only authorized monotonic thread recency projection updates',
+          async () => {
+        await seedCompletedActivity();
+        const trainerDb = testEnv.authenticatedContext(OWNER).firestore();
+        const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+        const strangerDb = testEnv.authenticatedContext(STRANGER).firestore();
+        const trainerThread =
+          trainerDb.collection('workoutDiscussionThreads').doc(WORKOUT_ID);
+
+        await assertSucceeds(
+          trainerThread.update({ lastActivityAt: serverTimestamp() })
+        );
+        await assertSucceeds(
+          athleteDb.collection('workoutDiscussionThreads').doc(WORKOUT_ID)
+            .update({ lastActivityAt: serverTimestamp() })
+        );
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+          await ctx.firestore().collection('workoutDiscussionThreads')
+            .doc(WORKOUT_ID).update({ lastActivityAt: deleteField() });
+        });
+        await assertSucceeds(
+          trainerThread.update({ lastActivityAt: serverTimestamp() })
+        );
+        await assertFails(
+          strangerDb.collection('workoutDiscussionThreads').doc(WORKOUT_ID)
+            .update({ lastActivityAt: serverTimestamp() })
+        );
+        await assertFails(
+          trainerThread.update({
+            athleteId: STRANGER,
+            lastActivityAt: serverTimestamp(),
+          })
+        );
+
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+          await ctx.firestore().collection('workoutDiscussionThreads')
+            .doc(WORKOUT_ID)
+            .update({ lastActivityAt: new Date('2099-01-01T00:00:00Z') });
+        });
+        await assertFails(
+          trainerThread.update({ lastActivityAt: serverTimestamp() })
+        );
+      });
+
+      it('requires completion and deterministic own reaction IDs', async () => {
+        await seedCompletedActivity();
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+          await ctx.firestore().collection('workoutInstances').doc('scheduled')
+            .set({
+              programOwnerId: OWNER,
+              athleteId: ATHLETE,
+              assignedBy: OWNER,
+              status: 'scheduled',
+              completedAt: COMPLETED_AT,
+            });
+        });
+        const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+        await assertFails(
+          athleteDb.collection('workoutDiscussionThreads').doc('scheduled').set({
+            workoutInstanceId: 'scheduled',
+            athleteId: ATHLETE,
+            trainerId: OWNER,
+            completedAt: COMPLETED_AT,
+            createdAt: serverTimestamp(),
+            createdBy: ATHLETE,
+            lastActivityAt: serverTimestamp(),
+          })
+        );
+        const thread =
+          athleteDb.collection('workoutDiscussionThreads').doc(WORKOUT_ID);
+        await assertFails(
+          thread.collection('threadMessages').doc('athlete-message')
+            .collection('reactions').doc('not-the-actor').set({
+            actorId: ATHLETE,
+            reactionId: 'strong',
+            createdAt: serverTimestamp(),
+          })
+        );
+        await assertFails(
+          thread.collection('threadMessages').doc('athlete-message')
+            .collection('reactions').doc(ATHLETE)
+            .update({ reactionId: 'support' })
+        );
+      });
+
+      it('allows atomically creating an immutable thread and first message',
+          async () => {
+        await seedCompletedActivity();
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+          const db = ctx.firestore();
+          await db.collection('workoutInstances').doc('completed-without-thread')
+            .set({
+              programOwnerId: OWNER,
+              athleteId: ATHLETE,
+              assignedBy: OWNER,
+              status: 'completed',
+              completedAt: COMPLETED_AT,
+            });
+        });
+        const db = testEnv.authenticatedContext(OWNER).firestore();
+        const thread = db.collection('workoutDiscussionThreads')
+          .doc('completed-without-thread');
+        await assertFails(thread.set({
+          workoutInstanceId: 'completed-without-thread',
+          athleteId: ATHLETE,
+          trainerId: OWNER,
+          completedAt: COMPLETED_AT,
+          createdAt: serverTimestamp(),
+          createdBy: OWNER,
+        }));
+        const batch = db.batch();
+        batch.set(thread, {
+          workoutInstanceId: 'completed-without-thread',
+          athleteId: ATHLETE,
+          trainerId: OWNER,
+          completedAt: COMPLETED_AT,
+          createdAt: serverTimestamp(),
+          createdBy: OWNER,
+          lastActivityAt: serverTimestamp(),
+        });
+        batch.set(thread.collection('threadMessages').doc('first-message'), {
+          authorId: OWNER,
+          body: 'First comment.',
+          createdAt: serverTimestamp(),
+        });
+        await assertSucceeds(batch.commit());
+      });
+
+      it('requires new activity to advance the thread projection atomically',
+          async () => {
+        await seedCompletedActivity();
+        const db = testEnv.authenticatedContext(OWNER).firestore();
+        const thread =
+          db.collection('workoutDiscussionThreads').doc(WORKOUT_ID);
+        await assertFails(
+          thread.collection('threadMessages').doc('unprojected').set({
+            authorId: OWNER,
+            body: 'Missing recency projection.',
+            createdAt: serverTimestamp(),
+          })
+        );
+        await assertFails(
+          thread.collection('threadMessages').doc('athlete-message')
+            .collection('reactions').doc(OWNER).set({
+              actorId: OWNER,
+              reactionId: 'celebrate',
+              createdAt: serverTimestamp(),
+            })
+        );
+      });
+
+      it('allows bounded current and completedAt legacy activity feed queries',
+          async () => {
+        await seedCompletedActivity();
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+          await ctx.firestore().collection('workoutDiscussionThreads')
+            .doc('legacy-thread').set({
+              workoutInstanceId: 'legacy-workout',
+              athleteId: ATHLETE,
+              trainerId: OWNER,
+              completedAt: new Date('2026-09-17T18:00:00Z'),
+              createdAt: new Date('2026-09-17T18:00:00Z'),
+              createdBy: ATHLETE,
+            });
+        });
+        const db = testEnv.authenticatedContext(OWNER).firestore();
+        const completions = await assertSucceeds(
+          db.collection('workoutInstances')
+            .where('programOwnerId', '==', OWNER)
+            .where('athleteId', '==', ATHLETE)
+            .where('status', '==', 'completed')
+            .orderBy('completedAt', 'desc')
+            .limit(50)
+            .get()
+        );
+        expect(completions.docs.map((doc) => doc.id)).toEqual([WORKOUT_ID]);
+        await assertFails(
+          db.collection('workoutInstances')
+            .where('programOwnerId', '==', OWNER)
+            .where('status', '==', 'completed')
+            .orderBy('completedAt', 'desc')
+            .limit(50)
+            .get()
+        );
+
+        const threads = db.collection('workoutDiscussionThreads');
+        const feed = await assertSucceeds(
+          threads
+            .where('trainerId', '==', OWNER)
+            .where('athleteId', '==', ATHLETE)
+            .orderBy('lastActivityAt', 'desc')
+            .limit(50)
+            .get()
+        );
+        expect(feed.docs.map((doc) => doc.id)).toEqual([WORKOUT_ID]);
+        const legacyFallback = await assertSucceeds(
+          threads
+            .where('trainerId', '==', OWNER)
+            .where('athleteId', '==', ATHLETE)
+            .orderBy('completedAt', 'desc')
+            .limit(50)
+            .get()
+        );
+        expect(legacyFallback.docs.map((doc) => doc.id))
+          .toEqual([WORKOUT_ID, 'legacy-thread']);
+        await assertFails(
+          threads
+            .where('trainerId', '==', OWNER)
+            .where('athleteId', '==', ATHLETE)
+            .orderBy('completedAt', 'desc')
+            .get()
+        );
+        await assertFails(
+          threads
+            .where('trainerId', '==', OWNER)
+            .orderBy('lastActivityAt', 'desc')
+            .limit(50)
+            .get()
+        );
+        await assertFails(
+          threads
+            .where('trainerId', '==', OWNER)
+            .where('athleteId', '==', ATHLETE)
+            .orderBy('lastActivityAt', 'desc')
+            .get()
+        );
+      });
+    });
+
+    describe('Stage 5 programs ending soon', () => {
+      const TODAY = '2026-09-19';
+      const THROUGH = '2026-09-26';
+
+      function endingInstance(expectedEndDate, status = 'active') {
+        return {
+          athleteOwnerId: ATHLETE,
+          assigningTrainerId: OWNER,
+          sourceProgramId: PROGRAM_ID,
+          status,
+          expectedEndDate,
+        };
+      }
+
+      async function seedEndingPrograms(relationshipStatus = 'active') {
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+          const db = ctx.firestore();
+          await db.collection('trainerClientRelationships')
+            .doc(RELATIONSHIP_ID).set({
+              trainerId: OWNER,
+              athleteId: ATHLETE,
+              status: relationshipStatus,
+            });
+          const programs = db.collection('athleteProgramInstances');
+          await programs.doc('ending-today').set(endingInstance(TODAY));
+          await programs.doc('ending-boundary').set(endingInstance(THROUGH));
+          await programs.doc('ending-later').set(endingInstance('2026-09-27'));
+          await programs.doc('already-completed')
+            .set(endingInstance('2026-09-23', 'completed'));
+        });
+      }
+
+      function endingSoonQuery(
+        db,
+        trainerId = OWNER,
+        athleteId = ATHLETE
+      ) {
+        return db.collection('athleteProgramInstances')
+          .where('assigningTrainerId', '==', trainerId)
+          .where('athleteOwnerId', '==', athleteId)
+          .where('status', '==', 'active')
+          .where('expectedEndDate', '>=', TODAY)
+          .where('expectedEndDate', '<=', THROUGH)
+          .orderBy('expectedEndDate')
+          .limit(50);
+      }
+
+      it('allows the exact scoped inclusive seven-day query', async () => {
+        await seedEndingPrograms();
+        const db = testEnv.authenticatedContext(OWNER).firestore();
+        const result = await assertSucceeds(endingSoonQuery(db).get());
+        expect(result.docs.map((doc) => doc.id))
+          .toEqual(['ending-today', 'ending-boundary']);
+      });
+
+      it('denies unrelated trainers and an unscoped query', async () => {
+        await seedEndingPrograms();
+        const strangerDb = testEnv.authenticatedContext(STRANGER).firestore();
+        await assertFails(endingSoonQuery(strangerDb).get());
+
+        const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
+        await assertFails(
+          ownerDb.collection('athleteProgramInstances')
+            .where('status', '==', 'active')
+            .where('expectedEndDate', '>=', TODAY)
+            .where('expectedEndDate', '<=', THROUGH)
+            .orderBy('expectedEndDate')
+            .limit(50)
+            .get()
+        );
+      });
+
+      it('denies the query after the trainer relationship ends', async () => {
+        await seedEndingPrograms('ended');
+        const db = testEnv.authenticatedContext(OWNER).firestore();
+        await assertFails(endingSoonQuery(db).get());
+      });
+    });
+
   it('allows owner to create workout instance', async () => {
     await seedProgramWithEnrollment();
     const db = testEnv.authenticatedContext(OWNER).firestore();
@@ -2640,6 +3151,7 @@ describe('workoutInstances', () => {
     await assertSucceeds(
       db.collection('workoutInstances')
         .where('programAssignmentId', '==', 'assignment-1')
+        .where('athleteId', '==', ATHLETE)
         .where('programOwnerId', '==', OWNER)
         .get()
     );

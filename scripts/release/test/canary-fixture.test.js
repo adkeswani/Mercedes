@@ -28,7 +28,7 @@ test("fixture is deterministic, idempotent, and limited to exact paths", () => {
     first.documents.map((document) => document.path),
     expectedMutationPaths(),
   );
-  assert.equal(new Set(first.documents.map((item) => item.path)).size, 13);
+  assert.equal(new Set(first.documents.map((item) => item.path)).size, 16);
   assert.equal(
     first.documents.find(
       (item) => item.path.endsWith(CANARY_IDS.currentWorkout),
@@ -40,6 +40,24 @@ test("fixture is deterministic, idempotent, and limited to exact paths", () => {
       (item) => item.path.endsWith(CANARY_IDS.historyWorkout),
     ).data.status,
     "completed",
+  );
+  const programInstance = first.documents.find(
+    (item) => item.path ===
+      `athleteProgramInstances/${CANARY_IDS.programInstance}`,
+  ).data;
+  assert.deepEqual(
+    {
+      expectedEndDate: programInstance.expectedEndDate,
+      status: programInstance.status,
+      relationshipMode: programInstance.relationshipMode,
+      unlinkedAt: programInstance.unlinkedAt,
+    },
+    {
+      expectedEndDate: "2026-09-19",
+      status: "active",
+      relationshipMode: "subscribed",
+      unlinkedAt: null,
+    },
   );
   assert.equal(
     first.documents.find(
@@ -77,6 +95,52 @@ test("fixture is deterministic, idempotent, and limited to exact paths", () => {
       },
     ],
   );
+  const threadPath =
+    `workoutDiscussionThreads/${CANARY_IDS.discussionThread}`;
+  assert.equal(CANARY_IDS.discussionThread, CANARY_IDS.historyWorkout);
+  assert.equal(CANARY_IDS.discussionReaction, CANARY_IDS.trainer);
+  const messagePath = `${threadPath}/threadMessages/` +
+    CANARY_IDS.discussionMessage;
+  const reactionPath = `${messagePath}/reactions/` +
+    CANARY_IDS.discussionReaction;
+  assert.deepEqual(
+    first.documents.find((item) => item.path === threadPath).data,
+    {
+      workoutInstanceId: CANARY_IDS.historyWorkout,
+      trainerId: CANARY_IDS.trainer,
+      athleteId: CANARY_IDS.athlete,
+      completedAt: "2026-09-12T12:00:00.000Z",
+      createdAt: "2026-09-12T12:00:00.000Z",
+      createdBy: CANARY_IDS.athlete,
+      lastActivityAt: "2026-09-12T12:02:00.000Z",
+    },
+  );
+  assert.deepEqual(
+    first.documents.find((item) => item.path === messagePath).data,
+    {
+      authorId: CANARY_IDS.athlete,
+      body: "Release Canary dashboard comment",
+      createdAt: "2026-09-12T12:01:00.000Z",
+    },
+  );
+  assert.deepEqual(
+    first.documents.find((item) => item.path === reactionPath).data,
+    {
+      actorId: CANARY_IDS.trainer,
+      reactionId: "celebrate",
+      createdAt: "2026-09-12T12:02:00.000Z",
+    },
+  );
+  assert.equal(
+    first.documents.some(
+      (item) => item.path.startsWith("trainerActivityEvents/"),
+    ),
+    false,
+  );
+  assert.ok(
+    first.documents.find((item) => item.path === messagePath).data.createdAt <
+      first.documents.find((item) => item.path === reactionPath).data.createdAt,
+  );
 });
 
 test("namespace guard rejects arbitrary paths, owners, and emails", () => {
@@ -112,6 +176,18 @@ test("namespace guard rejects arbitrary paths, owners, and emails", () => {
   );
   assert.throws(
     () => assertCanaryEmail("person@example.com", "email"),
+    /namespace/,
+  );
+  assert.throws(
+    () => assertCanaryMutation(
+      `workoutDiscussionThreads/${CANARY_IDS.discussionThread}/` +
+        `threadMessages/${CANARY_IDS.discussionMessage}/` +
+        `reactions/${CANARY_IDS.discussionReaction}`,
+      {
+        actorId: "ordinary-user",
+        reactionId: "celebrate",
+      },
+    ),
     /namespace/,
   );
 });

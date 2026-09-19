@@ -641,6 +641,89 @@ service cloud.firestore {
       return 'programOwnerId' in data ? data.programOwnerId : data.assignedBy;
     }
 
+    function hasBoundedQuery(maxResults) {
+      return request.query.limit != null
+             && request.query.limit > 0
+             && request.query.limit <= maxResults;
+    }
+
+    function canParticipateInCompletedWorkout(instanceId) {
+      let workout = workoutInstanceData(instanceId);
+      return isSignedIn()
+             && workout.status == 'completed'
+             && (workout.athleteId == request.auth.uid
+                 || (workoutProgramOwner(workout) == request.auth.uid
+                     && hasActiveTrainerClientRelationship(
+                          request.auth.uid,
+                          workout.athleteId
+                        )));
+    }
+
+    function canListDiscussionThread(data) {
+      return isSignedIn()
+             && (data.athleteId == request.auth.uid
+                 || (data.trainerId == request.auth.uid
+                     && hasActiveTrainerClientRelationship(
+                          request.auth.uid,
+                          data.athleteId
+                        )));
+    }
+
+    function hasValidDiscussionThread(instanceId, data) {
+      let workout = workoutInstanceData(instanceId);
+      return data.keys().hasOnly([
+               'workoutInstanceId', 'athleteId', 'trainerId',
+               'completedAt', 'createdAt', 'createdBy', 'lastActivityAt'
+             ])
+             && data.workoutInstanceId == instanceId
+             && data.athleteId == workout.athleteId
+             && data.trainerId == workoutProgramOwner(workout)
+             && data.completedAt == workout.completedAt
+             && data.createdAt == request.time
+             && data.createdBy == request.auth.uid
+             && data.lastActivityAt == request.time;
+    }
+
+    function isValidDiscussionActivityUpdate(instanceId) {
+      return canParticipateInCompletedWorkout(instanceId)
+             && request.resource.data.diff(resource.data)
+                  .affectedKeys().hasOnly(['lastActivityAt'])
+             && request.resource.data.lastActivityAt == request.time
+             && (!('lastActivityAt' in resource.data)
+                 || request.resource.data.lastActivityAt
+                    >= resource.data.lastActivityAt);
+    }
+
+    function discussionThreadExists(instanceId) {
+      return exists(
+        /databases/$(database)/documents/workoutDiscussionThreads/$(instanceId)
+      );
+    }
+
+    function discussionThreadExistsAfter(instanceId) {
+      return existsAfter(
+        /databases/$(database)/documents/workoutDiscussionThreads/$(instanceId)
+      );
+    }
+
+    function discussionActivityAdvancedAfter(instanceId) {
+      return getAfter(
+        /databases/$(database)/documents/workoutDiscussionThreads/$(instanceId)
+      ).data.lastActivityAt == request.time;
+    }
+
+    function threadMessageExists(instanceId, messageId) {
+      return exists(
+        /databases/$(database)/documents/workoutDiscussionThreads/$(instanceId)/threadMessages/$(messageId)
+      );
+    }
+
+    function threadMessageExistsAfter(instanceId, messageId) {
+      return existsAfter(
+        /databases/$(database)/documents/workoutDiscussionThreads/$(instanceId)/threadMessages/$(messageId)
+      );
+    }
+
     function hasActiveRelationshipForProgram(data) {
       let ownerId =
         get(/databases/$(database)/documents/programs/$(data.programId)).data.ownerId;
@@ -693,7 +776,11 @@ service cloud.firestore {
              || ((!('athleteProgramInstanceId' in data)
                   || data.athleteProgramInstanceId == null)
                  && (data.assignedBy == request.auth.uid
-                     || data.programOwnerId == request.auth.uid))
+                     || data.programOwnerId == request.auth.uid)
+                 && hasManageableTrainerClientRelationship(
+                      request.auth.uid,
+                      data.athleteId
+                    ))
              || (('athleteProgramInstanceId' in data)
                  && data.athleteProgramInstanceId != null
                  && programInstanceData(data.athleteProgramInstanceId)
@@ -1616,10 +1703,18 @@ service cloud.firestore {
     // manage linked instances only while the roster relationship is active.
 
     match /athleteProgramInstances/{instanceId} {
-      allow read: if isSignedIn()
+      allow get: if isSignedIn()
+                 && (resource.data.athleteOwnerId == request.auth.uid
+                     || (resource.data.assigningTrainerId == request.auth.uid
+                         && hasManageableTrainerClientRelationship(
+                              request.auth.uid,
+                              resource.data.athleteOwnerId)));
+      allow list: if isSignedIn()
                   && (resource.data.athleteOwnerId == request.auth.uid
                       || (resource.data.assigningTrainerId == request.auth.uid
-                          && hasManageableTrainerClientRelationship(
+                          && resource.data.status == 'active'
+                          && hasBoundedQuery(50)
+                          && hasActiveTrainerClientRelationship(
                                request.auth.uid,
                                resource.data.athleteOwnerId)));
       allow create: if isSignedIn()
@@ -1888,6 +1983,73 @@ service cloud.firestore {
                           || !getAfter(
                                /databases/$(database)/documents/workoutInstances/$(instanceId)
                              ).data.actualSlotIds.hasAny([slotId]));
+      }
+    }
+
+    // ── Completed Workout Discussions ──
+    // The immutable thread doubles as the bounded per-athlete activity feed.
+    // Messages are append-only; each participant has one deterministic
+    // reaction document whose ID is their user ID.
+
+    match /workoutDiscussionThreads/{instanceId} {
+      allow get: if canParticipateInCompletedWorkout(instanceId);
+      allow list: if hasBoundedQuery(50)
+                  && canListDiscussionThread(resource.data);
+      allow create: if canParticipateInCompletedWorkout(instanceId)
+                    && hasValidDiscussionThread(
+                         instanceId,
+                         request.resource.data
+                       );
+      allow update: if isValidDiscussionActivityUpdate(instanceId);
+      allow delete: if false;
+
+      match /threadMessages/{messageId} {
+        allow get: if discussionThreadExists(instanceId)
+                   && canParticipateInCompletedWorkout(instanceId);
+        allow list: if discussionThreadExists(instanceId)
+                    && hasBoundedQuery(100)
+                    && canParticipateInCompletedWorkout(instanceId);
+        allow create: if discussionThreadExistsAfter(instanceId)
+                      && discussionActivityAdvancedAfter(instanceId)
+                      && canParticipateInCompletedWorkout(instanceId)
+                      && request.resource.data.keys().hasOnly([
+                           'authorId', 'body', 'createdAt'
+                         ])
+                      && request.resource.data.authorId == request.auth.uid
+                      && request.resource.data.body is string
+                      && request.resource.data.body.size() > 0
+                      && request.resource.data.body.size() <= 2000
+                      && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+
+        match /reactions/{reactionId} {
+          allow get: if discussionThreadExists(instanceId)
+                     && threadMessageExists(instanceId, messageId)
+                     && canParticipateInCompletedWorkout(instanceId);
+          allow list: if discussionThreadExists(instanceId)
+                      && threadMessageExists(instanceId, messageId)
+                      && hasBoundedQuery(100)
+                      && canParticipateInCompletedWorkout(instanceId);
+          allow create: if discussionThreadExistsAfter(instanceId)
+                        && discussionActivityAdvancedAfter(instanceId)
+                        && threadMessageExistsAfter(instanceId, messageId)
+                        && canParticipateInCompletedWorkout(instanceId)
+                        && reactionId == request.auth.uid
+                        && request.resource.data.keys().hasOnly([
+                             'actorId', 'reactionId', 'createdAt'
+                           ])
+                        && request.resource.data.actorId == request.auth.uid
+                        && request.resource.data.reactionId in [
+                             'celebrate', 'strong', 'progress', 'support'
+                           ]
+                        && request.resource.data.createdAt == request.time;
+          allow update: if false;
+          allow delete: if discussionThreadExists(instanceId)
+                        && threadMessageExists(instanceId, messageId)
+                        && canParticipateInCompletedWorkout(instanceId)
+                        && reactionId == request.auth.uid
+                        && resource.data.actorId == request.auth.uid;
+        }
       }
     }
   }

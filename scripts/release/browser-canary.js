@@ -202,6 +202,33 @@ async function assertRoute(baseUrl, sessionId, route) {
   }
 }
 
+async function assertAccessibleControls(baseUrl, sessionId, surface) {
+  for (const expected of surface.expectedControls || []) {
+    const element = await waitFor(
+      () => findByAriaLabel(baseUrl, sessionId, expected.label),
+      `${surface.label} '${expected.label}' control`,
+    );
+    const state = await execute(
+      baseUrl,
+      sessionId,
+      `
+const element = arguments[0];
+return {
+  disabled: element.getAttribute("aria-disabled") === "true" ||
+    element.hasAttribute("disabled")
+};
+`,
+      [element],
+    );
+    if (state?.disabled !== expected.disabled) {
+      throw new Error(
+        `${surface.label} '${expected.label}' disabled state was ` +
+        `'${state?.disabled}', expected '${expected.disabled}'`,
+      );
+    }
+  }
+}
+
 async function signIn({
   baseUrl,
   sessionId,
@@ -363,6 +390,7 @@ return document.body ? {
         }
         return state?.state === "ready";
       }, `${surface.label} populated backend state`);
+      await assertAccessibleControls(baseUrl, sessionId, surface);
       await assertRoute(baseUrl, sessionId, surface.route);
       await saveScreenshot(
         baseUrl,

@@ -30,8 +30,19 @@ Implemented in this slice:
 - Trainer navigation for Dashboard, Clients, Exercise library, Workout library,
   Program library, and Calendar & assignments. Existing roster, library, and
   trainer calendar screens remain wired to their natural destinations.
-- Reusable, descriptive empty destinations for dashboard, progress, and
-  messages while those focused experiences are deferred.
+- A real Trainer Dashboard at `/trainer/dashboard` with one bounded,
+  reverse-chronological activity feed. It combines completed workouts,
+  workout-thread comments and reactions, and active athlete programs ending in
+  the next seven calendar days. Filters cover All, Completions, Comments,
+  Reactions, and Programs; Personal bests remains a disabled, clearly labelled
+  coming-later filter until comparator and event semantics exist.
+- Completed-workout cards expose athlete and workout identity, completion time,
+  RPE and duration, latest discussion context, and current reaction counts.
+  Trainers can add an inline quick comment and toggle one of the centralized
+  coaching reactions. Interactions are additive records and never rewrite the
+  completed workout.
+- Reusable, descriptive empty destinations remain for Progress and Messages
+  while those focused experiences are deferred.
 - The existing compact/mobile home and navigation remain unchanged below the
   desktop breakpoint. Login and onboarding do not expose the workspace switch.
 - `TrainerClientRelationship` as the durable trainer roster and authorization
@@ -176,9 +187,10 @@ From the repository root, run:
 
 The script starts clean emulators, creates two non-secret deterministic
 identities, seeds their bootstrap profiles, active trainer-athlete
-relationship, an athlete program instance, a current calendar workout, and a
-completed historical workout. It then runs the selected identity in Chrome's
-1280x800 desktop viewport and shuts the emulators down:
+relationship, an athlete program instance ending in seven days, a current
+calendar workout, a completed historical workout, and its discussion and
+reaction activity. It then runs the selected identity in Chrome's 1280x800
+desktop viewport and shuts the emulators down:
 
 | Role | Emulator email | Emulator password |
 | --- | --- | --- |
@@ -213,6 +225,7 @@ stage5/test-artifacts/browser-login/
   athlete-workout-history.png
   athlete-calendar.png
   trainer-header-identity.png
+  trainer-dashboard.png
   trainer-clients.png
   trainer-exercise-library.png
   trainer-workout-library.png
@@ -220,9 +233,11 @@ stage5/test-artifacts/browser-login/
   trainer-calendar-assignments.png
 ```
 
-The trainer run verifies the active client roster, exercise, workout and
-program libraries, and Calendar/Assignments against deterministic emulator
-records. Screenshots are diagnostic artifacts rather than golden assertions.
+The trainer run verifies the unified Dashboard feed and filters, active client
+roster, exercise, workout and program libraries, and Calendar/Assignments
+against deterministic emulator records. The Dashboard assertion covers the
+exact program-ending, reaction, comment, and completion event sequence.
+Screenshots are diagnostic artifacts rather than golden assertions.
 The runner drives the real Flutter application through ChromeDriver and the
 emulator-only login seam. Successful screenshot directories must remain in the
 worktree after validation; they are gitignored and must not be committed.
@@ -258,21 +273,23 @@ queries can depend on newer rules and composite indexes.
 
 Authorization coverage is layered:
 
-1. Firestore emulator tests execute the exact Calendar, My Programs, workout
-   history, and legacy-backfill query shapes. Fixtures include modern records,
-   legacy records missing newer optional fields, and another athlete's data;
-   own-athlete queries must succeed while cross-athlete queries must fail.
+1. Firestore emulator tests execute the exact Dashboard, Calendar, My Programs,
+   workout history, discussion/reaction mutation, and legacy-backfill query
+   shapes. Fixtures include modern records, legacy records missing newer
+   optional fields, ended relationships, and another athlete's data; authorized
+   scoped queries must succeed while cross-athlete queries must fail.
 2. Stage validation checks the combined deployment contract above. Release
    operators must select the intended Firebase project explicitly and review
    the active alias before deploying.
 3. The deployed-environment canary uses dedicated non-personal trainer and
    athlete Auth accounts plus deterministic synthetic documents in the
    reserved `release-canary-` namespace. It exercises the real deployed app's
-   login and header identity; trainer Clients, Exercise Library, Workout
-   Library, Program Library, and Calendar/Assignments; and Athlete Calendar,
-   My Programs, and Workout History. Every backend-backed surface must expose
-   its exact seeded record name; permission, application, missing-data, and
-   empty-state results fail before screenshots are accepted.
+   login and header identity; the trainer's unified Dashboard, Clients,
+   Exercise Library, Workout Library, Program Library, and
+   Calendar/Assignments; and Athlete Calendar, My Programs, and Workout
+   History. Every backend-backed surface must expose its exact seeded content;
+   permission, application, missing-data, and empty-state results fail before
+   screenshots are accepted.
 
 Firebase environments are separate projects rather than Hosting preview
 channels sharing one backend. The repository declares `dev`, `staging`, and
@@ -323,8 +340,9 @@ data and failure artifacts.
 
 ## Web workspace follow-ups
 
-Trainer dashboard aggregation, athlete progress reporting, and messaging
-remain polished empty destinations. My programs is currently a read-only
+Athlete progress reporting and standalone messaging remain polished empty
+destinations. Dashboard pagination beyond the bounded initial feed and
+Personal Best activity remain deferred. My programs is currently a read-only
 instance list and Workout history is a read-only chronological list; existing
 detail and completion routes remain available. Detail and edit flows continue
 to use their flat Stage 4-compatible routes, so existing deep links and mobile

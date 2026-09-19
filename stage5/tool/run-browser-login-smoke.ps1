@@ -211,12 +211,19 @@ $historyTimestamp = [DateTime]::ParseExact(
     'yyyy-MM-dd',
     [Globalization.CultureInfo]::InvariantCulture
 ).ToUniversalTime().ToString('o')
+$commentTimestamp = [DateTime]::Parse($historyTimestamp).
+    AddMinutes(1).ToUniversalTime().ToString('o')
+$reactionTimestamp = [DateTime]::Parse($historyTimestamp).
+    AddMinutes(2).ToUniversalTime().ToString('o')
 $seedTimestamp = $today.ToUniversalTime().ToString('o')
 $programId = 'browser-athlete-program'
 $programInstanceId = 'browser-athlete-program-instance'
 $exerciseTemplateId = 'browser-trainer-exercise'
 $calendarTemplateId = 'browser-calendar-workout'
 $historyTemplateId = 'browser-history-workout'
+$discussionThreadId = 'browser-history-workout'
+$discussionMessageId = 'browser-workout-discussion-message'
+$celebrate = [char]::ConvertFromUtf32(0x1F389)
 $workspaceSeedBody = @{
     writes = @(
         @{
@@ -379,7 +386,7 @@ $workspaceSeedBody = @{
                     relationshipMode = @{ stringValue = 'subscribed' }
                     startDate = @{ stringValue = $calendarDate }
                     expectedEndDate = @{
-                        stringValue = $today.AddDays(14).ToString('yyyy-MM-dd')
+                        stringValue = $today.AddDays(7).ToString('yyyy-MM-dd')
                     }
                     workoutCount = @{ integerValue = '2' }
                     status = @{ stringValue = 'active' }
@@ -511,6 +518,50 @@ $workspaceSeedBody = @{
                     updatedAt = @{ timestampValue = $historyTimestamp }
                 }
             }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutDiscussionThreads/$discussionThreadId"
+                fields = @{
+                    workoutInstanceId = @{
+                        stringValue = 'browser-history-workout'
+                    }
+                    trainerId = @{ stringValue = $trainer.Uid }
+                    athleteId = @{ stringValue = $athlete.Uid }
+                    completedAt = @{ timestampValue = $historyTimestamp }
+                    createdAt = @{ timestampValue = $historyTimestamp }
+                    createdBy = @{ stringValue = $athlete.Uid }
+                    lastActivityAt = @{
+                        timestampValue = $reactionTimestamp
+                    }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutDiscussionThreads/$discussionThreadId/" +
+                    "threadMessages/$discussionMessageId"
+                fields = @{
+                    authorId = @{ stringValue = $athlete.Uid }
+                    body = @{ stringValue = 'Browser dashboard comment' }
+                    createdAt = @{ timestampValue = $commentTimestamp }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutDiscussionThreads/$discussionThreadId/" +
+                    "threadMessages/$discussionMessageId/" +
+                    "reactions/$($trainer.Uid)"
+                fields = @{
+                    actorId = @{ stringValue = $trainer.Uid }
+                    reactionId = @{ stringValue = 'celebrate' }
+                    createdAt = @{ timestampValue = $reactionTimestamp }
+                }
+            }
         }
     )
 } | ConvertTo-Json -Depth 12
@@ -539,7 +590,8 @@ if ($Identity -eq 'trainer') {
         'trainer-exercise-library.png',
         'trainer-workout-library.png',
         'trainer-program-library.png',
-        'trainer-calendar-assignments.png'
+        'trainer-calendar-assignments.png',
+        'trainer-dashboard.png'
     )
 }
 else {
@@ -807,6 +859,40 @@ return document.body ? {
     else {
         $surfaceChecks = @(
             [ordered]@{
+                Route = '/trainer/dashboard'
+                Marker = 'data-browser-smoke-surface-trainer-dashboard'
+                Screenshot = 'trainer-dashboard'
+                ExpectedContent = (
+                    'Program ending soon: Browser Athlete Program (7 days) | ' +
+                    "Reaction: $celebrate 1 | " +
+                    'Comment: Browser dashboard comment | ' +
+                    'Completion: Browser Completed Workout'
+                )
+                ExpectedControls = @(
+                    [ordered]@{ Label = 'All filter'; Disabled = $false },
+                    [ordered]@{
+                        Label = 'Completions filter'
+                        Disabled = $false
+                    },
+                    [ordered]@{
+                        Label = 'Comments filter'
+                        Disabled = $false
+                    },
+                    [ordered]@{
+                        Label = 'Reactions filter'
+                        Disabled = $false
+                    },
+                    [ordered]@{
+                        Label = 'Programs filter'
+                        Disabled = $false
+                    },
+                    [ordered]@{
+                        Label = 'Personal bests'
+                        Disabled = $true
+                    }
+                )
+            },
+            [ordered]@{
                 Route = '/trainer/clients'
                 Marker = 'data-browser-smoke-surface-trainer-clients'
                 Screenshot = 'trainer-clients'
@@ -905,6 +991,73 @@ return document.body ? {
             }
             if (-not $surfaceReady) {
                 throw "Browser smoke did not load $($surface.Route)."
+            }
+            $expectedControls = @()
+            if ($surface.Contains('ExpectedControls')) {
+                $expectedControls = @($surface['ExpectedControls'])
+            }
+            if ($expectedControls.Count -gt 0) {
+                $semanticsScript = @{
+                    script = @'
+const placeholder = document.querySelector('flt-semantics-placeholder');
+if (placeholder) {
+  placeholder.click();
+}
+return true;
+'@
+                    args = @()
+                } | ConvertTo-Json
+                Invoke-RestMethod `
+                    -Method Post `
+                    -Uri (
+                        "$driverBaseUri/session/$browserSessionId/" +
+                        'execute/sync'
+                    ) `
+                    -ContentType 'application/json' `
+                    -Body $semanticsScript | Out-Null
+            }
+            foreach ($control in $expectedControls) {
+                if (-not $control) {
+                    continue
+                }
+                $controlScript = @{
+                    script = @'
+const expected = arguments[0];
+const element = Array.from(document.querySelectorAll('[aria-label]'))
+  .find((candidate) =>
+    (candidate.getAttribute('aria-label') || '').includes(expected)
+  );
+return element ? {
+  found: true,
+  disabled: element.getAttribute('aria-disabled') === 'true' ||
+    element.hasAttribute('disabled')
+} : { found: false, disabled: false };
+'@
+                    args = @($control.Label)
+                } | ConvertTo-Json
+                $controlResult = Invoke-RestMethod `
+                    -Method Post `
+                    -Uri (
+                        "$driverBaseUri/session/$browserSessionId/" +
+                        'execute/sync'
+                    ) `
+                    -ContentType 'application/json' `
+                    -Body $controlScript
+                if (-not $controlResult.value.found) {
+                    throw (
+                        "$($surface.Route) did not expose accessible control " +
+                        "'$($control.Label)'."
+                    )
+                }
+                if (
+                    [bool]$controlResult.value.disabled -ne
+                    [bool]$control.Disabled
+                ) {
+                    throw (
+                        "$($surface.Route) control '$($control.Label)' " +
+                        'reported the wrong disabled state.'
+                    )
+                }
             }
             $currentUrl = Invoke-RestMethod `
                 -Uri "$driverBaseUri/session/$browserSessionId/url"

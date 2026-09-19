@@ -18,6 +18,7 @@ import 'package:stage5/features/programs/presentation/athlete_schedule_screen.da
 import 'package:stage5/features/programs/presentation/program_builder_screen.dart';
 import 'package:stage5/features/programs/presentation/program_list_screen.dart';
 import 'package:stage5/features/programs/presentation/roster_athletes_screen.dart';
+import 'package:stage5/features/trainer_dashboard/presentation/trainer_dashboard_screen.dart';
 import 'package:stage5/features/workouts/presentation/athlete_workout_history_screen.dart';
 import 'package:stage5/features/workouts/presentation/calendar_screen.dart';
 import 'package:stage5/features/workouts/presentation/schedule_assignment_screen.dart';
@@ -238,12 +239,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AdaptiveWebWorkspaceRoute(
           mode: WebWorkspaceMode.trainer,
           destination: WebWorkspaceDestination.trainerDashboard,
-          webChild: WebWorkspacePlaceholder(
-            icon: Icons.dashboard_outlined,
-            title: 'Trainer dashboard',
-            description: 'Client activity, upcoming assignments, and coaching '
-                'priorities will be summarized here.',
-          ),
+          webChild: TrainerDashboardScreen(),
         ),
       ),
       GoRoute(

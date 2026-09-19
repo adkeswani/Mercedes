@@ -11,6 +11,8 @@ import 'package:stage5/core/web_workspace/web_workspace_preference.dart';
 import 'package:stage5/features/auth/presentation/app_entry_providers.dart';
 import 'package:stage5/features/auth/presentation/home_screen.dart';
 import 'package:stage5/features/auth/presentation/web_workspace_shell.dart';
+import 'package:stage5/features/trainer_dashboard/domain/trainer_activity_event.dart';
+import 'package:stage5/features/trainer_dashboard/presentation/trainer_dashboard_providers.dart';
 
 void main() {
   group('WebWorkspaceModeController', () {
@@ -289,6 +291,11 @@ ProviderContainer _readyContainer(
     overrides: [
       appEntryStateProvider.overrideWithValue(AppEntryState.ready),
       webWorkspacePreferenceProvider.overrideWithValue(preference),
+      trainerDashboardProvider.overrideWith(
+        (ref) => Future.value(
+          const TrainerDashboardPage(events: [], isBounded: false),
+        ),
+      ),
     ],
   );
 }

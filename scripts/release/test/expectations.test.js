@@ -11,6 +11,7 @@ const {
   EXPECTED_QUERY_LABELS,
   EXPECTED_SURFACES,
   EXPECTED_TRAINER_SURFACES,
+  TRAINER_DASHBOARD_FILTERS,
 } = require("../expectations.js");
 const {
   assertExpectedQueriesConfigured,
@@ -26,12 +27,15 @@ test("release canary exposes exact athlete surface expectations", () => {
     trainerWorkouts: "trainer-workouts",
     trainerPrograms: "trainer-programs",
     trainerCalendar: "trainer-calendar",
+    trainerDashboard: "trainer-dashboard",
   });
   assert.deepEqual(CANARY_CONTENT, {
     program: "Release Canary Program",
     workout: "Release Canary Workout",
     exercise: "Release Canary Exercise",
     athlete: "Release Canary Athlete",
+    dashboardComment: "Release Canary dashboard comment",
+    dashboardReaction: "\u{1F389} 1",
   });
   assert.equal(EXPECTED_SURFACES, EXPECTED_ATHLETE_SURFACES);
   assert.deepEqual(
@@ -60,6 +64,7 @@ test("release canary exposes exact trainer surface expectations", () => {
   assert.deepEqual(
     EXPECTED_TRAINER_SURFACES.map((surface) => surface.marker),
     [
+      "trainer-dashboard",
       "trainer-clients",
       "trainer-exercises",
       "trainer-workouts",
@@ -70,6 +75,10 @@ test("release canary exposes exact trainer surface expectations", () => {
   assert.deepEqual(
     EXPECTED_TRAINER_SURFACES.map((surface) => surface.expectedContent),
     [
+      "Program ending soon: Release Canary Program (7 days) | " +
+        "Reaction: \u{1F389} 1 | " +
+        "Comment: Release Canary dashboard comment | " +
+        "Completion: Release Canary Workout",
       "Release Canary Athlete",
       "Release Canary Exercise",
       "Release Canary Workout",
@@ -81,6 +90,7 @@ test("release canary exposes exact trainer surface expectations", () => {
   assert.deepEqual(
     EXPECTED_TRAINER_SURFACES.map((surface) => surface.route),
     [
+      "/trainer/dashboard",
       "/trainer/clients",
       "/trainer/exercises",
       "/trainer/workouts",
@@ -93,6 +103,25 @@ test("release canary exposes exact trainer surface expectations", () => {
       EXPECTED_TRAINER_SURFACES.map((surface) => surface.screenshot),
     ).size,
     EXPECTED_TRAINER_SURFACES.length,
+  );
+  assert.equal(
+    EXPECTED_TRAINER_SURFACES[0].screenshot,
+    "trainer-dashboard.png",
+  );
+  assert.deepEqual(TRAINER_DASHBOARD_FILTERS, [
+    { label: "All filter", disabled: false },
+    { label: "Completions filter", disabled: false },
+    { label: "Comments filter", disabled: false },
+    { label: "Reactions filter", disabled: false },
+    { label: "Programs filter", disabled: false },
+    {
+      label: "Personal bests \u2014 Coming later filter",
+      disabled: true,
+    },
+  ]);
+  assert.equal(
+    EXPECTED_TRAINER_SURFACES[0].expectedControls,
+    TRAINER_DASHBOARD_FILTERS,
   );
 });
 

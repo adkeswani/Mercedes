@@ -488,9 +488,17 @@ Athlete Calendar, My Programs, and Workout History are implemented, and the
 production authorization/index drift affecting those queries has been fixed.
 History pagination remains deferred. Trainer read surfaces are wired for
 Clients, Exercise Library, Workout Library, Program Library, and
-Calendar/Assignments. Trainer Dashboard remains a placeholder and is the next
-recommended slice, followed by the client workspace and creation, editing, and
-assignment workflows.
+Calendar/Assignments. Trainer Dashboard is now a bounded unified activity feed
+for completed workouts, first-class workout-instance discussion/reaction
+events, and active programs ending within seven calendar days. It uses
+per-active-athlete scoped queries so Firestore can prove access, provides
+inline quick coaching interactions, and keeps completed history immutable.
+The client workspace and remaining creation, editing, and assignment
+workflows are the next recommended slices.
+
+Personal Best activity remains explicitly deferred: measurement comparator,
+event, and tie semantics must be established before PB records or dashboard
+events are emitted.
 
 Local release validation now includes exact-query Firestore emulator coverage,
 populated trainer and athlete browser canaries with retained screenshot

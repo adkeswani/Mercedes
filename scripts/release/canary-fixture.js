@@ -15,11 +15,14 @@ const CANARY_IDS = Object.freeze({
   workoutTemplate: "release-canary-workout-template",
   currentWorkout: "release-canary-current-workout",
   historyWorkout: "release-canary-history-workout",
+  discussionThread: "release-canary-history-workout",
+  discussionMessage: "release-canary-workout-discussion-message",
+  discussionReaction: "release-canary-trainer",
 });
 
 const OWNERSHIP_FIELDS = new Set([
   "uid",
-  "userId",
+  "actorId",
   "ownerId",
   "trainerId",
   "athleteId",
@@ -34,6 +37,8 @@ const OWNERSHIP_FIELDS = new Set([
   "removedBy",
   "publishedBy",
   "loadPointsOverriddenBy",
+  "authorId",
+  "userId",
 ]);
 
 const REFERENCE_FIELDS = new Set([
@@ -45,6 +50,10 @@ const REFERENCE_FIELDS = new Set([
   "materializationKey",
   "programEntryId",
   "exerciseId",
+  "workoutInstanceId",
+  "threadId",
+  "messageId",
+  "latestMessageId",
 ]);
 
 function assertCanaryToken(value, label) {
@@ -83,6 +92,12 @@ function previousIsoDate(today) {
   return date.toISOString().slice(0, 10);
 }
 
+function nextIsoDate(today, days) {
+  const date = new Date(`${today}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 function expectedMutationPaths() {
   return Object.freeze([
     `users/${CANARY_IDS.trainer}`,
@@ -98,6 +113,12 @@ function expectedMutationPaths() {
     `workoutTemplates/${CANARY_IDS.workoutTemplate}/workoutTemplateVersions/1`,
     `workoutInstances/${CANARY_IDS.currentWorkout}`,
     `workoutInstances/${CANARY_IDS.historyWorkout}`,
+    `workoutDiscussionThreads/${CANARY_IDS.discussionThread}`,
+    `workoutDiscussionThreads/${CANARY_IDS.discussionThread}/` +
+      `threadMessages/${CANARY_IDS.discussionMessage}`,
+    `workoutDiscussionThreads/${CANARY_IDS.discussionThread}/` +
+      `threadMessages/${CANARY_IDS.discussionMessage}/` +
+      `reactions/${CANARY_IDS.discussionReaction}`,
   ]);
 }
 
@@ -106,7 +127,7 @@ function assertCanaryMutation(path, data, allowedPaths = expectedMutationPaths()
     throw new Error(`Mutation path is not an exact release-canary fixture path: ${path}`);
   }
   const segments = path.split("/");
-  if (segments.length !== 2 && segments.length !== 4) {
+  if (![2, 4, 6].includes(segments.length)) {
     throw new Error(`Mutation path must address one exact document: ${path}`);
   }
   assertCanaryToken(segments[1], "Mutation document ID");
@@ -116,9 +137,25 @@ function assertCanaryMutation(path, data, allowedPaths = expectedMutationPaths()
       "programVersions",
       "workoutTemplateVersions",
     ]);
-    if (!versionCollections.has(segments[2]) || segments[3] !== "1") {
+    const isVersion = versionCollections.has(segments[2]) &&
+      segments[3] === "1";
+    const isThreadMessage = segments[0] === "workoutDiscussionThreads" &&
+      segments[2] === "threadMessages";
+    if (!isVersion && !isThreadMessage) {
       throw new Error(`Mutation version path is not allowlisted: ${path}`);
     }
+    if (isThreadMessage) {
+      assertCanaryToken(segments[3], "Mutation document ID");
+    }
+  }
+  if (segments.length === 6) {
+    if (segments[0] !== "workoutDiscussionThreads" ||
+        segments[2] !== "threadMessages" ||
+        segments[4] !== "reactions") {
+      throw new Error(`Mutation nested path is not allowlisted: ${path}`);
+    }
+    assertCanaryToken(segments[3], "Mutation document ID");
+    assertCanaryToken(segments[5], "Mutation document ID");
   }
   function inspect(value) {
     if (Array.isArray(value)) {
@@ -160,7 +197,10 @@ function buildCanaryFixture({ trainerEmail, athleteEmail, today }) {
   }
 
   const historyDate = previousIsoDate(today);
+  const programEndDate = nextIsoDate(today, 7);
   const timestamp = `${today}T12:00:00.000Z`;
+  const commentTimestamp = `${today}T12:01:00.000Z`;
+  const reactionTimestamp = `${today}T12:02:00.000Z`;
   const audit = (actor) => ({
     createdAt: timestamp,
     createdBy: actor,
@@ -336,7 +376,7 @@ function buildCanaryFixture({ trainerEmail, athleteEmail, today }) {
         sourceProgramVersion: 1,
         relationshipMode: "subscribed",
         startDate: historyDate,
-        expectedEndDate: today,
+        expectedEndDate: programEndDate,
         workoutCount: 2,
         status: "active",
         linkedAt: timestamp,
@@ -388,6 +428,39 @@ function buildCanaryFixture({ trainerEmail, athleteEmail, today }) {
     },
     workout(CANARY_IDS.currentWorkout, today, "scheduled"),
     workout(CANARY_IDS.historyWorkout, historyDate, "completed"),
+    {
+      path: `workoutDiscussionThreads/${CANARY_IDS.discussionThread}`,
+      data: {
+        workoutInstanceId: CANARY_IDS.historyWorkout,
+        trainerId: CANARY_IDS.trainer,
+        athleteId: CANARY_IDS.athlete,
+        completedAt: timestamp,
+        createdAt: timestamp,
+        createdBy: CANARY_IDS.athlete,
+        lastActivityAt: reactionTimestamp,
+      },
+    },
+    {
+      path:
+        `workoutDiscussionThreads/${CANARY_IDS.discussionThread}/` +
+        `threadMessages/${CANARY_IDS.discussionMessage}`,
+      data: {
+        authorId: CANARY_IDS.athlete,
+        body: CANARY_CONTENT.dashboardComment,
+        createdAt: commentTimestamp,
+      },
+    },
+    {
+      path:
+        `workoutDiscussionThreads/${CANARY_IDS.discussionThread}/` +
+        `threadMessages/${CANARY_IDS.discussionMessage}/` +
+        `reactions/${CANARY_IDS.discussionReaction}`,
+      data: {
+        actorId: CANARY_IDS.trainer,
+        reactionId: "celebrate",
+        createdAt: reactionTimestamp,
+      },
+    },
   ];
   for (const document of documents) {
     assertCanaryMutation(document.path, document.data);

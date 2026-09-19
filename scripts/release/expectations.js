@@ -9,6 +9,7 @@ const CANARY_SURFACES = Object.freeze({
   trainerWorkouts: "trainer-workouts",
   trainerPrograms: "trainer-programs",
   trainerCalendar: "trainer-calendar",
+  trainerDashboard: "trainer-dashboard",
 });
 
 const CANARY_CONTENT = Object.freeze({
@@ -16,7 +17,21 @@ const CANARY_CONTENT = Object.freeze({
   workout: "Release Canary Workout",
   exercise: "Release Canary Exercise",
   athlete: "Release Canary Athlete",
+  dashboardComment: "Release Canary dashboard comment",
+  dashboardReaction: "\u{1F389} 1",
 });
+
+const TRAINER_DASHBOARD_FILTERS = Object.freeze([
+  Object.freeze({ label: "All filter", disabled: false }),
+  Object.freeze({ label: "Completions filter", disabled: false }),
+  Object.freeze({ label: "Comments filter", disabled: false }),
+  Object.freeze({ label: "Reactions filter", disabled: false }),
+  Object.freeze({ label: "Programs filter", disabled: false }),
+  Object.freeze({
+    label: "Personal bests \u2014 Coming later filter",
+    disabled: true,
+  }),
+]);
 
 const EXPECTED_ATHLETE_SURFACES = Object.freeze([
   Object.freeze({
@@ -43,6 +58,19 @@ const EXPECTED_ATHLETE_SURFACES = Object.freeze([
 ]);
 
 const EXPECTED_TRAINER_SURFACES = Object.freeze([
+  Object.freeze({
+    label: "Trainer Dashboard",
+    marker: CANARY_SURFACES.trainerDashboard,
+    expectedContent: [
+      `Program ending soon: ${CANARY_CONTENT.program} (7 days)`,
+      `Reaction: ${CANARY_CONTENT.dashboardReaction}`,
+      `Comment: ${CANARY_CONTENT.dashboardComment}`,
+      `Completion: ${CANARY_CONTENT.workout}`,
+    ].join(" | "),
+    route: "/trainer/dashboard",
+    screenshot: "trainer-dashboard.png",
+    expectedControls: TRAINER_DASHBOARD_FILTERS,
+  }),
   Object.freeze({
     label: "Trainer Clients",
     marker: CANARY_SURFACES.trainerClients,
@@ -123,4 +151,5 @@ module.exports = {
   EXPECTED_QUERY_LABELS,
   EXPECTED_SURFACES,
   EXPECTED_TRAINER_SURFACES,
+  TRAINER_DASHBOARD_FILTERS,
 };

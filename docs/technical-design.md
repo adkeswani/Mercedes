@@ -221,37 +221,58 @@ workoutInstances/{instanceId}
   updatedAt: timestamp
 ```
 
-### 2.7 Comments (unified) 🔒
+### 2.7 Workout-instance discussions and activity reactions 🔒
 
-A single collection handles all comment scopes: program-level, workout-level, and exercise-level. The scope is determined by which optional ID fields are populated.
+The implemented interaction model uses an explicit thread per completed
+workout instance instead of optional-scope inference:
 
 ```
-comments/{commentId}
-  programId: string                          # always set (for ACL)
-  workoutInstanceId: string?                 # null → program-level comment
-  exerciseId: string?                        # null → workout-level comment; set → exercise-level
-  groupId: string?                           # null → private (athlete+owner); set → visible to group members (post-MVP)
-  athleteId: string (userId)                 # the athlete this comment thread belongs to
-  authorId: string (userId)                  # who wrote this comment
-  body: string
-  mediaLinks: [string]?                      # external URLs
+workoutDiscussionThreads/{workoutInstanceId}
+  workoutInstanceId: string
+  athleteId: string (userId)
+  trainerId: string (userId)
+  completedAt: timestamp
   createdAt: timestamp
-  editedAt: timestamp?
+  createdBy: string (userId)
+  lastActivityAt: timestamp                   # monotonic feed projection
+
+  threadMessages/{messageId}
+    authorId: string (userId)
+    body: string                              # 1..2000 characters
+    createdAt: timestamp
+
+    reactions/{actorId}
+      actorId: string (userId)                # also the document ID
+      reactionId: string                      # centralized coaching set
+      createdAt: timestamp
 ```
 
-**Scope queries** (all use composite indexes, fast regardless of collection size):
+Thread identity and completion context are immutable. `lastActivityAt` is the
+only mutable thread field and advances atomically when a message or reaction is
+created so recent interactions on older workouts remain visible. Messages are
+append-only, and reactions are create/delete-only records owned by the reacting
+participant. A quick workout reaction targets the latest thread message; when
+no comment exists, the repository creates a deterministic completion-activity
+message first. This keeps every reaction attached to an individual message
+while preserving workout history unchanged.
 
-| Scope | Query |
-|---|---|
-| Program-level (DM replacement) | `where programId == X AND athleteId == Y AND workoutInstanceId == null` |
-| Workout-level | `where workoutInstanceId == X AND exerciseId == null` |
-| Exercise-level | `where workoutInstanceId == X AND exerciseId == Y` |
-| All comments for an athlete in a program | `where programId == X AND athleteId == Y` |
-| Group comments (post-MVP) | `where workoutInstanceId == X AND groupId == G` |
+Access requires the workout athlete or the assigning/program owner with an
+active trainer-client relationship. Ended relationships and unrelated users
+cannot read or write these records. Rules enforce the exact immutable shapes,
+completed-workout parent, authorship, and deterministic reaction IDs.
 
-**Visibility:**
-- **MVP (private):** `groupId == null` — comments are visible only to the assigned athlete and the program owner. ACL enforced via `isProgramOwner(programId) || isSelfAthlete()`.
-- **Post-MVP (group):** `groupId != null` — comments are visible to all members of the group and the program owner. ACL enforced via group membership check.
+The Trainer Dashboard builds a bounded initial activity page by first reading
+active relationships and then issuing owner-and-athlete-scoped queries in
+bounded fan-out. Current threads are ordered by `lastActivityAt`; a bounded
+`completedAt` fallback keeps pre-projection threads visible. Completion
+records, discussion messages/reactions, and active athlete program instances
+ending from today through day seven inclusive are mapped to one extensible
+activity-event view model and sorted together. This avoids an
+authorization-ambiguous global query and prevents a duplicate completion
+projection. Reads are a point-in-time bounded aggregation; posting an
+interaction advances the projection transactionally and reloads the feed.
+Personal-best activity is reserved but disabled until comparison direction and
+event semantics are defined.
 
 ### 2.8 Direct Message Threads
 
