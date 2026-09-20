@@ -4,6 +4,8 @@ Use this file to record feedback, context, and follow-up actions.
 
 The approved implementation direction distilled from this feedback is in
 [`docs/domain-model-design.md`](docs/domain-model-design.md).
+The current prioritized implementation backlog is in
+[`docs/remaining-features.md`](docs/remaining-features.md).
 
 ## Feedback entries
 

@@ -481,6 +481,10 @@ step 6, and server-side subscription propagation in step 8.
 
 #### Current checkpoint
 
+Remaining product implementation is prioritized in
+[`remaining-features.md`](remaining-features.md); this section records the
+implemented model checkpoint rather than serving as the active backlog.
+
 The Stage 5 model and migration foundation remains complete; Stage 4 is
 unchanged. Authenticated desktop web now provides Athlete and Trainer
 workspaces with namespaced routes, remembered mode, and header identity while
