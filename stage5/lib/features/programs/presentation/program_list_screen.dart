@@ -186,14 +186,16 @@ class _ProgramTile extends ConsumerWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('$typeLabel · ${program.status.name} · $versionLabel'),
-            if (program.tags.isNotEmpty)
-              Wrap(
-                spacing: 4,
-                children: [
-                  for (final tag in program.tags) LibraryTagLabel(tag: tag),
-                ],
-              ),
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                LibraryMetadataLabel(label: typeLabel),
+                LibraryMetadataLabel(label: program.status.name),
+                LibraryMetadataLabel(label: versionLabel),
+                for (final tag in program.tags) LibraryTagLabel(tag: tag),
+              ],
+            ),
           ],
         ),
         trailing: Row(

@@ -205,14 +205,15 @@ class _WorkoutTile extends ConsumerWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${workout.workoutType.name} · $versionLabel'),
-            if (workout.tags.isNotEmpty)
-              Wrap(
-                spacing: 4,
-                children: [
-                  for (final tag in workout.tags) LibraryTagLabel(tag: tag),
-                ],
-              ),
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                LibraryMetadataLabel(label: workout.workoutType.name),
+                LibraryMetadataLabel(label: versionLabel),
+                for (final tag in workout.tags) LibraryTagLabel(tag: tag),
+              ],
+            ),
           ],
         ),
         trailing: Row(

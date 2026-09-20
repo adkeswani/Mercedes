@@ -234,16 +234,41 @@ void main() {
     expect(find.byTooltip('Expand Alex Athlete'), findsOneWidget);
   });
 
-  testWidgets('renders compact library tag labels', (tester) async {
+  testWidgets('renders compact and color-distinct library labels',
+      (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(body: LibraryTagLabel(tag: 'Strength')),
+        home: Scaffold(
+          body: Row(
+            children: [
+              LibraryTagLabel(tag: 'Strength'),
+              LibraryMetadataLabel(label: 'v1'),
+            ],
+          ),
+        ),
       ),
     );
 
     expect(
       tester.getSize(find.byType(LibraryTagLabel)).height,
       lessThanOrEqualTo(24),
+    );
+    expect(
+      tester.getSize(find.byType(LibraryMetadataLabel)).height,
+      lessThanOrEqualTo(24),
+    );
+
+    BoxDecoration decorationOf(Finder parent) {
+      return tester
+          .widget<DecoratedBox>(
+            find.descendant(of: parent, matching: find.byType(DecoratedBox)),
+          )
+          .decoration as BoxDecoration;
+    }
+
+    expect(
+      decorationOf(find.byType(LibraryTagLabel)).color,
+      isNot(decorationOf(find.byType(LibraryMetadataLabel)).color),
     );
   });
 }

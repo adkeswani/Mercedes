@@ -22,17 +22,54 @@ class LibraryTagLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    return _LibraryPillLabel(
+      label: tag,
+      backgroundColor: colors.surfaceContainerHighest,
+      foregroundColor: colors.onSurfaceVariant,
+    );
+  }
+}
+
+class LibraryMetadataLabel extends StatelessWidget {
+  const LibraryMetadataLabel({required this.label, super.key});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return _LibraryPillLabel(
+      label: label,
+      backgroundColor: colors.secondaryContainer,
+      foregroundColor: colors.onSecondaryContainer,
+    );
+  }
+}
+
+class _LibraryPillLabel extends StatelessWidget {
+  const _LibraryPillLabel({
+    required this.label,
+    required this.backgroundColor,
+    required this.foregroundColor,
+  });
+
+  final String label;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  @override
+  Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest,
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         child: Text(
-          tag,
+          label,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: colors.onSurfaceVariant,
+                color: foregroundColor,
               ),
         ),
       ),
