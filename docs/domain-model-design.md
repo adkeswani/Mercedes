@@ -499,8 +499,9 @@ for completed workouts, first-class workout-instance discussion/reaction
 events, and active programs ending within seven calendar days. It uses
 per-active-athlete scoped queries so Firestore can prove access, provides
 inline quick coaching interactions, and keeps completed history immutable.
-The client workspace and remaining creation, editing, and assignment
-workflows are the next recommended slices.
+Desktop-first Workout and Program creation/editing are now implemented.
+Assignment refinement and the client workspace remain the next recommended
+slices.
 
 Personal Best activity remains explicitly deferred: measurement comparator,
 event, and tie semantics must be established before PB records or dashboard
@@ -605,10 +606,16 @@ deletion/anonymization plus explicit relationship/history handling.
   remain readable and have an athlete-owned migration that maps safe unique or
   complete repeated-exercise results to pinned slots. Ambiguous partial
   repeated-exercise results are rejected rather than guessed.
-- The current builder continues to create and edit standard exercise blocks,
-  while preserving typed blocks loaded from storage. Rich authoring controls
-  for interval, circuit, and climbing payloads can be added without another
-  workout-version schema change.
+- The Workout builder uses one command layer for drag/drop and accessible
+  Add/Move/Duplicate/Remove controls. It creates and reorders standard,
+  interval, circuit, and climbing blocks without flattening them, supports
+  compatible in-block exercise drops, preserves stable slot and block IDs, and
+  rejects invalid targets and capacity violations before persistence.
+- Workout and Program templates keep private owner-only
+  `builderDrafts/current` subdocuments. Save draft replaces that recoverable
+  snapshot, discard deletes it, and publish atomically advances the immutable
+  version then deletes the editable draft. Published versions and completed
+  history remain immutable.
 - Program assignment now creates an athlete-owned `AthleteProgramInstance` and
   all pinned scheduled workouts in one atomic batch. A caller-supplied
   idempotency key makes retries safe, and deterministic workout IDs prevent
@@ -636,6 +643,10 @@ deletion/anonymization plus explicit relationship/history handling.
   Versions created before this field resolve to `legacy-{sortOrder}` so their
   already-materialized workouts can be reconciled without rewriting the
   immutable source snapshot.
+- Program versions may contain ordered phase separators. Entries optionally
+  reference a phase ID. Phases are organizational only: moving or removing a
+  phase does not alter progression logic, and removal predictably moves its
+  workouts to the preceding phase or the unphased section.
 - Publishing a program version atomically records a pending propagation job.
   A retry-enabled Firestore Cloud Function verifies the owning trainer, every
   pinned workout version, each subscribed program instance, and its active

@@ -26,17 +26,20 @@ class WorkoutPickerResult {
 /// programs are relative schedules that allow repeated workouts.
 Future<WorkoutPickerResult?> showWorkoutPicker(
   BuildContext context,
-  WidgetRef ref,
-) {
+  WidgetRef ref, {
+  String? clientAthleteId,
+}) {
   return showModalBottomSheet<WorkoutPickerResult>(
     context: context,
     isScrollControlled: true,
-    builder: (context) => const _WorkoutPickerSheet(),
+    builder: (context) => _WorkoutPickerSheet(clientAthleteId: clientAthleteId),
   );
 }
 
 class _WorkoutPickerSheet extends ConsumerWidget {
-  const _WorkoutPickerSheet();
+  const _WorkoutPickerSheet({this.clientAthleteId});
+
+  final String? clientAthleteId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -71,7 +74,12 @@ class _WorkoutPickerSheet extends ConsumerWidget {
               child: workoutsAsync.when(
                 data: (workouts) {
                   final published = workouts
-                      .where((w) => w.hasPublishedVersion)
+                      .where(
+                        (w) =>
+                            w.hasPublishedVersion &&
+                            (w.clientAthleteId == null ||
+                                w.clientAthleteId == clientAthleteId),
+                      )
                       .toList();
                   if (published.isEmpty) {
                     return const Center(
@@ -104,8 +112,7 @@ class _WorkoutPickerSheet extends ConsumerWidget {
                     },
                   );
                 },
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(child: Text('Error: $e')),
               ),
             ),

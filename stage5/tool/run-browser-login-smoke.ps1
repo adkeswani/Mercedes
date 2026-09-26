@@ -1,6 +1,7 @@
 param(
     [switch]$InsideEmulators,
     [switch]$SkipPubGet,
+    [switch]$WorkoutDragOnly,
     [string]$ChromeDriverPath,
     [string]$TestTarget = $env:BROWSER_SMOKE_TEST_TARGET,
     [string]$StartGateName = $env:BROWSER_SMOKE_START_GATE,
@@ -73,6 +74,9 @@ if (-not $InsideEmulators) {
             "-InsideEmulators -Identity $Identity"
         if ($SkipPubGet) {
             $innerCommand += ' -SkipPubGet'
+        }
+        if ($WorkoutDragOnly) {
+            $innerCommand += ' -WorkoutDragOnly'
         }
         & firebase emulators:exec `
             --only auth,firestore `
@@ -217,11 +221,18 @@ $commentTimestamp = [DateTime]::Parse($historyTimestamp).
 $reactionTimestamp = [DateTime]::Parse($historyTimestamp).
     AddMinutes(2).ToUniversalTime().ToString('o')
 $seedTimestamp = $today.ToUniversalTime().ToString('o')
+$builderSeedTimestamp = $today.AddMinutes(-10).ToUniversalTime().ToString('o')
 $programId = 'browser-athlete-program'
 $programInstanceId = 'browser-athlete-program-instance'
 $exerciseTemplateId = 'browser-trainer-exercise'
+$secondExerciseTemplateId = 'browser-trainer-exercise-two'
 $calendarTemplateId = 'browser-calendar-workout'
 $historyTemplateId = 'browser-history-workout'
+$builderSourceWorkoutId = 'browser-builder-source-workout'
+$dragWorkoutBuilderId = 'browser-workout-builder-drag'
+$controlsWorkoutBuilderId = 'browser-workout-builder-controls'
+$dragProgramBuilderId = 'browser-program-builder-drag'
+$controlsProgramBuilderId = 'browser-program-builder-controls'
 $exerciseFolderId = 'browser-exercise-folder'
 $workoutFolderId = 'browser-workout-folder'
 $programFolderId = 'browser-program-folder'
@@ -244,9 +255,9 @@ $workspaceSeedBody = @{
                         itemType = @{ stringValue = $_[0] }
                         name = @{ stringValue = $_[2] }
                         createdBy = @{ stringValue = $trainer.Uid }
-                        createdAt = @{ timestampValue = $seedTimestamp }
+                        createdAt = @{ timestampValue = $builderSeedTimestamp }
                         updatedBy = @{ stringValue = $trainer.Uid }
-                        updatedAt = @{ timestampValue = $seedTimestamp }
+                        updatedAt = @{ timestampValue = $builderSeedTimestamp }
                         deletedAt = @{ nullValue = $null }
                         deletedBy = @{ nullValue = $null }
                     }
@@ -300,8 +311,194 @@ $workspaceSeedBody = @{
                         }
                     }
                     gradingConfiguration = @{ nullValue = $null }
+                    publishedAt = @{ timestampValue = $builderSeedTimestamp }
+                    publishedBy = @{ stringValue = $trainer.Uid }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "exerciseTemplates/$secondExerciseTemplateId"
+                fields = @{
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    currentVersion = @{ integerValue = '1' }
+                    tags = @{
+                        arrayValue = @{
+                            values = @(@{ stringValue = 'Strength' })
+                        }
+                    }
+                    folderId = @{ stringValue = $exerciseFolderId }
+                    provenance = @{ nullValue = $null }
+                    createdAt = @{ timestampValue = $builderSeedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $builderSeedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "exerciseTemplates/$secondExerciseTemplateId/" +
+                    'exerciseVersions/1'
+                fields = @{
+                    versionNumber = @{ integerValue = '1' }
+                    name = @{ stringValue = 'Browser Trainer Row' }
+                    description = @{
+                        stringValue = 'Second deterministic trainer exercise'
+                    }
+                    instructions = @{ stringValue = 'Controlled row movement' }
+                    videoUrl = @{ nullValue = $null }
+                    mediaUrls = @{ arrayValue = @{} }
+                    exerciseType = @{ stringValue = 'strength' }
+                    measurementConfiguration = @{
+                        mapValue = @{
+                            fields = @{
+                                primary = @{ stringValue = 'repetitions' }
+                                secondary = @{ arrayValue = @{} }
+                            }
+                        }
+                    }
+                    gradingConfiguration = @{ nullValue = $null }
                     publishedAt = @{ timestampValue = $seedTimestamp }
                     publishedBy = @{ stringValue = $trainer.Uid }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutTemplates/$dragWorkoutBuilderId"
+                fields = @{
+                    name = @{ stringValue = 'Browser Workout Builder Drag' }
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    workoutType = @{ stringValue = 'fullBody' }
+                    currentVersion = @{ integerValue = '0' }
+                    tags = @{ arrayValue = @{} }
+                    folderId = @{ nullValue = $null }
+                    clientAthleteId = @{ nullValue = $null }
+                    provenance = @{ nullValue = $null }
+                    createdAt = @{ timestampValue = $builderSeedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $builderSeedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutTemplates/$controlsWorkoutBuilderId"
+                fields = @{
+                    name = @{
+                        stringValue = 'Browser Workout Builder Controls'
+                    }
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    workoutType = @{ stringValue = 'fullBody' }
+                    currentVersion = @{ integerValue = '0' }
+                    tags = @{ arrayValue = @{} }
+                    folderId = @{ nullValue = $null }
+                    clientAthleteId = @{ nullValue = $null }
+                    provenance = @{ nullValue = $null }
+                    createdAt = @{ timestampValue = $builderSeedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $builderSeedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutTemplates/$builderSourceWorkoutId"
+                fields = @{
+                    name = @{ stringValue = 'Browser Builder Workout' }
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    workoutType = @{ stringValue = 'fullBody' }
+                    currentVersion = @{ integerValue = '1' }
+                    tags = @{ arrayValue = @{} }
+                    folderId = @{ nullValue = $null }
+                    clientAthleteId = @{ nullValue = $null }
+                    provenance = @{ nullValue = $null }
+                    createdAt = @{ timestampValue = $builderSeedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $builderSeedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutTemplates/$builderSourceWorkoutId/" +
+                    'workoutTemplateVersions/1'
+                fields = @{
+                    versionNumber = @{ integerValue = '1' }
+                    publishedAt = @{ timestampValue = $builderSeedTimestamp }
+                    exercises = @{ arrayValue = @{} }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "programs/$dragProgramBuilderId"
+                fields = @{
+                    name = @{ stringValue = 'Browser Program Builder Drag' }
+                    description = @{
+                        stringValue = 'Deterministic builder target'
+                    }
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    type = @{ stringValue = 'assignable' }
+                    status = @{ stringValue = 'draft' }
+                    currentVersion = @{ integerValue = '0' }
+                    tags = @{ arrayValue = @{} }
+                    folderId = @{ nullValue = $null }
+                    clientAthleteId = @{ nullValue = $null }
+                    provenance = @{ nullValue = $null }
+                    createdAt = @{ timestampValue = $builderSeedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $builderSeedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "programs/$controlsProgramBuilderId"
+                fields = @{
+                    name = @{
+                        stringValue = 'Browser Program Builder Controls'
+                    }
+                    description = @{
+                        stringValue = 'Deterministic builder target'
+                    }
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    type = @{ stringValue = 'assignable' }
+                    status = @{ stringValue = 'draft' }
+                    currentVersion = @{ integerValue = '0' }
+                    tags = @{ arrayValue = @{} }
+                    folderId = @{ nullValue = $null }
+                    clientAthleteId = @{ nullValue = $null }
+                    provenance = @{ nullValue = $null }
+                    createdAt = @{ timestampValue = $builderSeedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $builderSeedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
                 }
             }
         },
@@ -644,6 +841,10 @@ if ($Identity -eq 'trainer') {
         'trainer-workout-library-collapsed.png',
         'trainer-program-library.png',
         'trainer-program-library-collapsed.png',
+        'trainer-workout-builder-drag.png',
+        'trainer-workout-builder-controls.png',
+        'trainer-program-builder-drag.png',
+        'trainer-program-builder-controls.png',
         'trainer-calendar-assignments.png',
         'trainer-dashboard.png'
     )
@@ -771,7 +972,7 @@ try {
                 'goog:chromeOptions' = @{
                     args = @(
                         '--headless=new',
-                        '--window-size=1280,800',
+                        '--window-size=1440,1200',
                         '--disable-gpu',
                         '--no-sandbox'
                     )
@@ -802,6 +1003,394 @@ try {
             (Join-Path $artifactPath "$Name.png"),
             $screenshotBytes
         )
+    }
+
+    function Invoke-BrowserScript {
+        param(
+            [string]$Script,
+            [object[]]$Arguments = @()
+        )
+
+        $body = @{
+            script = $Script
+            args = $Arguments
+        } | ConvertTo-Json -Depth 8
+        return Invoke-RestMethod `
+            -Method Post `
+            -Uri "$driverBaseUri/session/$browserSessionId/execute/sync" `
+            -ContentType 'application/json' `
+            -Body $body
+    }
+
+    function Enable-BrowserSemantics {
+        Invoke-BrowserScript -Script @'
+const placeholder = document.querySelector('flt-semantics-placeholder');
+if (placeholder) placeholder.click();
+return true;
+'@ | Out-Null
+    }
+
+    function Wait-BrowserLabel {
+        param(
+            [string]$Label,
+            [int]$TimeoutSeconds = 30
+        )
+
+        $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+        do {
+            $result = Invoke-BrowserScript -Script @'
+const expected = arguments[0];
+return Array.from(document.querySelectorAll('[aria-label]')).some(
+  (element) => (element.getAttribute('aria-label') || '').includes(expected)
+);
+'@ -Arguments @($Label)
+            if ($result.value) {
+                return
+            }
+            Start-Sleep -Milliseconds 200
+        } while ([DateTime]::UtcNow -lt $deadline)
+        $labels = Invoke-BrowserScript -Script @'
+return Array.from(document.querySelectorAll('[aria-label]'))
+  .map((element) => element.getAttribute('aria-label'))
+  .filter(Boolean);
+'@
+        throw (
+            "Browser did not expose accessible label '$Label'. Available: " +
+            (@($labels.value) -join ' | ')
+        )
+    }
+
+    function Invoke-BrowserLabelClick {
+        param(
+            [string]$Label,
+            [switch]$Contains
+        )
+
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            $result = Invoke-BrowserScript -Script @'
+const expected = arguments[0];
+const candidates = Array.from(document.querySelectorAll('[aria-label]'));
+const available = candidates.filter((candidate) =>
+  candidate.getAttribute('aria-disabled') !== 'true' &&
+  !candidate.hasAttribute('disabled')
+);
+const element = available.find(
+  (candidate) => {
+    const label = candidate.getAttribute('aria-label') || '';
+    return label === expected;
+  }
+) || available.find((candidate) => {
+  const label = candidate.getAttribute('aria-label') || '';
+  return label.includes(expected);
+});
+if (!element) return false;
+element.click();
+return true;
+'@ -Arguments @($Label, [bool]$Contains)
+            if ($result.value) {
+                Start-Sleep -Milliseconds 400
+                return
+            }
+            Start-Sleep -Milliseconds 200
+        } while ([DateTime]::UtcNow -lt $deadline)
+        $labels = Invoke-BrowserScript -Script @'
+return Array.from(document.querySelectorAll('[aria-label]')).map(
+  (element) => ({
+    label: element.getAttribute('aria-label'),
+    disabled: element.getAttribute('aria-disabled')
+  })
+);
+'@
+        throw (
+            "Browser could not click accessible control '$Label'. " +
+            "Available: $($labels.value | ConvertTo-Json -Compress)"
+        )
+    }
+
+    function Get-BrowserElementId {
+        param(
+            [string]$Label,
+            [switch]$Last
+        )
+
+        $result = Invoke-RestMethod `
+            -Method Post `
+            -Uri "$driverBaseUri/session/$browserSessionId/elements" `
+            -ContentType 'application/json' `
+            -Body (@{
+                using = 'xpath'
+                value = "//*[contains(@aria-label, '$Label')]"
+            } | ConvertTo-Json)
+        $elements = @($result.value)
+        $element = if ($Last) {
+            $elements | Select-Object -Last 1
+        }
+        else {
+            $elements | Select-Object -First 1
+        }
+        if (-not $element) {
+            throw "Browser did not find element '$Label'."
+        }
+        return $element.PSObject.Properties.Value | Select-Object -First 1
+    }
+
+    function Invoke-BrowserDrag {
+        param(
+            [string]$SourceLabel,
+            [string]$TargetLabel,
+            [int]$TargetYOffset = 0,
+            [switch]$SourceLast,
+            [switch]$TargetLast,
+            [switch]$UseLeadingHandle
+        )
+
+        Wait-BrowserLabel -Label $SourceLabel
+        Wait-BrowserLabel -Label $TargetLabel
+        Invoke-BrowserScript -Script @'
+for (const expected of arguments) {
+  const element = Array.from(document.querySelectorAll('[aria-label]')).find(
+    (candidate) => (candidate.getAttribute('aria-label') || '').includes(expected)
+  );
+  if (element) element.scrollIntoView({block: 'center', inline: 'center'});
+}
+return true;
+'@ -Arguments @($SourceLabel, $TargetLabel) | Out-Null
+        Start-Sleep -Milliseconds 300
+        $sourceId = Get-BrowserElementId `
+            -Label $SourceLabel `
+            -Last:$SourceLast
+        $targetId = Get-BrowserElementId `
+            -Label $TargetLabel `
+            -Last:$TargetLast
+        $elementKey = 'element-6066-11e4-a52e-4f735466cecf'
+        $sourceX = 0
+        $sourceY = 0
+        $sourceOrigin = @{ $elementKey = $sourceId }
+        if ($UseLeadingHandle) {
+            $sourceRect = Invoke-RestMethod -Uri (
+                "$driverBaseUri/session/$browserSessionId/element/" +
+                "$sourceId/rect"
+            )
+            $sourceOrigin = 'viewport'
+            $sourceX = [Math]::Round($sourceRect.value.x - 24)
+            $sourceY = [Math]::Round(
+                $sourceRect.value.y + $sourceRect.value.height / 2
+            )
+        }
+        $actions = @{
+            actions = @(
+                @{
+                    type = 'pointer'
+                    id = 'builder-mouse'
+                    parameters = @{ pointerType = 'mouse' }
+                    actions = @(
+                        @{
+                            type = 'pointerMove'
+                            duration = 0
+                            origin = $sourceOrigin
+                            x = $sourceX
+                            y = $sourceY
+                        },
+                        @{ type = 'pointerDown'; button = 0 },
+                        @{ type = 'pause'; duration = 500 },
+                        @{
+                            type = 'pointerMove'
+                            duration = 900
+                            origin = @{ $elementKey = $targetId }
+                            x = 0
+                            y = $TargetYOffset
+                        },
+                        @{ type = 'pause'; duration = 300 },
+                        @{ type = 'pointerUp'; button = 0 }
+                    )
+                }
+            )
+        } | ConvertTo-Json -Depth 10
+        Invoke-RestMethod `
+            -Method Post `
+            -Uri "$driverBaseUri/session/$browserSessionId/actions" `
+            -ContentType 'application/json' `
+            -Body $actions | Out-Null
+        Start-Sleep -Milliseconds 700
+    }
+
+    function Invoke-BrowserCoordinateClick {
+        param(
+            [int]$X,
+            [int]$Y
+        )
+
+        $actions = @{
+            actions = @(
+                @{
+                    type = 'pointer'
+                    id = 'builder-click'
+                    parameters = @{ pointerType = 'mouse' }
+                    actions = @(
+                        @{
+                            type = 'pointerMove'
+                            duration = 0
+                            origin = 'viewport'
+                            x = $X
+                            y = $Y
+                        },
+                        @{ type = 'pointerDown'; button = 0 },
+                        @{ type = 'pointerUp'; button = 0 }
+                    )
+                }
+            )
+        } | ConvertTo-Json -Depth 8
+        Invoke-RestMethod `
+            -Method Post `
+            -Uri "$driverBaseUri/session/$browserSessionId/actions" `
+            -ContentType 'application/json' `
+            -Body $actions | Out-Null
+        Start-Sleep -Milliseconds 500
+    }
+
+    function Invoke-BrowserCoordinateDrag {
+        param(
+            [int]$SourceX,
+            [int]$SourceY,
+            [int]$TargetX,
+            [int]$TargetY
+        )
+
+        $actions = @{
+            actions = @(
+                @{
+                    type = 'pointer'
+                    id = 'builder-coordinate-drag'
+                    parameters = @{ pointerType = 'mouse' }
+                    actions = @(
+                        @{
+                            type = 'pointerMove'
+                            duration = 0
+                            origin = 'viewport'
+                            x = $SourceX
+                            y = $SourceY
+                        },
+                        @{ type = 'pointerDown'; button = 0 },
+                        @{ type = 'pause'; duration = 400 },
+                        @{
+                            type = 'pointerMove'
+                            duration = 900
+                            origin = 'viewport'
+                            x = $TargetX
+                            y = $TargetY
+                        },
+                        @{ type = 'pause'; duration = 250 },
+                        @{ type = 'pointerUp'; button = 0 }
+                    )
+                }
+            )
+        } | ConvertTo-Json -Depth 8
+        Invoke-RestMethod `
+            -Method Post `
+            -Uri "$driverBaseUri/session/$browserSessionId/actions" `
+            -ContentType 'application/json' `
+            -Body $actions | Out-Null
+        Start-Sleep -Milliseconds 700
+    }
+
+    function Set-BrowserTextField {
+        param(
+            [string]$Label,
+            [string]$Text
+        )
+
+        Wait-BrowserLabel -Label $Label
+        $elementId = Get-BrowserElementId -Label $Label
+        Invoke-RestMethod `
+            -Method Post `
+            -Uri (
+                "$driverBaseUri/session/$browserSessionId/element/" +
+                "$elementId/value"
+            ) `
+            -ContentType 'application/json' `
+            -Body (@{
+                text = $Text
+                value = @($Text.ToCharArray() | ForEach-Object { "$_" })
+            } | ConvertTo-Json) | Out-Null
+        Start-Sleep -Milliseconds 300
+    }
+
+    function Scroll-BrowserCanvasToTop {
+        $actions = @{
+            actions = @(
+                @{
+                    type = 'wheel'
+                    id = 'builder-wheel'
+                    actions = @(
+                        @{
+                            type = 'scroll'
+                            duration = 500
+                            origin = 'viewport'
+                            x = 1100
+                            y = 500
+                            deltaX = 0
+                            deltaY = -2400
+                        }
+                    )
+                }
+            )
+        } | ConvertTo-Json -Depth 8
+        Invoke-RestMethod `
+            -Method Post `
+            -Uri "$driverBaseUri/session/$browserSessionId/actions" `
+            -ContentType 'application/json' `
+            -Body $actions | Out-Null
+        Start-Sleep -Milliseconds 500
+    }
+
+    function Open-BuilderRoute {
+        param(
+            [string]$Route,
+            [string]$ReadyLabel
+        )
+
+        Invoke-BrowserScript `
+            -Script 'window.location.hash = arguments[0]; return true;' `
+            -Arguments @($Route) | Out-Null
+        Start-Sleep -Milliseconds 500
+        Enable-BrowserSemantics
+        Wait-BrowserLabel -Label $ReadyLabel
+    }
+
+    function Get-EmulatorDocument {
+        param([string]$Path)
+
+        $uri = "http://127.0.0.1:8080/v1/projects/$projectId/" +
+            "databases/(default)/documents/$Path"
+        return Invoke-RestMethod `
+            -Uri $uri `
+            -Headers @{ Authorization = "Bearer $($selectedIdentity.IdToken)" }
+    }
+
+    function Wait-EmulatorDocument {
+        param(
+            [string]$Path,
+            [scriptblock]$Predicate,
+            [int]$TimeoutSeconds = 30
+        )
+
+        $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+        do {
+            try {
+                $document = Get-EmulatorDocument -Path $Path
+                if (& $Predicate $document) {
+                    return $document
+                }
+            }
+            catch {
+                if ([DateTime]::UtcNow -ge $deadline) {
+                    throw
+                }
+            }
+            Start-Sleep -Milliseconds 250
+        } while ([DateTime]::UtcNow -lt $deadline)
+        throw "Timed out waiting for Firestore document $Path."
     }
 
     $expectedWorkspace = if ($Identity -eq 'trainer') {
@@ -1245,6 +1834,323 @@ return true;
             }
             Save-BrowserScreenshot -Name $surface.Screenshot
         }
+    if ($Identity -eq 'trainer') {
+        $exerciseSourceA =
+            'Browser Trainer Exercise, draggable exercise, published version 1'
+        $exerciseSourceB =
+            'Browser Trainer Row, draggable exercise, published version 1'
+        $workoutSourceA =
+            'Browser Builder Workout, draggable workout, published version 1'
+        $workoutSourceB =
+            'Browser Completed Workout, draggable workout, published version 1'
+
+        function Assert-ExactOrder {
+            param(
+                [object[]]$Actual,
+                [string[]]$Expected,
+                [string]$Label
+            )
+
+            $actualText = @($Actual) -join '|'
+            $expectedText = @($Expected) -join '|'
+            if ($actualText -ne $expectedText) {
+                throw "$Label order was '$actualText', expected '$expectedText'."
+            }
+        }
+
+        function Save-And-PublishWorkoutBuilder {
+            param(
+                [string]$TemplateId,
+                [string]$ScreenshotName
+            )
+
+            Save-BrowserScreenshot -Name $ScreenshotName
+            Invoke-BrowserCoordinateClick -X 580 -Y 240
+            $headerPath = "workoutTemplates/$TemplateId"
+            $draft = Wait-EmulatorDocument `
+                -Path "$headerPath/builderDrafts/current" `
+                -Predicate {
+                param($document)
+                $slots = @(
+                    $document.fields.slots.arrayValue.values
+                )
+                if ($slots.Count -ne 2) {
+                    return $false
+                }
+                return $true
+            }
+            $draftSlots = @(
+                $draft.fields.slots.arrayValue.values
+            )
+            $draftOrder = @(
+                $draftSlots | ForEach-Object {
+                    $_.mapValue.fields.exerciseId.stringValue
+                }
+            )
+            Assert-ExactOrder `
+                -Actual $draftOrder `
+                -Expected @(
+                    $secondExerciseTemplateId,
+                    $exerciseTemplateId
+                ) `
+                -Label "$TemplateId draft"
+            $draftIds = @(
+                $draftSlots | ForEach-Object {
+                    $_.mapValue.fields.slotId.stringValue
+                }
+            )
+            if (($draftIds | Select-Object -Unique).Count -ne 2) {
+                throw "$TemplateId draft did not preserve unique stable IDs."
+            }
+            Start-Sleep -Seconds 1
+            Invoke-BrowserCoordinateClick -X 694 -Y 240
+            $version = Wait-EmulatorDocument `
+                -Path "$headerPath/workoutTemplateVersions/1" `
+                -Predicate {
+                    param($document)
+                    return (
+                        $document.fields.publishState.stringValue -eq
+                            'published'
+                    )
+                }
+            $publishedSlots = @($version.fields.slots.arrayValue.values)
+            $publishedOrder = @(
+                $publishedSlots | ForEach-Object {
+                    $_.mapValue.fields.exerciseId.stringValue
+                }
+            )
+            Assert-ExactOrder `
+                -Actual $publishedOrder `
+                -Expected @(
+                    $secondExerciseTemplateId,
+                    $exerciseTemplateId
+                ) `
+                -Label "$TemplateId published version"
+            $publishedVersions = @(
+                $publishedSlots | ForEach-Object {
+                    $_.mapValue.fields.exerciseVersion.integerValue
+                }
+            )
+            Assert-ExactOrder `
+                -Actual $publishedVersions `
+                -Expected @('1', '1') `
+                -Label "$TemplateId pinned versions"
+            $publishedIds = @(
+                $publishedSlots | ForEach-Object {
+                    $_.mapValue.fields.slotId.stringValue
+                }
+            )
+            Assert-ExactOrder `
+                -Actual $publishedIds `
+                -Expected $draftIds `
+                -Label "$TemplateId stable IDs"
+            $publishedHeader = Get-EmulatorDocument -Path $headerPath
+            if (
+                $publishedHeader.fields.currentVersion.integerValue -ne '1' -or
+                -not $publishedHeader.fields.builderDraft.PSObject.Properties[
+                    'nullValue'
+                ]
+            ) {
+                throw "$TemplateId did not clear its draft on publish."
+            }
+        }
+
+        function Add-ProgramPhase {
+            param([string]$Name)
+
+            Scroll-BrowserCanvasToTop
+            Invoke-BrowserLabelClick -Label 'Add phase'
+            Set-BrowserTextField -Label 'Phase name' -Text $Name
+            Invoke-BrowserLabelClick -Label 'Save'
+            Wait-BrowserLabel -Label $Name
+        }
+
+        function Add-ProgramWorkout {
+            param(
+                [string]$WorkoutName,
+                [switch]$UseDrag,
+                [string]$DropLabel
+            )
+
+            if ($UseDrag) {
+                $sourceLabel =
+                    "$WorkoutName, draggable workout, published version 1"
+                Invoke-BrowserDrag `
+                    -SourceLabel $sourceLabel `
+                    -TargetLabel $DropLabel
+            }
+            else {
+                Invoke-BrowserLabelClick `
+                    -Label "Add $WorkoutName to program"
+            }
+            Wait-BrowserLabel -Label 'OK'
+            Invoke-BrowserLabelClick -Label 'OK'
+        }
+
+        function Save-And-PublishProgramBuilder {
+            param(
+                [string]$ProgramId,
+                [string]$ScreenshotName
+            )
+
+            Save-BrowserScreenshot -Name $ScreenshotName
+            Invoke-BrowserCoordinateClick -X 1190 -Y 28
+            $headerPath = "programs/$ProgramId"
+            $draft = Wait-EmulatorDocument `
+                -Path "$headerPath/builderDrafts/current" `
+                -Predicate {
+                param($document)
+                $entries = @($document.fields.entries.arrayValue.values)
+                $phases = @($document.fields.phases.arrayValue.values)
+                return $entries.Count -eq 2 -and $phases.Count -eq 2
+            }
+            $draftEntries = @(
+                $draft.fields.entries.arrayValue.values
+            )
+            $draftEntryOrder = @(
+                $draftEntries | ForEach-Object {
+                    $_.mapValue.fields.workoutTemplateId.stringValue
+                }
+            )
+            Assert-ExactOrder `
+                -Actual $draftEntryOrder `
+                -Expected @($historyTemplateId, $builderSourceWorkoutId) `
+                -Label "$ProgramId draft"
+            $draftEntryIds = @(
+                $draftEntries | ForEach-Object {
+                    $_.mapValue.fields.entryId.stringValue
+                }
+            )
+            if (($draftEntryIds | Select-Object -Unique).Count -ne 2) {
+                throw "$ProgramId draft did not preserve unique stable IDs."
+            }
+            Start-Sleep -Seconds 1
+            Invoke-BrowserCoordinateClick -X 1380 -Y 28
+            $version = Wait-EmulatorDocument `
+                -Path "$headerPath/programVersions/1" `
+                -Predicate {
+                    param($document)
+                    return $document.fields.entries.arrayValue.values.Count -eq 2
+                }
+            $publishedEntries = @($version.fields.entries.arrayValue.values)
+            $publishedOrder = @(
+                $publishedEntries | ForEach-Object {
+                    $_.mapValue.fields.workoutTemplateId.stringValue
+                }
+            )
+            Assert-ExactOrder `
+                -Actual $publishedOrder `
+                -Expected @($historyTemplateId, $builderSourceWorkoutId) `
+                -Label "$ProgramId published version"
+            $publishedVersions = @(
+                $publishedEntries | ForEach-Object {
+                    $_.mapValue.fields.workoutTemplateVersion.integerValue
+                }
+            )
+            Assert-ExactOrder `
+                -Actual $publishedVersions `
+                -Expected @('1', '1') `
+                -Label "$ProgramId pinned versions"
+            $publishedEntryIds = @(
+                $publishedEntries | ForEach-Object {
+                    $_.mapValue.fields.entryId.stringValue
+                }
+            )
+            Assert-ExactOrder `
+                -Actual $publishedEntryIds `
+                -Expected $draftEntryIds `
+                -Label "$ProgramId stable IDs"
+            $publishedPhases = @(
+                $version.fields.phases.arrayValue.values |
+                    ForEach-Object { $_.mapValue.fields.name.stringValue }
+            )
+            Assert-ExactOrder `
+                -Actual $publishedPhases `
+                -Expected @('Peak', 'Build') `
+                -Label "$ProgramId phases"
+            $publishedHeader = Get-EmulatorDocument -Path $headerPath
+            if (
+                $publishedHeader.fields.currentVersion.integerValue -ne '1' -or
+                -not $publishedHeader.fields.builderDraft.PSObject.Properties[
+                    'nullValue'
+                ]
+            ) {
+                throw "$ProgramId did not clear its draft on publish."
+            }
+        }
+
+        Open-BuilderRoute `
+            -Route "/workouts/$dragWorkoutBuilderId" `
+            -ReadyLabel $exerciseSourceA
+        Invoke-BrowserDrag `
+            -SourceLabel $exerciseSourceA `
+            -TargetLabel 'Drop exercise at start'
+        Invoke-BrowserDrag `
+            -SourceLabel $exerciseSourceB `
+            -TargetLabel 'Drop exercise after 1'
+        Invoke-BrowserDrag `
+            -SourceLabel $exerciseSourceB `
+            -TargetLabel 'Drop exercise at start'
+        Invoke-BrowserCoordinateClick -X 1353 -Y 580
+        Save-And-PublishWorkoutBuilder `
+            -TemplateId $dragWorkoutBuilderId `
+            -ScreenshotName 'trainer-workout-builder-drag'
+
+        if ($WorkoutDragOnly) {
+            Write-Host 'BROWSER_BUILDER_ASSERTIONS_PASSED:trainer:workout-drag'
+            Write-Host "BROWSER_SMOKE_ASSERTIONS_PASSED:$Identity"
+            return
+        }
+
+        Open-BuilderRoute `
+            -Route "/workouts/$controlsWorkoutBuilderId" `
+            -ReadyLabel $exerciseSourceA
+        Invoke-BrowserLabelClick `
+            -Label 'Add Browser Trainer Exercise to workout'
+        Invoke-BrowserLabelClick `
+            -Label 'Add Browser Trainer Row to workout'
+        Invoke-BrowserLabelClick -Label 'Move block up'
+        Save-And-PublishWorkoutBuilder `
+            -TemplateId $controlsWorkoutBuilderId `
+            -ScreenshotName 'trainer-workout-builder-controls'
+
+        Open-BuilderRoute `
+            -Route "/programs/$dragProgramBuilderId" `
+            -ReadyLabel $workoutSourceA
+        Add-ProgramWorkout `
+            -WorkoutName 'Browser Builder Workout' `
+            -UseDrag `
+            -DropLabel 'Drop workout at start'
+        Add-ProgramWorkout `
+            -WorkoutName 'Browser Completed Workout' `
+            -UseDrag `
+            -DropLabel 'Drop workout after 1'
+        Add-ProgramPhase -Name 'Build'
+        Add-ProgramPhase -Name 'Peak'
+        Invoke-BrowserDrag `
+            -SourceLabel 'Draggable phase 1' `
+            -TargetLabel 'Draggable phase 2'
+        Invoke-BrowserDrag `
+            -SourceLabel 'Draggable workout 1' `
+            -TargetLabel 'Drop workout after 2'
+        Save-And-PublishProgramBuilder `
+            -ProgramId $dragProgramBuilderId `
+            -ScreenshotName 'trainer-program-builder-drag'
+
+        Open-BuilderRoute `
+            -Route "/programs/$controlsProgramBuilderId" `
+            -ReadyLabel $workoutSourceA
+        Add-ProgramWorkout -WorkoutName 'Browser Builder Workout'
+        Add-ProgramWorkout -WorkoutName 'Browser Completed Workout'
+        Invoke-BrowserLabelClick -Label 'Move workout up'
+        Add-ProgramPhase -Name 'Build'
+        Add-ProgramPhase -Name 'Peak'
+        Invoke-BrowserLabelClick -Label 'Move phase down'
+        Save-And-PublishProgramBuilder `
+            -ProgramId $controlsProgramBuilderId `
+            -ScreenshotName 'trainer-program-builder-controls'
+        Write-Host 'BROWSER_BUILDER_ASSERTIONS_PASSED:trainer'
+    }
     Write-Host "BROWSER_SMOKE_ASSERTIONS_PASSED:$Identity"
 }
 finally {

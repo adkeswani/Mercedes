@@ -71,6 +71,20 @@ Implemented in this slice:
 - Workout and program libraries render one non-duplicating shared/client
   partition, with folders nested inside each client scope. Only explicit
   header scope is used; names and assignment side effects are never inferred.
+- Desktop Workout and Program builders use a two-pane library/canvas layout.
+  Dragging copies the selected published source into a newly identified draft
+  item; source templates and subscriptions are never mutated. Compact layouts
+  retain Add and Move controls without requiring drag-and-drop.
+- The same pure mutation commands power drag/drop and accessible
+  Add/Move/Duplicate/Remove actions. Workout commands preserve typed block
+  semantics and stable block/slot IDs. Program commands preserve stable entry
+  IDs and pinned workout versions and support movable, renameable
+  organizational phase separators.
+- Both builders expose Save draft, Publish, Discard, unsaved-navigation
+  confirmation, one-step Undo, visible insertion targets and drag previews.
+  Recoverable drafts are stored in owner-only `builderDrafts/current`
+  subdocuments and deleted after publish without changing immutable historical
+  versions or exposing unpublished content through readable headers.
 - Active-relationship checks for new enrollments and workout assignments.
 - First-class athlete-owned `AthleteProgramInstance` records with pinned source
   program versions, lifecycle dates/status, and explicit `subscribed` or
@@ -204,6 +218,13 @@ relationship, an athlete program instance ending in seven days, a current
 calendar workout, a completed historical workout, and its discussion and
 reaction activity. It then runs the selected identity in Chrome's 1280x800
 desktop viewport and shuts the emulators down:
+
+The trainer smoke supports `-WorkoutDragOnly` to validate existing read
+surfaces plus native Workout drag, save, publish, and backend order/version
+assertions. Tap/Add/Move equivalence remains covered by Flutter widget tests:
+Flutter Web currently merges the library card semantics and prunes the nested
+Add control from the raw semantic DOM, so ChromeDriver cannot address that
+control reliably.
 
 | Role | Emulator email | Emulator password |
 | --- | --- | --- |

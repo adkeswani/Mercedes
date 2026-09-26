@@ -22,14 +22,19 @@ polish through `b3823fc`, and is merged to `main` and deployed. Automatic,
 cached ChromeDriver provisioning is also complete for browser and release
 validation.
 
-These foundations do not make the workflows below complete.
+Stage 5 now also contains desktop-first Workout and Program builders. Both use
+the existing filtered libraries as drag sources, keep click/keyboard Add and
+Move controls, persist recoverable private drafts on the owned template
+header, and publish only immutable versions. Workout commands preserve typed
+blocks and stable slot IDs. Program commands preserve pinned workout versions
+and stable entry IDs while adding organizational phase separators.
 
 ## Prioritized remaining work
 
 | Status | Scope | Dependencies | Acceptance summary |
 | --- | --- | --- | --- |
 | **Next** | **Trainer client workspace** | Existing relationship, instance, library, calendar, and history repositories | One client hub exposes schedule, active and past programs, independent workouts, activity, notes/forms/messages, and common actions without crossing ownership boundaries. |
-| **Next** | **Trainer create/edit/assignment workflows** | Client workspace; existing immutable versions and copy/subscription rules | Trainers can create or edit from shared/client context, assign or schedule workouts/programs, use **Add next**, resolve overlaps, copy between clients, import one workout/program into another, and promote client content to a reusable template without mutating history. Program phases and main/add-on presentation must use the existing extensible model or a documented minimal extension. |
+| **Next** | **Trainer assignment workflow refinement** | Client workspace; completed builders; existing immutable versions and copy/subscription rules | Trainers can assign or schedule from client context, use **Add next**, resolve overlaps, copy between clients, import one workout/program into another, and promote client content to a reusable template without mutating history. Program main/add-on presentation must use the existing extensible model or a documented minimal extension. |
 | **Next** | **Athlete Today and workout completion refinement** | Existing workout detail, typed slots, transactional completion, notes/discussions | Today clearly groups the next work by program; athletes can review media/instructions, record all supported actuals, RPE and duration, resume safely, validate, submit, and review completion. Timers and climbing-grade/color controls need production-ready authoring and completion UX. |
 | **Next** | **Workout-history cursor pagination** | Existing `(athleteId, scheduledDate)` query/index | History loads bounded pages with stable cursors, retry/empty/error behavior, no duplicates or gaps, and immutable detail access across page boundaries. |
 | **Next** | **Mutation-focused browser E2E** | Stable workflows above; existing emulator fixtures and automatic ChromeDriver | Cover create/edit, client scope, assignment, subscription propagation, completion, comment/reaction writes, relationship ending, immutable-history rejection, and cross-owner/athlete permission denial. Preserve deterministic screenshots and failure artifacts. |

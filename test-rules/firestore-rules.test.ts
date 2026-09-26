@@ -770,6 +770,44 @@ describe('workoutTemplates', () => {
     }));
   });
 
+  it('allows only the owner to persist a recoverable workout builder draft', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutTemplates').doc('draftable').set({
+        name: 'Draftable',
+        ownerId: OWNER,
+        createdBy: OWNER,
+        updatedBy: OWNER,
+        currentVersion: 0,
+        tags: [],
+        folderId: null,
+        provenance: null,
+      });
+    });
+    const draft = {
+      ownerId: OWNER,
+      storageFormat: 'typedWorkoutBlocksV1',
+      blocks: [],
+      slots: [],
+      savedAt: serverTimestamp(),
+    };
+    const ownerHeader = testEnv.authenticatedContext(OWNER).firestore()
+      .collection('workoutTemplates').doc('draftable');
+    const owner = ownerHeader.collection('builderDrafts').doc('current');
+    const stranger = testEnv.authenticatedContext(STRANGER).firestore()
+      .collection('workoutTemplates').doc('draftable')
+      .collection('builderDrafts').doc('current');
+
+    await assertFails(ownerHeader.update({
+      builderDraft: draft,
+      updatedBy: OWNER,
+    }));
+    await assertSucceeds(owner.set(draft));
+    await assertSucceeds(owner.get());
+    await assertFails(stranger.get());
+    await assertFails(stranger.set({ ...draft, ownerId: STRANGER }));
+    await assertSucceeds(owner.delete());
+  });
+
   it('allows reading workout template versions by any signed-in user', async () => {
     await seedActiveRelationship();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -787,6 +825,24 @@ describe('workoutTemplates', () => {
       db.collection('workoutTemplates').doc('w1')
         .collection('workoutTemplateVersions').doc('1').get()
     );
+  });
+
+  it('allows the owner to check for a missing workout version before publishing', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutTemplates').doc('new-version').set({
+        name: 'New Version',
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+        clientAthleteId: null,
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const snapshot = await assertSucceeds(
+      db.collection('workoutTemplates').doc('new-version')
+        .collection('workoutTemplateVersions').doc('1').get()
+    );
+    expect(snapshot.exists).toBe(false);
   });
 
   it('allows the owner to atomically publish a pinned workout version', async () => {
@@ -1758,6 +1814,9 @@ describe('programs', () => {
       versionNumber: 1,
       publishedAt: serverTimestamp(),
       entries: [],
+      phases: [
+        { phaseId: 'base', name: 'Base', sortOrder: 0 },
+      ],
       changeNote: null,
       propagationState: 'pending',
       propagationRequestedAt: serverTimestamp(),
@@ -1774,6 +1833,55 @@ describe('programs', () => {
     await assertSucceeds(batch.commit());
     await assertFails(version.update({ changeNote: 'rewritten' }));
     await assertFails(version.delete());
+  });
+
+  it('allows only the owner to persist and discard a program builder draft', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('programs').doc('builder-draft').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        updatedBy: OWNER,
+        currentVersion: 0,
+        tags: [],
+        folderId: null,
+        provenance: null,
+      });
+      await ctx.firestore().collection('enrollments')
+        .doc(`builder-draft_${ATHLETE}`).set({
+          programId: 'builder-draft',
+          athleteId: ATHLETE,
+          addedBy: OWNER,
+          status: 'active',
+        });
+    });
+    const ownerHeader = testEnv.authenticatedContext(OWNER).firestore()
+      .collection('programs').doc('builder-draft');
+    const owner = ownerHeader.collection('builderDrafts').doc('current');
+    const stranger = testEnv.authenticatedContext(STRANGER).firestore()
+      .collection('programs').doc('builder-draft')
+      .collection('builderDrafts').doc('current');
+    const athleteHeader = testEnv.authenticatedContext(ATHLETE).firestore()
+      .collection('programs').doc('builder-draft');
+    const athleteDraft = athleteHeader
+      .collection('builderDrafts').doc('current');
+    const builderDraft = {
+      ownerId: OWNER,
+      entries: [],
+      phases: [{ phaseId: 'base', name: 'Base', sortOrder: 0 }],
+      savedAt: serverTimestamp(),
+    };
+
+    await assertFails(ownerHeader.update({
+      builderDraft,
+      updatedBy: OWNER,
+    }));
+    await assertSucceeds(owner.set(builderDraft));
+    await assertSucceeds(owner.get());
+    await assertSucceeds(athleteHeader.get());
+    await assertFails(athleteDraft.get());
+    await assertFails(stranger.get());
+    await assertFails(stranger.set({ ...builderDraft, ownerId: STRANGER }));
+    await assertSucceeds(owner.delete());
   });
 
   it('denies client-forged completed propagation state', async () => {

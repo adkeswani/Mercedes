@@ -199,6 +199,7 @@ class ProgramVersion {
     required this.versionNumber,
     required this.publishedAt,
     required this.entries,
+    this.phases = const [],
     this.changeNote,
     this.propagationState = ProgramPropagationState.complete,
     this.propagationAttempt = 0,
@@ -210,6 +211,7 @@ class ProgramVersion {
   final int versionNumber;
   final DateTime publishedAt;
   final List<ProgramScheduleEntry> entries;
+  final List<ProgramPhase> phases;
   final String? changeNote;
   final ProgramPropagationState propagationState;
   final int propagationAttempt;
@@ -243,6 +245,9 @@ class ProgramVersion {
     for (final entry in entries) {
       entry.validate();
     }
+    for (final phase in phases) {
+      phase.validate();
+    }
 
     // Validate sort order uniqueness
     final sorts = entries.map((e) => e.sortOrder).toSet();
@@ -257,10 +262,66 @@ class ProgramVersion {
         'Schedule entry IDs must be unique within a program version',
       );
     }
+    final phaseIds = phases.map((phase) => phase.phaseId).toSet();
+    if (phaseIds.length != phases.length) {
+      throw ArgumentError('Phase IDs must be unique within a program version');
+    }
+    final phaseSorts = phases.map((phase) => phase.sortOrder).toSet();
+    if (phaseSorts.length != phases.length) {
+      throw ArgumentError(
+        'Phase sortOrder values must be unique within a program version',
+      );
+    }
+    for (var index = 0; index < phases.length; index++) {
+      if (!phaseSorts.contains(index)) {
+        throw ArgumentError('Phase sortOrder values must be contiguous from 0');
+      }
+    }
+    for (final entry in entries) {
+      if (entry.phaseId != null && !phaseIds.contains(entry.phaseId)) {
+        throw ArgumentError(
+          'Schedule entry ${entry.resolvedEntryId} references an unknown phase',
+        );
+      }
+    }
   }
 }
 
 String legacyProgramScheduleEntryId(int sortOrder) => 'legacy-$sortOrder';
+
+class ProgramPhase {
+  const ProgramPhase({
+    required this.phaseId,
+    required this.name,
+    required this.sortOrder,
+  });
+
+  final String phaseId;
+  final String name;
+  final int sortOrder;
+
+  ProgramPhase copyWith({String? phaseId, String? name, int? sortOrder}) {
+    return ProgramPhase(
+      phaseId: phaseId ?? this.phaseId,
+      name: name ?? this.name,
+      sortOrder: sortOrder ?? this.sortOrder,
+    );
+  }
+
+  void validate() {
+    if (phaseId.isEmpty || phaseId.contains('/') || phaseId.length > 200) {
+      throw ArgumentError(
+        'phaseId must be 1-200 characters and cannot contain "/"',
+      );
+    }
+    if (name.trim().isEmpty) {
+      throw ArgumentError('Phase name cannot be empty');
+    }
+    if (sortOrder < 0) {
+      throw ArgumentError('Phase sortOrder must be >= 0');
+    }
+  }
+}
 
 /// A single scheduled workout within a program version.
 ///
@@ -280,6 +341,7 @@ class ProgramScheduleEntry {
     required this.dayOffset,
     required this.sortOrder,
     this.workoutName,
+    this.phaseId,
   });
   final String? entryId;
   final String workoutTemplateId;
@@ -291,6 +353,7 @@ class ProgramScheduleEntry {
   /// Stable ordering key, unique within a program version.
   final int sortOrder;
   final String? workoutName;
+  final String? phaseId;
 
   /// Stable identity across program versions.
   ///
@@ -307,6 +370,8 @@ class ProgramScheduleEntry {
     int? dayOffset,
     int? sortOrder,
     String? workoutName,
+    String? phaseId,
+    bool clearPhase = false,
   }) {
     return ProgramScheduleEntry(
       entryId: entryId ?? this.entryId,
@@ -316,6 +381,7 @@ class ProgramScheduleEntry {
       dayOffset: dayOffset ?? this.dayOffset,
       sortOrder: sortOrder ?? this.sortOrder,
       workoutName: workoutName ?? this.workoutName,
+      phaseId: clearPhase ? null : phaseId ?? this.phaseId,
     );
   }
 
@@ -339,6 +405,12 @@ class ProgramScheduleEntry {
     }
     if (sortOrder < 0) {
       throw ArgumentError('sortOrder must be >= 0');
+    }
+    if (phaseId != null &&
+        (phaseId!.isEmpty || phaseId!.contains('/') || phaseId!.length > 200)) {
+      throw ArgumentError(
+        'phaseId must be 1-200 characters and cannot contain "/"',
+      );
     }
   }
 }

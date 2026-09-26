@@ -491,6 +491,106 @@ void main() {
       );
     });
 
+    test('save draft recovers typed blocks and publish clears it', () async {
+      final id = await repo.create(
+        name: 'Recoverable Builder',
+        workoutType: WorkoutType.fullBody,
+        userId: 'user1',
+      );
+      final blocks = [
+        CircuitBlock(
+          blockId: 'circuit',
+          sortOrder: 0,
+          slots: [
+            ExerciseSlot(
+              slotId: 'slot-a',
+              exerciseId: 'ex1',
+              exerciseVersion: 4,
+              sortOrder: 0,
+              mode: ExerciseMode.reps,
+            ),
+            ExerciseSlot(
+              slotId: 'slot-b',
+              exerciseId: 'ex2',
+              exerciseVersion: 1,
+              sortOrder: 1,
+              mode: ExerciseMode.reps,
+            ),
+          ],
+          rounds: 3,
+        ),
+      ];
+
+      await repo.saveDraft(templateId: id, blocks: blocks, userId: 'user1');
+      final header =
+          await fakeFirestore.collection('workoutTemplates').doc(id).get();
+      final privateDraft = await header.reference
+          .collection('builderDrafts')
+          .doc('current')
+          .get();
+      expect(header.data()!['builderDraft'], isNull);
+      expect(privateDraft.data()!['ownerId'], 'user1');
+      final recovered = await repo.getSavedDraft(id);
+      expect(recovered, hasLength(1));
+      expect(recovered!.single, isA<CircuitBlock>());
+      expect(recovered.single.slots.map((slot) => slot.slotId), [
+        'slot-a',
+        'slot-b',
+      ]);
+
+      await repo.publishVersion(
+        templateId: id,
+        blocks: recovered,
+        userId: 'user1',
+      );
+      expect(await repo.getSavedDraft(id), isNull);
+      expect(
+        (await privateDraft.reference.get()).exists,
+        isFalse,
+      );
+      expect(
+        (await fakeFirestore.collection('workoutTemplates').doc(id).get())
+            .data()!['currentVersion'],
+        1,
+      );
+    });
+
+    test('save and discard draft enforce ownership', () async {
+      final id = await repo.create(
+        name: 'Owned Draft',
+        workoutType: WorkoutType.fullBody,
+        userId: 'user1',
+      );
+      final blocks = [
+        StandardExerciseBlock(
+          blockId: 'block',
+          sortOrder: 0,
+          exercise: ExerciseSlot(
+            slotId: 'slot',
+            exerciseId: 'ex1',
+            sortOrder: 0,
+            mode: ExerciseMode.reps,
+          ),
+        ),
+      ];
+
+      expect(
+        () => repo.saveDraft(
+          templateId: id,
+          blocks: blocks,
+          userId: 'intruder',
+        ),
+        throwsStateError,
+      );
+      await repo.saveDraft(templateId: id, blocks: blocks, userId: 'user1');
+      expect(
+        () => repo.discardDraft(templateId: id, userId: 'intruder'),
+        throwsStateError,
+      );
+      await repo.discardDraft(templateId: id, userId: 'user1');
+      expect(await repo.getSavedDraft(id), isNull);
+    });
+
     test('replaces an owned stale draft before publishing', () async {
       final id = await repo.create(
         name: 'Replace Draft',

@@ -223,6 +223,61 @@ class WorkoutTemplateRepository {
   /// Generates an opaque Firestore-safe ID for a new workout block.
   String generateWorkoutBlockId() => _collection.doc().id;
 
+  Future<void> saveDraft({
+    required String templateId,
+    required List<WorkoutBlock> blocks,
+    required String userId,
+  }) async {
+    final typedBlocks = _canonicalBlocks(blocks);
+    final version = WorkoutTemplateVersion(
+      versionNumber: 1,
+      publishedAt: DateTime.now(),
+      blocks: typedBlocks,
+    );
+    version.validate();
+    await _verifyOwnership(templateId, userId);
+    await _verifyExerciseReferences(version.exerciseSlots, userId);
+    final headerRef = _collection.doc(templateId);
+    final batch = _firestore.batch();
+    batch.set(headerRef.collection('builderDrafts').doc('current'), {
+      ..._builderDraftToMap(typedBlocks),
+      'ownerId': userId,
+    });
+    batch.update(headerRef, {
+      'builderDraft': null,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': userId,
+    });
+    await batch.commit();
+  }
+
+  Future<List<WorkoutBlock>?> getSavedDraft(String templateId) async {
+    final header = await _collection.doc(templateId).get();
+    if (!header.exists || header.data() == null) return null;
+    final draft =
+        await header.reference.collection('builderDrafts').doc('current').get();
+    final raw = draft.data() ?? header.data()!['builderDraft'];
+    if (raw is! Map) return null;
+    final data = Map<String, dynamic>.from(raw);
+    return _blocksForVersion(header.reference, data);
+  }
+
+  Future<void> discardDraft({
+    required String templateId,
+    required String userId,
+  }) async {
+    await _verifyOwnership(templateId, userId);
+    final headerRef = _collection.doc(templateId);
+    final batch = _firestore.batch();
+    batch.delete(headerRef.collection('builderDrafts').doc('current'));
+    batch.update(headerRef, {
+      'builderDraft': null,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': userId,
+    });
+    await batch.commit();
+  }
+
   /// Publishes a new immutable version of the workout template.
   ///
   /// The complete manifest and immutable children are first committed as a
@@ -252,6 +307,8 @@ class WorkoutTemplateRepository {
     await _verifyOwnership(templateId, userId);
     await _verifyExerciseReferences(version.exerciseSlots, userId);
     final headerRef = _collection.doc(templateId);
+    final builderDraftRef =
+        headerRef.collection('builderDrafts').doc('current');
     final headerSnap = await headerRef.get();
     if (!headerSnap.exists || headerSnap.data() == null) {
       throw StateError('Workout template $templateId not found');
@@ -357,9 +414,11 @@ class WorkoutTemplateRepository {
         throw StateError('Workout template was published concurrently');
       }
       transaction.update(versionRef, {'publishState': 'published'});
+      transaction.delete(builderDraftRef);
       transaction.update(headerRef, {
         'currentVersion': nextVersion,
         'ownerId': userId,
+        'builderDraft': null,
         'updatedAt': Timestamp.fromDate(now),
         'updatedBy': userId,
       });
@@ -746,7 +805,34 @@ class WorkoutTemplateRepository {
           'targetAttempts': block.targetAttempts,
         });
     }
+
     return map;
+  }
+
+  Map<String, dynamic> _builderDraftToMap(List<WorkoutBlock> blocks) {
+    final blockMaps = <Map<String, dynamic>>[];
+    final slotMaps = <Map<String, dynamic>>[];
+    var slotOrder = 0;
+    for (final block in blocks) {
+      blockMaps.add(_blockToMap(block, slotStartOrder: slotOrder));
+      for (final slot in block.slots) {
+        slotMaps.add(
+          _slotToMap(
+            slot,
+            blockId: block.blockId,
+            blockSortOrder: block.sortOrder,
+            slotOrder: slotOrder,
+          ),
+        );
+        slotOrder++;
+      }
+    }
+    return {
+      'storageFormat': 'typedWorkoutBlocksV1',
+      'blocks': blockMaps,
+      'slots': slotMaps,
+      'savedAt': Timestamp.now(),
+    };
   }
 
   List<WorkoutBlock> _canonicalBlocks(List<WorkoutBlock> blocks) {

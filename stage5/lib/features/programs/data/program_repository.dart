@@ -229,6 +229,7 @@ class ProgramRepository {
     required String programId,
     required List<ProgramScheduleEntry> entries,
     required String userId,
+    List<ProgramPhase> phases = const [],
     String? changeNote,
   }) async {
     await verifyOwnership(programId, userId);
@@ -236,12 +237,15 @@ class ProgramRepository {
       versionNumber: 1,
       publishedAt: DateTime.now(),
       entries: entries,
+      phases: phases,
       changeNote: changeNote,
     );
     version.validate();
-    await _verifyScheduleEntries(entries, userId);
+    await _verifyScheduleEntries(programId, entries, userId);
     return _firestore.runTransaction<int>((txn) async {
       final headerRef = _collection.doc(programId);
+      final builderDraftRef =
+          headerRef.collection('builderDrafts').doc('current');
       final headerSnap = await txn.get(headerRef);
 
       if (!headerSnap.exists) {
@@ -263,6 +267,7 @@ class ProgramRepository {
         'versionNumber': nextVersion,
         'publishedAt': Timestamp.fromDate(now),
         'entries': entries.map(_entryToMap).toList(),
+        'phases': phases.map(_phaseToMap).toList(),
         'changeNote': changeNote,
         'propagationState': ProgramPropagationState.pending.name,
         'propagationRequestedAt': Timestamp.fromDate(now),
@@ -273,15 +278,86 @@ class ProgramRepository {
         'propagationError': null,
       });
 
+      txn.delete(builderDraftRef);
       txn.update(headerRef, {
         'currentVersion': nextVersion,
         'status': ProgramStatus.published.name,
+        'builderDraft': null,
         'updatedAt': Timestamp.fromDate(now),
         'updatedBy': userId,
       });
 
       return nextVersion;
     });
+  }
+
+  Future<void> saveDraft({
+    required String programId,
+    required List<ProgramScheduleEntry> entries,
+    required List<ProgramPhase> phases,
+    required String userId,
+  }) async {
+    await verifyOwnership(programId, userId);
+    final draft = ProgramVersion(
+      versionNumber: 1,
+      publishedAt: DateTime.now(),
+      entries: entries,
+      phases: phases,
+    );
+    draft.validate();
+    await _verifyScheduleEntries(programId, entries, userId);
+    final headerRef = _collection.doc(programId);
+    final batch = _firestore.batch();
+    batch.set(headerRef.collection('builderDrafts').doc('current'), {
+      'ownerId': userId,
+      'entries': entries.map(_entryToMap).toList(),
+      'phases': phases.map(_phaseToMap).toList(),
+      'savedAt': Timestamp.now(),
+    });
+    batch.update(headerRef, {
+      'builderDraft': null,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': userId,
+    });
+    await batch.commit();
+  }
+
+  Future<ProgramVersion?> getSavedDraft(String programId) async {
+    final doc = await _collection.doc(programId).get();
+    if (!doc.exists || doc.data() == null) return null;
+    final draft =
+        await doc.reference.collection('builderDrafts').doc('current').get();
+    final raw = draft.data() ?? doc.data()!['builderDraft'];
+    if (raw is! Map) return null;
+    final data = Map<String, dynamic>.from(raw);
+    final entries = ((data['entries'] as List<dynamic>?) ?? const [])
+        .map((entry) => _entryFromMap(Map<String, dynamic>.from(entry as Map)))
+        .toList();
+    final phases = ((data['phases'] as List<dynamic>?) ?? const [])
+        .map((phase) => _phaseFromMap(Map<String, dynamic>.from(phase as Map)))
+        .toList();
+    return ProgramVersion(
+      versionNumber: 1,
+      publishedAt: _toDateTime(data['savedAt']),
+      entries: entries,
+      phases: phases,
+    );
+  }
+
+  Future<void> discardDraft({
+    required String programId,
+    required String userId,
+  }) async {
+    await verifyOwnership(programId, userId);
+    final headerRef = _collection.doc(programId);
+    final batch = _firestore.batch();
+    batch.delete(headerRef.collection('builderDrafts').doc('current'));
+    batch.update(headerRef, {
+      'builderDraft': null,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': userId,
+    });
+    await batch.commit();
   }
 
   /// Returns a specific version of the program, or null.
@@ -404,6 +480,9 @@ class ProgramRepository {
       entries: entryList
           .map((e) => _entryFromMap(e as Map<String, dynamic>))
           .toList(),
+      phases: ((data['phases'] as List<dynamic>?) ?? const [])
+          .map((e) => _phaseFromMap(Map<String, dynamic>.from(e as Map)))
+          .toList(),
       changeNote: data['changeNote'] as String?,
       propagationState: _parsePropagationState(
         data['propagationState'] as String?,
@@ -430,6 +509,7 @@ class ProgramRepository {
       dayOffset: (data['dayOffset'] as int?) ?? 0,
       sortOrder: (data['sortOrder'] as int?) ?? 0,
       workoutName: data['workoutName'] as String?,
+      phaseId: data['phaseId'] as String?,
     );
   }
 
@@ -441,13 +521,43 @@ class ProgramRepository {
       'dayOffset': entry.dayOffset,
       'sortOrder': entry.sortOrder,
       'workoutName': entry.workoutName,
+      'phaseId': entry.phaseId,
+    };
+  }
+
+  ProgramPhase _phaseFromMap(Map<String, dynamic> data) {
+    return ProgramPhase(
+      phaseId: data['phaseId'] as String? ?? '',
+      name: data['name'] as String? ?? '',
+      sortOrder: data['sortOrder'] as int? ?? 0,
+    );
+  }
+
+  Map<String, dynamic> _phaseToMap(ProgramPhase phase) {
+    return {
+      'phaseId': phase.phaseId,
+      'name': phase.name,
+      'sortOrder': phase.sortOrder,
     };
   }
 
   Future<void> _verifyScheduleEntries(
+    String programId,
     List<ProgramScheduleEntry> entries,
     String userId,
   ) async {
+    final program = await _collection.doc(programId).get();
+    if (!program.exists || program.data() == null) {
+      throw StateError('Program $programId not found');
+    }
+    final clientAthleteId = program.data()!['clientAthleteId'] as String?;
+    if (clientAthleteId != null) {
+      await verifyActiveClientScope(
+        firestore: _firestore,
+        trainerId: userId,
+        clientAthleteId: clientAthleteId,
+      );
+    }
     final references = <({String templateId, int version})>{};
     for (final entry in entries) {
       entry.validate();
@@ -462,10 +572,18 @@ class ProgramRepository {
       final header = await headerRef.get();
       final ownerId = header.data()?['ownerId'] as String? ??
           header.data()?['createdBy'] as String?;
+      final workoutClientAthleteId =
+          header.data()?['clientAthleteId'] as String?;
       if (!header.exists || ownerId != userId) {
         throw StateError(
           'User $userId is not the owner of workout '
           '${reference.templateId}',
+        );
+      }
+      if (workoutClientAthleteId != null &&
+          workoutClientAthleteId != clientAthleteId) {
+        throw StateError(
+          'Workout ${reference.templateId} is scoped to a different client',
         );
       }
       final version = await headerRef

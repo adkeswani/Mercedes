@@ -741,6 +741,98 @@ void main() {
       expect(version.entries[1].dayOffset, 7);
       expect(version.durationDays, 8);
     });
+
+    test('save draft recovers phases and publish clears the draft', () async {
+      final id = await repo.create(
+        name: 'Phased',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+      const phases = [
+        ProgramPhase(phaseId: 'base', name: 'Base', sortOrder: 0),
+      ];
+      final entries = [
+        ProgramScheduleEntry(
+          entryId: 'entry-a',
+          workoutTemplateId: 'wt1',
+          workoutTemplateVersion: 2,
+          dayOffset: 0,
+          sortOrder: 0,
+          workoutName: 'Workout',
+          phaseId: 'base',
+        ),
+      ];
+
+      await repo.saveDraft(
+        programId: id,
+        entries: entries,
+        phases: phases,
+        userId: 'coach1',
+      );
+      final header = await fakeFirestore.collection('programs').doc(id).get();
+      final privateDraft = await header.reference
+          .collection('builderDrafts')
+          .doc('current')
+          .get();
+      expect(header.data()!['builderDraft'], isNull);
+      expect(privateDraft.data()!['ownerId'], 'coach1');
+      final recovered = await repo.getSavedDraft(id);
+      expect(recovered!.phases.single.phaseId, 'base');
+      expect(recovered.entries.single.entryId, 'entry-a');
+      expect(recovered.entries.single.workoutTemplateVersion, 2);
+
+      await repo.publishVersion(
+        programId: id,
+        entries: entries,
+        phases: phases,
+        userId: 'coach1',
+      );
+      expect(await repo.getSavedDraft(id), isNull);
+      expect((await privateDraft.reference.get()).exists, isFalse);
+      final published = await repo.getVersion(id, 1);
+      expect(published!.phases.single.name, 'Base');
+      expect(published.entries.single.phaseId, 'base');
+    });
+
+    test('client program rejects workout scoped to another client', () async {
+      for (final athleteId in ['athlete1', 'athlete2']) {
+        await fakeFirestore
+            .collection('trainerClientRelationships')
+            .doc('coach1_$athleteId')
+            .set({
+          'trainerId': 'coach1',
+          'athleteId': athleteId,
+          'status': 'active',
+          'deletedAt': null,
+        });
+      }
+      await fakeFirestore.collection('workoutTemplates').doc('wt2').update({
+        'clientAthleteId': 'athlete2',
+      });
+      final id = await repo.create(
+        name: 'Athlete One',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+        clientAthleteId: 'athlete1',
+      );
+
+      expect(
+        () => repo.saveDraft(
+          programId: id,
+          entries: [
+            ProgramScheduleEntry(
+              workoutTemplateId: 'wt2',
+              workoutTemplateVersion: 1,
+              dayOffset: 0,
+              sortOrder: 0,
+            ),
+          ],
+          phases: const [],
+          userId: 'coach1',
+        ),
+        throwsStateError,
+      );
+    });
   });
 
   group('Program.copyWith', () {

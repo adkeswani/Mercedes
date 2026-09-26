@@ -62,7 +62,8 @@ service cloud.firestore {
 
     function hasValidProgramPropagationRequest(data) {
       return data.keys().hasOnly([
-               'versionNumber', 'publishedAt', 'entries', 'changeNote',
+               'versionNumber', 'publishedAt', 'entries', 'phases',
+               'changeNote',
                'propagationState', 'propagationRequestedAt',
                'propagationAttempt', 'propagationStartedAt',
                'propagationCompletedAt', 'propagationFailedAt',
@@ -1305,6 +1306,8 @@ service cloud.firestore {
                       && hasValidLibraryMetadata(
                            request.resource.data, 'workout'
                          )
+                      && (!('builderDraft' in request.resource.data)
+                          || request.resource.data.builderDraft == null)
                       && (!('provenance' in request.resource.data)
                           || request.resource.data.provenance == null
                           || (request.resource.data.provenance.copiedBy
@@ -1320,22 +1323,48 @@ service cloud.firestore {
                     && hasValidLibraryMetadataUpdate(
                          request.resource.data, 'workout'
                        )
+                    && (!('builderDraft' in request.resource.data)
+                        || request.resource.data.builderDraft == null)
                     && (templateVersion(request.resource.data)
                           == templateVersion(resource.data)
                         || publishesNextWorkoutVersion(templateId));
       allow delete: if false;
 
+      match /builderDrafts/{draftId} {
+        allow read: if isSignedIn()
+                    && draftId == 'current'
+                    && get(
+                         /databases/$(database)/documents/workoutTemplates/$(templateId)
+                       ).data.ownerId == request.auth.uid;
+        allow create, update: if isSignedIn()
+                              && draftId == 'current'
+                              && get(
+                                   /databases/$(database)/documents/workoutTemplates/$(templateId)
+                                 ).data.ownerId == request.auth.uid
+                              && request.resource.data.ownerId
+                                 == request.auth.uid;
+        allow delete: if isSignedIn()
+                      && draftId == 'current'
+                      && get(
+                           /databases/$(database)/documents/workoutTemplates/$(templateId)
+                         ).data.ownerId == request.auth.uid;
+      }
+
       // Workout template versions (subcollection)
       match /workoutTemplateVersions/{versionNumber} {
         allow read: if isSignedIn()
-                    && canReadClientScopedTemplate(
-                         get(
-                           /databases/$(database)/documents/workoutTemplates/$(templateId)
-                         ).data
-                       )
-                    && (!('publishState' in resource.data)
-                        || resource.data.publishState == 'published'
-                        || resource.data.ownerId == request.auth.uid);
+                    && (!exists(
+                          /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+                        )
+                      ? true
+                      : canReadClientScopedTemplate(
+                          get(
+                            /databases/$(database)/documents/workoutTemplates/$(templateId)
+                          ).data
+                        )
+                        && (!('publishState' in resource.data)
+                            || resource.data.publishState == 'published'
+                            || resource.data.ownerId == request.auth.uid));
         allow create: if isSignedIn()
                        && templateOwner(
                            get(/databases/$(database)/documents/workoutTemplates/$(templateId)).data)
@@ -1600,6 +1629,8 @@ service cloud.firestore {
                       && hasValidLibraryMetadata(
                            request.resource.data, 'program'
                          )
+                      && (!('builderDraft' in request.resource.data)
+                          || request.resource.data.builderDraft == null)
                       && (!('provenance' in request.resource.data)
                           || request.resource.data.provenance == null
                           || (request.resource.data.provenance.copiedBy
@@ -1616,10 +1647,32 @@ service cloud.firestore {
                     && hasValidLibraryMetadataUpdate(
                          request.resource.data, 'program'
                        )
+                    && (!('builderDraft' in request.resource.data)
+                        || request.resource.data.builderDraft == null)
                     && (templateVersion(request.resource.data)
                           == templateVersion(resource.data)
                         || publishesNextProgramVersion(programId));
       allow delete: if false;
+
+      match /builderDrafts/{draftId} {
+        allow read: if isSignedIn()
+                    && draftId == 'current'
+                    && get(
+                         /databases/$(database)/documents/programs/$(programId)
+                       ).data.ownerId == request.auth.uid;
+        allow create, update: if isSignedIn()
+                              && draftId == 'current'
+                              && get(
+                                   /databases/$(database)/documents/programs/$(programId)
+                                 ).data.ownerId == request.auth.uid
+                              && request.resource.data.ownerId
+                                 == request.auth.uid;
+        allow delete: if isSignedIn()
+                      && draftId == 'current'
+                      && get(
+                           /databases/$(database)/documents/programs/$(programId)
+                         ).data.ownerId == request.auth.uid;
+      }
 
       // Program versions (subcollection)
       match /programVersions/{versionNumber} {

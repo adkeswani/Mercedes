@@ -102,6 +102,13 @@ workoutTemplates/{workoutTemplateId}
   createdAt: timestamp
   updatedAt: timestamp
 
+  builderDrafts/current                    # owner-only recoverable typed blocks
+    ownerId: string
+    storageFormat: "typedWorkoutBlocksV1"
+    blocks: map[]
+    slots: map[]
+    savedAt: timestamp
+
   workoutTemplateVersions/{versionNumber}   # sub-collection
     versionNumber: int
     publishedAt: timestamp
@@ -150,21 +157,38 @@ programs/{programId}
   createdAt: timestamp
   updatedAt: timestamp
 
+  builderDrafts/current                    # owner-only recoverable entries/phases
+    ownerId: string
+    entries: map[]
+    phases: map[]
+    savedAt: timestamp
+
   programVersions/{versionNumber}           # immutable structure snapshot
     versionNumber: int
     publishedAt: timestamp
-    workouts: [
+    entries: [
       {
+        entryId: string
         workoutTemplateId: string
         workoutTemplateVersion: int
+        dayOffset: int
         sortOrder: int
         workoutName: string?              # denormalized at publish time
+        phaseId: string?
       }
+    ]
+    phases: [
+      { phaseId: string, name: string, sortOrder: int }
     ]
     changeNote: string?                     # owner's description of what changed
 ```
 
-There is no `programWorkouts` sub-collection. The owner edits workout list/order in a **local draft state** (Riverpod, not persisted to Firestore). On publish, the snapshot goes directly into `programVersions/{n}`. The latest published version is the source of truth for the current program structure.
+There is no `programWorkouts` sub-collection. The owner edits entries and
+organizational phases through a centralized Riverpod command model. Explicit
+**Save draft** writes an owner-only recoverable `builderDrafts/current`
+subdocument; publish creates the next immutable `programVersions/{n}` snapshot
+and deletes that draft. The latest published version remains the source of
+truth for assigned or subscribed program structure.
 
 Trainer library grouping is virtual and non-mutating beyond the stable header
 metadata. Shared and client-scoped workout/program items form top-level
