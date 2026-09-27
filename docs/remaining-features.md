@@ -22,6 +22,14 @@ polish through `b3823fc`, and is merged to `main` and deployed. Automatic,
 cached ChromeDriver provisioning is also complete for browser and release
 validation.
 
+Stage 5 also supports browsing a public YouTube channel from Exercise
+create/edit by channel ID, `@handle`, channel URL, or resolvable legacy custom
+URL. Trainers can page through public uploads, search and sort the loaded
+catalogue, then drag or explicitly attach one video. The canonical URL and
+display-only source metadata are published in the next immutable exercise
+version. This flow is intentionally independent of Firebase/Google identity
+and cannot access private or unlisted videos.
+
 These foundations do not make the workflows below complete.
 
 ## Prioritized remaining work
@@ -39,7 +47,8 @@ These foundations do not make the workflows below complete.
 | **Planned** | **Mobile-specific UX** | Stable desktop workflows and a role/device capability matrix | Add phone-sized navigation and browser coverage, fast workout viewing/completion, lightweight exercise/workout creation and editing while coaching, media capture/linking, and permitted athlete adjustments. Device size must not change authorization. |
 | **Planned** | **Goals/to-do calendar integration** | Athlete calendar aggregation and owner-visibility policy | Athletes can create, edit, complete, and delete private goals; optional due dates appear beside workouts, overdue goals are clear, and any trainer-visible program goal requires explicit athlete consent. |
 | **Planned** | **Account privacy and portability** | Retention policy; relationship/history ownership decisions; retryable server orchestration | Add **Delete My Account** with explicit confirmation and disclosure, deterministic relationship detachment, deletion/anonymization of owned personal data, and documented retention of anonymized historical records. Export behavior must cover training data now and communication data when messaging ships. |
-| **Planned** | **YouTube account and bulk exercise import** | YouTube authorization/API choice; import job state; quota/error handling | Connect a YouTube account, list and preview its videos in bulk, select one or many, import metadata, review duplicates, correct names/types, add tags, and attach/import selected videos into exercise content. This must be a real account/library workflow, not merely pasting individual YouTube URLs. |
+| **Complete** | **Public YouTube channel browse and attach** | YouTube Data API v3 key in Functions secret storage | Browse paged public uploads by channel ID, `@handle`, or supported channel URL; search/sort the loaded catalogue; drag or select one video; publish canonical URL plus display metadata as immutable exercise content. No OAuth or Firebase-account/channel coupling. |
+| **Planned** | **YouTube OAuth and bulk exercise creation/import** | OAuth consent/verification; encrypted refresh-token storage; import job state; duplicate review; quota/error policy | Connect an explicitly authorized YouTube account for private/unlisted access, select one or many videos, review duplicates, correct names/types, add tags, and create exercises in bulk. The completed public-channel source browser does not imply account ownership or private access. |
 | **Planned** | **Other imports and external services** | Provider selection and explicit integration state machines | Add CSV exercise import with validation/deduplication; identify and integrate the waiver service, block access until required signing is complete, and save signed forms to Dropbox or a documented off-platform destination; integrate payment-site signup/account linking with verified mismatch recovery rather than implicit email matching. |
 | **Planned** | **Appointments, branding, and staff discovery** | Product decisions for ownership, visibility, and tenancy | Define in-person appointment calendar behavior, trainer branding surfaces, and the staff-under-primary-trainer permission model before implementation. Staff sharing must not weaken template/client ownership checks. |
 | **Later** | **Marketplace and access lifecycle** | Discovery/search strategy; duration, consent, waiver, expiry, and notification semantics | Users can discover programs; duration-based access and pre-expiry notices are enforced; removal is auditable; completed history remains available according to policy. |

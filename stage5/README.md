@@ -51,6 +51,16 @@ Implemented in this slice:
   states.
 - Explicit `ownerId` fields for exercise and workout templates.
 - Stable logical exercise headers with immutable execution-content versions.
+- Public YouTube source browsing in Exercise create/edit without OAuth. Channel
+  IDs, `@handles`, channel URLs, and resolvable legacy custom URLs are resolved
+  by an authenticated, rate-limited Cloud Function; API credentials never
+  enter Flutter. Trainers can page through public uploads, search and sort the
+  explicitly labelled loaded catalogue, then drag or Attach one video.
+- YouTube attachment writes use one shared command and publish the canonical
+  URL plus non-authoritative display metadata into the next immutable exercise
+  version. Replacement/removal is explicit. Private and unlisted videos remain
+  unavailable until a future OAuth feature, and Firebase identity is never
+  treated as YouTube channel ownership.
 - Immutable typed workout blocks for standard exercise work, timed intervals,
   circuits, and climbing routes.
 - Stable exercise-slot IDs that pin both the logical exercise ID and immutable
@@ -336,6 +346,15 @@ canary, cleanup, parity, and production promotion flow is documented in
 `../docs/release-process.md`. Creating cloud projects, enabling billing/APIs,
 deploying, and creating canary accounts remain explicit operator actions; no
 cloud resources are modified by local validation.
+
+Before deploying the public YouTube browser, enable YouTube Data API v3 in the
+target Firebase project's Google Cloud project and set the server key with
+`firebase functions:secrets:set YOUTUBE_API_KEY --project <project-id>`.
+Restrict the key to YouTube Data API v3. The callable uses uploads playlists
+and batched video details, caps pages at 50, times out upstream calls, caches
+channel/page metadata for 10/5 minutes per warm instance, caps instances at
+10, and limits each authenticated user to 30 calls per hour. See
+`../docs/release-process.md` for quota, cost, privacy, and deployment details.
 
 Screenshots remain useful diagnostics for layout and identity rendering, but
 they are supplemental: they cannot establish that deployed rules and indexes

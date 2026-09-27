@@ -57,19 +57,39 @@ usernames/{username}           # uniqueness helper
 ```
 exerciseTemplates/{exerciseId}
   ownerId: string
+  currentVersion: int
   tags: string[]                       # <= 20, each <= 40 chars in domain
   folderId: string?                    # owner/type-matched programFolders doc
-  name: string
-  description: string
-  videoUrl: string?
-  instructions: string
   createdBy: string (userId)
   createdAt: timestamp
   updatedAt: timestamp
   updatedBy: string (userId)
   deletedAt: timestamp?
   deletedBy: string? (userId)
+
+  exerciseVersions/{versionNumber}
+    versionNumber: int
+    name: string
+    description: string
+    instructions: string
+    videoUrl: string?                  # canonical YouTube URL when attached
+    youtubeMetadata: {                 # display-only, non-authoritative
+      videoId: string
+      title: string
+      thumbnailUrl: string
+      channelId: string
+      channelTitle: string
+    }?
+    publishedAt: timestamp
+    publishedBy: string
 ```
+
+Public YouTube discovery uses the authenticated `youtubePublicLibrary`
+callable. The client never receives the API key and never assumes that the
+Firebase user owns or controls the selected channel. The function resolves the
+channel uploads playlist, pages `playlistItems`, and batches `videos.list`
+details. Searches and sort orders in the client apply to the explicitly
+labelled loaded catalogue, which can be expanded page by page.
 
 ### 2.2.1 Athlete Exercise Notes
 
@@ -862,6 +882,7 @@ Every Cloud Function in the system, its trigger, and what it does:
 | 7 | `onUserDeleted` | `auth.user().onDelete` | Cascading cleanup: deletes/anonymizes user data across all collections (see below) | Auth / Privacy |
 | 8 | `materializeRecurrence` | HTTPS callable | Expands a recurrence pattern + end date into individual `workoutInstances` documents in a batch write | Scheduling |
 | 9 | `onProgramPublished` | Firestore `onCreate` on `programVersions/{v}` | Snapshots the program structure; optionally updates enrollments referencing the program to the new version based on owner's upgrade choice | Versioning |
+| 10 | `youtubePublicLibrary` | HTTPS callable | Authenticated, rate-limited public-channel resolution and uploads-playlist paging through YouTube Data API v3; API key remains a Functions secret | Exercise media |
 
 ### User Deletion Cleanup (onUserDeleted) — Detail
 
@@ -909,9 +930,9 @@ cleanupFailures/{failureId}
 
 | # | Function Name | Trigger | Description | Feature Area |
 |---|---|---|---|---|
-| 10 | `sendExpiryNotifications` | Cloud Scheduler (daily cron) | Checks enrollment durations, sends pre-expiry push notifications | Marketplace / Lifecycle |
-| 11 | `autoRemoveExpired` | Cloud Scheduler (daily cron) | Writes `removedAt` on enrollments past expiry date | Marketplace / Lifecycle |
-| 12 | `onForumReply` | Firestore `onCreate` on forum reply | Sends push notification to thread participants | Community / Forum |
+| 11 | `sendExpiryNotifications` | Cloud Scheduler (daily cron) | Checks enrollment durations, sends pre-expiry push notifications | Marketplace / Lifecycle |
+| 12 | `autoRemoveExpired` | Cloud Scheduler (daily cron) | Writes `removedAt` on enrollments past expiry date | Marketplace / Lifecycle |
+| 13 | `onForumReply` | Firestore `onCreate` on forum reply | Sends push notification to thread participants | Community / Forum |
 
 ---
 

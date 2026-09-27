@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:stage5/features/exercises/domain/exercise_template.dart';
+import 'package:stage5/features/exercises/domain/youtube_channel.dart';
 import 'package:stage5/features/library/data/library_serialization.dart';
 import 'package:stage5/features/library/domain/library_metadata.dart';
 
@@ -102,6 +103,7 @@ class ExerciseTemplateRepository {
     required String instructions,
     required String userId,
     String? videoUrl,
+    YoutubeVideoMetadata? youtubeMetadata,
     List<String> mediaUrls = const [],
     ExerciseType exerciseType = ExerciseType.other,
     ExerciseMeasurementConfiguration measurementConfiguration =
@@ -126,6 +128,7 @@ class ExerciseTemplateRepository {
       description: description,
       instructions: instructions,
       videoUrl: videoUrl,
+      youtubeMetadata: youtubeMetadata,
       mediaUrls: mediaUrls,
       exerciseType: exerciseType,
       measurementConfiguration: measurementConfiguration,
@@ -176,6 +179,7 @@ class ExerciseTemplateRepository {
       instructions: source.instructions,
       userId: userId,
       videoUrl: source.videoUrl,
+      youtubeMetadata: source.youtubeMetadata,
       mediaUrls: source.mediaUrls,
       exerciseType: source.exerciseType,
       measurementConfiguration: source.measurementConfiguration,
@@ -226,6 +230,7 @@ class ExerciseTemplateRepository {
     required String instructions,
     required String userId,
     String? videoUrl,
+    YoutubeVideoMetadata? youtubeMetadata,
     List<String>? mediaUrls,
     ExerciseType? exerciseType,
     ExerciseMeasurementConfiguration? measurementConfiguration,
@@ -238,6 +243,7 @@ class ExerciseTemplateRepository {
       instructions: instructions,
       userId: userId,
       videoUrl: videoUrl,
+      youtubeMetadata: youtubeMetadata,
       mediaUrls: mediaUrls,
       exerciseType: exerciseType,
       measurementConfiguration: measurementConfiguration,
@@ -253,6 +259,7 @@ class ExerciseTemplateRepository {
     required String instructions,
     required String userId,
     String? videoUrl,
+    YoutubeVideoMetadata? youtubeMetadata,
     List<String>? mediaUrls,
     ExerciseType? exerciseType,
     ExerciseMeasurementConfiguration? measurementConfiguration,
@@ -282,6 +289,7 @@ class ExerciseTemplateRepository {
         description: description,
         instructions: instructions,
         videoUrl: videoUrl,
+        youtubeMetadata: youtubeMetadata,
         mediaUrls: mediaUrls ?? current.mediaUrls,
         exerciseType: exerciseType ?? current.exerciseType,
         measurementConfiguration:
@@ -491,6 +499,7 @@ class ExerciseTemplateRepository {
       description: data['description'] as String? ?? '',
       instructions: data['instructions'] as String? ?? '',
       videoUrl: data['videoUrl'] as String?,
+      youtubeMetadata: _youtubeMetadataFromMap(data['youtubeMetadata']),
       mediaUrls: _stringList(data['mediaUrls']),
       exerciseType: _parseExerciseType(data['exerciseType'] as String?),
       measurementConfiguration: _measurementFromMap(
@@ -511,6 +520,7 @@ class ExerciseTemplateRepository {
       description: data['description'] as String? ?? '',
       instructions: data['instructions'] as String? ?? '',
       videoUrl: data['videoUrl'] as String?,
+      youtubeMetadata: _youtubeMetadataFromMap(data['youtubeMetadata']),
       mediaUrls: _stringList(data['mediaUrls']),
       exerciseType: _parseExerciseType(data['exerciseType'] as String?),
       measurementConfiguration: _measurementFromMap(
@@ -534,6 +544,7 @@ class ExerciseTemplateRepository {
       'description': version.description,
       'instructions': version.instructions,
       'videoUrl': version.videoUrl,
+      'youtubeMetadata': _youtubeMetadataToMap(version.youtubeMetadata),
       'mediaUrls': version.mediaUrls,
       'exerciseType': version.exerciseType.name,
       'measurementConfiguration': {
@@ -567,6 +578,7 @@ class ExerciseTemplateRepository {
       'description': FieldValue.delete(),
       'instructions': FieldValue.delete(),
       'videoUrl': FieldValue.delete(),
+      'youtubeMetadata': FieldValue.delete(),
       'mediaUrls': FieldValue.delete(),
       'exerciseType': FieldValue.delete(),
       'measurementConfiguration': FieldValue.delete(),
@@ -596,6 +608,31 @@ class ExerciseTemplateRepository {
 
   static List<String> _stringList(dynamic value) =>
       (value as List<dynamic>?)?.whereType<String>().toList() ?? const [];
+
+  static YoutubeVideoMetadata? _youtubeMetadataFromMap(dynamic value) {
+    if (value is! Map) return null;
+    final data = Map<String, dynamic>.from(value);
+    return YoutubeVideoMetadata(
+      videoId: data['videoId'] as String? ?? '',
+      title: data['title'] as String? ?? '',
+      thumbnailUrl: data['thumbnailUrl'] as String? ?? '',
+      channelId: data['channelId'] as String? ?? '',
+      channelTitle: data['channelTitle'] as String? ?? '',
+    );
+  }
+
+  static Map<String, dynamic>? _youtubeMetadataToMap(
+    YoutubeVideoMetadata? metadata,
+  ) {
+    if (metadata == null) return null;
+    return {
+      'videoId': metadata.videoId,
+      'title': metadata.title,
+      'thumbnailUrl': metadata.thumbnailUrl,
+      'channelId': metadata.channelId,
+      'channelTitle': metadata.channelTitle,
+    };
+  }
 
   static ExerciseType _parseExerciseType(String? value) {
     return ExerciseType.values.firstWhere(

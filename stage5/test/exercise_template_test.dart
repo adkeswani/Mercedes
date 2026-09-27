@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stage5/features/exercises/data/exercise_template_repository.dart';
 import 'package:stage5/features/exercises/domain/exercise_template.dart';
+import 'package:stage5/features/exercises/domain/youtube_channel.dart';
 import 'package:stage5/features/library/data/library_folder_repository.dart';
 import 'package:stage5/features/library/domain/library_metadata.dart';
 
@@ -18,6 +19,13 @@ void main() {
   const grading = ExerciseGradingConfiguration(
     system: ExerciseGradingSystem.gymColor,
     gymColors: ['Yellow', 'Blue', 'Black'],
+  );
+  const youtubeMetadata = YoutubeVideoMetadata(
+    videoId: 'videoId0001',
+    title: 'Front squat tutorial',
+    thumbnailUrl: 'https://img.example/front-squat.jpg',
+    channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa',
+    channelTitle: 'Public Trainer',
   );
 
   setUp(() {
@@ -166,6 +174,7 @@ void main() {
         description: 'Front rack squat',
         instructions: 'Keep elbows high',
         videoUrl: 'https://example.com/front-squat',
+        youtubeMetadata: youtubeMetadata,
         userId: 'coach1',
       );
 
@@ -173,11 +182,41 @@ void main() {
       final v1 = await repository.getVersion(id, 1);
       final v2 = await repository.getVersion(id, 2);
       expect(v1!.name, 'Squat');
+      expect(v1.youtubeMetadata, isNull);
       expect(v2!.name, 'Front Squat');
+      expect(v2.youtubeMetadata!.videoId, 'videoId0001');
       expect(
           v2.measurementConfiguration.primary, ExerciseMeasurementType.weight);
       expect(v2.gradingConfiguration!.gymColors, grading.gymColors);
       expect((await repository.getById(id))!.currentVersion, 2);
+    });
+
+    test('replacing and removing YouTube metadata create immutable versions',
+        () async {
+      final id = await repository.create(
+        name: 'Squat',
+        description: 'Back squat',
+        instructions: 'Squat down',
+        videoUrl: 'https://www.youtube.com/watch?v=videoId0001',
+        youtubeMetadata: youtubeMetadata,
+        userId: 'coach1',
+      );
+      await repository.update(
+        id: id,
+        name: 'Squat',
+        description: 'Back squat',
+        instructions: 'Squat down',
+        videoUrl: null,
+        youtubeMetadata: null,
+        userId: 'coach1',
+      );
+
+      final original = await repository.getVersion(id, 1);
+      final removed = await repository.getVersion(id, 2);
+      expect(original!.youtubeMetadata!.videoId, 'videoId0001');
+      expect(original.videoUrl, contains('videoId0001'));
+      expect(removed!.youtubeMetadata, isNull);
+      expect(removed.videoUrl, isNull);
     });
 
     test('can resolve a historical version through the logical exercise',

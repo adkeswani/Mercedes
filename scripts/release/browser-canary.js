@@ -6,7 +6,11 @@ const net = require("node:net");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { parseArguments, requireArgument } = require("./arguments.js");
-const { requireCanaryCredentials } = require("./admin-canary.js");
+const {
+  createAdminContext,
+  requireCanaryCredentials,
+} = require("./admin-canary.js");
+const { CANARY_IDS } = require("./canary-fixture.js");
 const { loadReleaseContext } = require("./context.js");
 const {
   requireProductionOptIn,
@@ -117,11 +121,82 @@ async function clickElement(baseUrl, sessionId, element) {
   if (!elementId) {
     throw new Error("ChromeDriver did not return a valid element");
   }
+
   await webdriverRequest(
     baseUrl,
     sessionPath(sessionId, `/element/${elementId}/click`),
     { method: "POST", body: {} },
   );
+}
+
+async function elementRect(baseUrl, sessionId, element) {
+  const elementId = element?.[WEB_DRIVER_ELEMENT_KEY];
+  if (!elementId) {
+    throw new Error("ChromeDriver did not return a valid element");
+  }
+  return webdriverRequest(
+    baseUrl,
+    sessionPath(sessionId, `/element/${elementId}/rect`),
+  );
+}
+
+async function clickAtOffset(baseUrl, sessionId, element, xOffset, yOffset) {
+  const rect = await elementRect(baseUrl, sessionId, element);
+  await webdriverRequest(baseUrl, sessionPath(sessionId, "/actions"), {
+    method: "POST",
+    body: {
+      actions: [{
+        type: "pointer",
+        id: "offset-click",
+        parameters: { pointerType: "mouse" },
+        actions: [
+          {
+            type: "pointerMove",
+            duration: 0,
+            origin: "viewport",
+            x: Math.round(rect.x + xOffset),
+            y: Math.round(rect.y + yOffset),
+          },
+          { type: "pointerDown", button: 0 },
+          { type: "pointerUp", button: 0 },
+        ],
+      }],
+    },
+  });
+}
+
+async function dragElement(baseUrl, sessionId, source, target) {
+  const sourceId = source?.[WEB_DRIVER_ELEMENT_KEY];
+  const targetId = target?.[WEB_DRIVER_ELEMENT_KEY];
+  if (!sourceId || !targetId) {
+    throw new Error("Drag source or exercise media target was unavailable");
+  }
+  const sourceRect = await elementRect(baseUrl, sessionId, source);
+  const targetRect = await elementRect(baseUrl, sessionId, target);
+  const center = (rect) => ({
+    x: Math.round(rect.x + rect.width / 2),
+    y: Math.round(rect.y + rect.height / 2),
+  });
+  const start = center(sourceRect);
+  const end = center(targetRect);
+  await webdriverRequest(baseUrl, sessionPath(sessionId, "/actions"), {
+    method: "POST",
+    body: {
+      actions: [{
+        type: "pointer",
+        id: "youtube-drag",
+        parameters: { pointerType: "mouse" },
+        actions: [
+          { type: "pointerMove", duration: 0, origin: "viewport", ...start },
+          { type: "pointerDown", button: 0 },
+          { type: "pause", duration: 500 },
+          { type: "pointerMove", duration: 1000, origin: "viewport", ...end },
+          { type: "pause", duration: 300 },
+          { type: "pointerUp", button: 0 },
+        ],
+      }],
+    },
+  });
 }
 
 async function typeIntoElement(
@@ -229,6 +304,221 @@ return {
   }
 }
 
+async function waitForExerciseVersion(
+  firestore,
+  versionNumber,
+  expectedVideo,
+) {
+  return waitFor(async () => {
+    const header = await firestore
+      .collection("exerciseTemplates")
+      .doc(CANARY_IDS.exerciseTemplate)
+      .get();
+    if (header.data()?.currentVersion !== versionNumber) {
+      return false;
+    }
+    const version = await header.ref
+      .collection("exerciseVersions")
+      .doc(String(versionNumber))
+      .get();
+    const data = version.data();
+    if (!data) {
+      return false;
+    }
+    const expectedUrl =
+      `https://www.youtube.com/watch?v=${expectedVideo.videoId}`;
+    if (data.videoUrl !== expectedUrl ||
+        data.youtubeMetadata?.videoId !== expectedVideo.videoId ||
+        data.youtubeMetadata?.title !== expectedVideo.title ||
+        data.youtubeMetadata?.channelId !== "UCaaaaaaaaaaaaaaaaaaaaaa" ||
+        data.youtubeMetadata?.channelTitle !==
+          "Release Canary Public Channel") {
+      throw new Error(
+        `Exercise version ${versionNumber} did not persist equivalent ` +
+        "canonical YouTube metadata",
+      );
+    }
+    return true;
+  }, `exercise version ${versionNumber} YouTube metadata`, 30000);
+}
+
+async function openYoutubeEditor(baseUrl, sessionId) {
+  await execute(
+    baseUrl,
+    sessionId,
+    "window.location.hash = arguments[0]; return true;",
+    [`/exercises/${CANARY_IDS.exerciseTemplate}/edit`],
+  );
+  await activateFlutterSemantics(baseUrl, sessionId);
+  return waitFor(
+    () => findByAriaLabel(baseUrl, sessionId, "Public channel"),
+    "public YouTube channel field",
+  );
+}
+
+async function loadFakeYoutubeChannel(
+  baseUrl,
+  sessionId,
+  channelField,
+  search,
+) {
+  const currentValue = await execute(
+    baseUrl,
+    sessionId,
+    "return arguments[0].getAttribute('value') || " +
+      "arguments[0].textContent || '';",
+    [channelField],
+  );
+  if (!currentValue.includes("@release.canary")) {
+    await typeIntoElement(
+      baseUrl,
+      sessionId,
+      channelField,
+      "@release.canary",
+      { submit: true },
+    );
+  } else {
+    await typeIntoElement(
+      baseUrl,
+      sessionId,
+      channelField,
+      "",
+      { submit: true },
+    );
+  }
+  const searchField = await waitFor(
+    () => findByAriaLabel(baseUrl, sessionId, "Search loaded videos"),
+    "loaded YouTube video search",
+  );
+  if (search) {
+    await typeIntoElement(baseUrl, sessionId, searchField, search);
+  }
+  return searchField;
+}
+
+async function saveExercise(baseUrl, sessionId) {
+  const save = await waitFor(
+    () => findByAriaLabel(baseUrl, sessionId, "Save"),
+    "exercise Save action",
+  );
+  await clickElement(baseUrl, sessionId, save);
+}
+
+async function runYoutubeExerciseFlow({
+  baseUrl,
+  sessionId,
+  firestore,
+  artifactDirectory,
+}) {
+  let channelField = await openYoutubeEditor(baseUrl, sessionId);
+  const searchField = await loadFakeYoutubeChannel(
+    baseUrl,
+    sessionId,
+    channelField,
+    "",
+  );
+  const squatBeforeSort = await waitFor(
+    () => findByAriaLabel(
+      baseUrl,
+      sessionId,
+      "YouTube video Release Canary Squat",
+    ),
+    "public YouTube squat video",
+  );
+  const deadliftBeforeSort = await waitFor(
+    () => findByAriaLabel(
+      baseUrl,
+      sessionId,
+      "YouTube video Release Canary Deadlift",
+    ),
+    "public YouTube deadlift video",
+  );
+  const squatBeforeRect = await elementRect(baseUrl, sessionId, squatBeforeSort);
+  const deadliftBeforeRect = await elementRect(
+    baseUrl,
+    sessionId,
+    deadliftBeforeSort,
+  );
+  if (squatBeforeRect.y <= deadliftBeforeRect.y) {
+    throw new Error("Newest sort did not place the newer video first");
+  }
+  await clickAtOffset(
+    baseUrl,
+    sessionId,
+    searchField,
+    searchField ? 660 : 0,
+    20,
+  );
+  await waitFor(async () => {
+    const squat = await findByAriaLabel(
+      baseUrl,
+      sessionId,
+      "YouTube video Release Canary Squat",
+    );
+    const deadlift = await findByAriaLabel(
+      baseUrl,
+      sessionId,
+      "YouTube video Release Canary Deadlift",
+    );
+    if (!squat || !deadlift) return false;
+    const squatRect = await elementRect(baseUrl, sessionId, squat);
+    const deadliftRect = await elementRect(baseUrl, sessionId, deadlift);
+    return squatRect.y < deadliftRect.y;
+  }, "view-count sorted loaded catalogue");
+  await typeIntoElement(baseUrl, sessionId, searchField, "Squat");
+  const source = await waitFor(
+    () => findByAriaLabel(
+      baseUrl,
+      sessionId,
+      "YouTube video Release Canary Squat",
+    ),
+    "draggable public YouTube video",
+  );
+  const target = await waitFor(
+    () => findByAriaLabel(baseUrl, sessionId, "Exercise video target"),
+    "exercise video drop target",
+  );
+  await dragElement(baseUrl, sessionId, source, target);
+  await waitFor(
+    () => findByAriaLabel(baseUrl, sessionId, "Remove video"),
+    "drag-attached exercise video",
+  );
+  await saveScreenshot(
+    baseUrl,
+    sessionId,
+    artifactDirectory,
+    "trainer-exercise-youtube-drag.png",
+  );
+  await saveExercise(baseUrl, sessionId);
+  await waitForExerciseVersion(firestore, 2, {
+    videoId: "canaryVid02",
+    title: "Release Canary Squat",
+  });
+
+  channelField = await openYoutubeEditor(baseUrl, sessionId);
+  await loadFakeYoutubeChannel(baseUrl, sessionId, channelField, "Press");
+  const attach = await waitFor(
+    () => findByAriaLabel(baseUrl, sessionId, "Attach"),
+    "public YouTube Attach action",
+  );
+  await clickElement(baseUrl, sessionId, attach);
+  await waitFor(
+    () => findByAriaLabel(baseUrl, sessionId, "Remove video"),
+    "selected exercise video",
+  );
+  await saveScreenshot(
+    baseUrl,
+    sessionId,
+    artifactDirectory,
+    "trainer-exercise-youtube-select.png",
+  );
+  await saveExercise(baseUrl, sessionId);
+  await waitForExerciseVersion(firestore, 3, {
+    videoId: "canaryVid03",
+    title: "Release Canary Press",
+  });
+}
+
 async function signIn({
   baseUrl,
   sessionId,
@@ -302,6 +592,7 @@ async function runIdentity({
   password,
   displayName,
   artifactDirectory,
+  emulatorAdmin,
 }) {
   const session = await webdriverRequest(baseUrl, "/session", {
     method: "POST",
@@ -312,7 +603,7 @@ async function runIdentity({
           "goog:chromeOptions": {
             args: [
               "--headless=new",
-              "--window-size=1280,800",
+              "--window-size=1280,1600",
               "--disable-gpu",
               "--no-sandbox",
             ],
@@ -399,6 +690,14 @@ return document.body ? {
         surface.screenshot,
       );
     }
+    if (role === "trainer" && emulatorAdmin) {
+      await runYoutubeExerciseFlow({
+        baseUrl,
+        sessionId,
+        firestore: emulatorAdmin.firestore,
+        artifactDirectory,
+      });
+    }
   } catch (error) {
     try {
       await saveScreenshot(
@@ -452,6 +751,13 @@ async function main() {
     driverError += chunk.toString();
   });
   const baseUrl = `http://127.0.0.1:${port}`;
+  const emulatorAdmin = emulator ? createAdminContext({
+    root: context.root,
+    projectId: context.projectId,
+    hostingUrl: context.hostingUrl,
+    appUrl,
+    emulator: true,
+  }) : null;
   try {
     await waitFor(async () => {
       const response = await fetch(`${baseUrl}/status`);
@@ -466,6 +772,7 @@ async function main() {
       password: credentials.trainerPassword,
       displayName: "Release Canary Trainer",
       artifactDirectory,
+      emulatorAdmin,
     });
     await runIdentity({
       baseUrl,
@@ -476,12 +783,24 @@ async function main() {
       password: credentials.athletePassword,
       displayName: "Release Canary Athlete",
       artifactDirectory,
+      emulatorAdmin: null,
     });
     console.log(
       `Deployed release canary passed for ` +
       `${context.environment}/${context.projectId}.`,
     );
   } finally {
+    if (emulatorAdmin) {
+      const versions = emulatorAdmin.firestore
+        .collection("exerciseTemplates")
+        .doc(CANARY_IDS.exerciseTemplate)
+        .collection("exerciseVersions");
+      await Promise.all([
+        versions.doc("2").delete(),
+        versions.doc("3").delete(),
+      ]);
+      await emulatorAdmin.app.delete();
+    }
     if (!driver.killed) {
       driver.kill();
     }

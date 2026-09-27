@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,5 +32,6 @@ Future<void> initializeMercedesApp() async {
       await FirebaseAuth.instance.setPersistence(Persistence.NONE);
     }
     FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8080);
+    FirebaseFunctions.instance.useFunctionsEmulator('127.0.0.1', 5001);
   }
 }

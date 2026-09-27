@@ -282,6 +282,31 @@ service cloud.firestore {
                  || hasValidLibraryFolder(data, itemType));
     }
 
+    function hasValidYoutubeMetadata(data) {
+      return !('youtubeMetadata' in data)
+             || data.youtubeMetadata == null
+             || (data.youtubeMetadata is map
+                 && data.youtubeMetadata.keys().hasOnly([
+                      'videoId', 'title', 'thumbnailUrl', 'channelId',
+                      'channelTitle'
+                    ])
+                 && data.youtubeMetadata.videoId is string
+                 && data.youtubeMetadata.videoId.size() == 11
+                 && data.youtubeMetadata.title is string
+                 && data.youtubeMetadata.title.size() > 0
+                 && data.youtubeMetadata.title.size() <= 200
+                 && data.youtubeMetadata.thumbnailUrl is string
+                 && data.youtubeMetadata.thumbnailUrl.size() <= 500
+                 && data.youtubeMetadata.channelId is string
+                 && data.youtubeMetadata.channelId.size() == 24
+                 && data.youtubeMetadata.channelTitle is string
+                 && data.youtubeMetadata.channelTitle.size() > 0
+                 && data.youtubeMetadata.channelTitle.size() <= 200
+                 && data.videoUrl ==
+                    'https://www.youtube.com/watch?v='
+                    + data.youtubeMetadata.videoId);
+    }
+
     function publishesNextExerciseVersion(templateId) {
       let nextVersion = templateVersion(resource.data) + 1;
       return request.resource.data.currentVersion == nextVersion
@@ -1213,7 +1238,7 @@ service cloud.firestore {
                            'ownerId', 'currentVersion', 'updatedAt',
                            'updatedBy', 'deletedAt', 'deletedBy', 'name',
                            'description', 'instructions', 'videoUrl',
-                           'mediaUrls', 'exerciseType',
+                           'youtubeMetadata', 'mediaUrls', 'exerciseType',
                            'measurementConfiguration',
                            'gradingConfiguration', 'tags', 'folderId',
                            'provenance'
@@ -1246,10 +1271,12 @@ service cloud.firestore {
                          ) == request.auth.uid
                       && request.resource.data.keys().hasOnly([
                            'versionNumber', 'name', 'description',
-                           'instructions', 'videoUrl', 'mediaUrls',
+                           'instructions', 'videoUrl', 'youtubeMetadata',
+                           'mediaUrls',
                            'exerciseType', 'measurementConfiguration',
                            'gradingConfiguration', 'publishedAt', 'publishedBy'
                          ])
+                      && hasValidYoutubeMetadata(request.resource.data)
                       && versionNumber
                          == string(request.resource.data.versionNumber)
                       && request.resource.data.versionNumber >= 1

@@ -1,0 +1,444 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'package:stage5/features/exercises/data/youtube_channel_preference.dart';
+import 'package:stage5/features/exercises/data/youtube_public_api.dart';
+import 'package:stage5/features/exercises/domain/youtube_channel.dart';
+import 'package:stage5/features/exercises/presentation/youtube_public_providers.dart';
+
+const youtubeChannelFieldKey = Key('youtube-channel-field');
+const youtubeLoadChannelKey = Key('youtube-load-channel');
+const youtubeSearchFieldKey = Key('youtube-search-field');
+const youtubeMediaTargetKey = Key('youtube-media-target');
+const youtubeRemoveVideoKey = Key('youtube-remove-video');
+
+class YoutubeLibraryPanel extends ConsumerStatefulWidget {
+  const YoutubeLibraryPanel({
+    required this.onAttach,
+    required this.onRemove,
+    this.attachedVideo,
+    this.api,
+    this.preference,
+    super.key,
+  });
+
+  final ValueChanged<PublicYoutubeVideo> onAttach;
+  final VoidCallback onRemove;
+  final YoutubeVideoMetadata? attachedVideo;
+  final YoutubePublicApi? api;
+  final YoutubeChannelPreference? preference;
+
+  @override
+  ConsumerState<YoutubeLibraryPanel> createState() =>
+      _YoutubeLibraryPanelState();
+}
+
+class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
+  final _channelController = TextEditingController();
+  final _searchController = TextEditingController();
+  PublicYoutubeChannel? _channel;
+  List<PublicYoutubeVideo> _videos = const [];
+  String? _nextPageToken;
+  YoutubeVideoSort _sort = YoutubeVideoSort.newest;
+  String? _error;
+  bool _loading = false;
+  bool _loadingMore = false;
+  int _requestGeneration = 0;
+
+  YoutubePublicApi get _api => widget.api ?? ref.read(youtubePublicApiProvider);
+
+  YoutubeChannelPreference get _preference =>
+      widget.preference ?? ref.read(youtubeChannelPreferenceProvider);
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreLastChannel();
+  }
+
+  Future<void> _restoreLastChannel() async {
+    final value = await _preference.read();
+    if (!mounted || value == null || value.isEmpty) return;
+    _channelController.text = value;
+  }
+
+  @override
+  void dispose() {
+    _channelController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadChannel() async {
+    if (_loading) return;
+    final input = _channelController.text.trim();
+    if (parseYoutubeChannelReference(input) == null &&
+        !(fakeYoutubeCatalogueEnabled && input == 'release-canary')) {
+      setState(() {
+        _error = 'Enter a YouTube channel URL, @handle, custom URL, or ID.';
+      });
+      return;
+    }
+    final generation = ++_requestGeneration;
+    setState(() {
+      _loading = true;
+      _loadingMore = false;
+      _error = null;
+      _channel = null;
+      _videos = const [];
+      _nextPageToken = null;
+    });
+    try {
+      final channel = await _api.resolveChannel(input);
+      final page = await _api.loadVideos(channelId: channel.id);
+      await _preference.write(input);
+      if (!mounted || generation != _requestGeneration) return;
+      setState(() {
+        _channel = channel;
+        _videos = page.videos;
+        _nextPageToken = page.nextPageToken;
+      });
+    } catch (error) {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _error = _friendlyError(error));
+      }
+    } finally {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final channel = _channel;
+    final token = _nextPageToken;
+    if (channel == null || token == null || _loadingMore) return;
+    final generation = _requestGeneration;
+    setState(() {
+      _loadingMore = true;
+      _error = null;
+    });
+    try {
+      final page = await _api.loadVideos(
+        channelId: channel.id,
+        pageToken: token,
+      );
+      if (!mounted ||
+          generation != _requestGeneration ||
+          _channel?.id != channel.id) {
+        return;
+      }
+      setState(() {
+        _videos = appendYoutubePage(_videos, page.videos);
+        _nextPageToken = page.nextPageToken;
+      });
+    } catch (error) {
+      if (mounted &&
+          generation == _requestGeneration &&
+          _channel?.id == channel.id) {
+        setState(() => _error = _friendlyError(error));
+      }
+    } finally {
+      if (mounted &&
+          generation == _requestGeneration &&
+          _channel?.id == channel.id) {
+        setState(() => _loadingMore = false);
+      }
+    }
+  }
+
+  String _friendlyError(Object error) {
+    final text = error.toString();
+    if (text.contains('resource-exhausted')) {
+      return 'YouTube quota or the per-user request limit was reached. '
+          'Try again later.';
+    }
+    if (text.contains('not-found')) {
+      return 'That public YouTube channel could not be found.';
+    }
+    if (text.contains('unavailable') || text.contains('deadline-exceeded')) {
+      return 'YouTube is temporarily unavailable. Try again.';
+    }
+    return text.replaceFirst(RegExp(r'^[A-Za-z]+Exception: '), '');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = filterAndSortYoutubeVideos(
+      _videos,
+      query: _searchController.text,
+      sort: _sort,
+    );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'YouTube public channel',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Browse public uploads without connecting a Google account. '
+              'Private and unlisted videos require future YouTube OAuth.',
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: youtubeChannelFieldKey,
+                    controller: _channelController,
+                    decoration: const InputDecoration(
+                      labelText: 'Public channel',
+                      hintText:
+                          '@handle, channel URL, custom URL, or channel ID',
+                    ),
+                    onSubmitted: _loading ? null : (_) => _loadChannel(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Semantics(
+                  label: 'Load public YouTube channel',
+                  button: true,
+                  onTap: _loading ? null : _loadChannel,
+                  child: ExcludeSemantics(
+                    child: FilledButton(
+                      key: youtubeLoadChannelKey,
+                      onPressed: _loading ? null : _loadChannel,
+                      child: const Text('Load channel'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_loading) ...[
+              const SizedBox(height: 12),
+              const LinearProgressIndicator(),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                key: const Key('youtube-library-error'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            if (_channel != null) ...[
+              const SizedBox(height: 16),
+              _ChannelIdentity(channel: _channel!),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 320,
+                    child: TextField(
+                      key: youtubeSearchFieldKey,
+                      controller: _searchController,
+                      decoration: const InputDecoration(
+                        labelText: 'Search loaded videos',
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                  for (final option in YoutubeVideoSort.values)
+                    Semantics(
+                      label: '${_sortLabel(option)} loaded sort',
+                      button: true,
+                      selected: _sort == option,
+                      onTap: () => setState(() => _sort = option),
+                      child: ExcludeSemantics(
+                        child: ChoiceChip(
+                          label: Text(_sortLabel(option)),
+                          selected: _sort == option,
+                          onSelected: (_) => setState(() => _sort = option),
+                        ),
+                      ),
+                    ),
+                  Text('${_videos.length} videos loaded'),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _MediaTarget(
+                metadata: widget.attachedVideo,
+                onAttach: widget.onAttach,
+                onRemove: widget.onRemove,
+              ),
+              const SizedBox(height: 12),
+              if (visible.isEmpty)
+                const Text(
+                  'No public videos match the loaded catalogue.',
+                  key: Key('youtube-library-empty'),
+                )
+              else
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final desktop = constraints.maxWidth >= 700;
+                    return Column(
+                      children: [
+                        for (final video in visible)
+                          _VideoCard(
+                            video: video,
+                            draggable: desktop,
+                            onAttach: () => widget.onAttach(video),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              if (_nextPageToken != null)
+                OutlinedButton(
+                  onPressed: _loadingMore ? null : _loadMore,
+                  child: Text(_loadingMore ? 'Loading...' : 'Load next page'),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _sortLabel(YoutubeVideoSort sort) {
+    return switch (sort) {
+      YoutubeVideoSort.newest => 'Newest',
+      YoutubeVideoSort.oldest => 'Oldest',
+      YoutubeVideoSort.title => 'Title',
+      YoutubeVideoSort.viewCount => 'View count',
+    };
+  }
+}
+
+class _ChannelIdentity extends StatelessWidget {
+  const _ChannelIdentity({required this.channel});
+
+  final PublicYoutubeChannel channel;
+
+  @override
+  Widget build(BuildContext context) {
+    final avatar = channel.avatarUrl;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        foregroundImage:
+            avatar == null || avatar.isEmpty ? null : NetworkImage(avatar),
+        child: const Icon(Icons.video_library_outlined),
+      ),
+      title: Text(channel.title),
+      subtitle: Text(channel.id),
+    );
+  }
+}
+
+class _MediaTarget extends StatelessWidget {
+  const _MediaTarget({
+    required this.metadata,
+    required this.onAttach,
+    required this.onRemove,
+  });
+
+  final YoutubeVideoMetadata? metadata;
+  final ValueChanged<PublicYoutubeVideo> onAttach;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<PublicYoutubeVideo>(
+      key: youtubeMediaTargetKey,
+      onAcceptWithDetails: (details) => onAttach(details.data),
+      builder: (context, candidates, rejected) {
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: candidates.isEmpty
+                  ? Theme.of(context).colorScheme.outline
+                  : Theme.of(context).colorScheme.primary,
+              width: candidates.isEmpty ? 1 : 2,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: metadata == null
+              ? const Text(
+                  'Exercise video target — drag a video here or use Attach.',
+                )
+              : Row(
+                  children: [
+                    const Icon(Icons.check_circle_outline),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${metadata!.title}\n${metadata!.channelTitle}',
+                      ),
+                    ),
+                    TextButton.icon(
+                      key: youtubeRemoveVideoKey,
+                      onPressed: onRemove,
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Remove video'),
+                    ),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+}
+
+class _VideoCard extends StatelessWidget {
+  const _VideoCard({
+    required this.video,
+    required this.draggable,
+    required this.onAttach,
+  });
+
+  final PublicYoutubeVideo video;
+  final bool draggable;
+  final VoidCallback onAttach;
+
+  @override
+  Widget build(BuildContext context) {
+    final card = Semantics(
+      label: 'YouTube video ${video.title}',
+      container: true,
+      explicitChildNodes: true,
+      child: ListTile(
+        key: Key('youtube-video-${video.id}'),
+        leading: const Icon(Icons.play_circle_outline),
+        title: Text(video.title),
+        subtitle: Text(
+          '${video.publishedAt.toLocal().toIso8601String().split('T').first}'
+          '${video.viewCount == null ? '' : ' • ${video.viewCount} views'}',
+        ),
+        trailing: Semantics(
+          label: 'Attach ${video.title}',
+          button: true,
+          onTap: onAttach,
+          child: ExcludeSemantics(
+            child: FilledButton.tonal(
+              key: Key('youtube-attach-${video.id}'),
+              onPressed: onAttach,
+              child: const Text('Attach'),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (!draggable) return card;
+    return Draggable<PublicYoutubeVideo>(
+      data: video,
+      feedback: Material(
+        elevation: 8,
+        child: SizedBox(width: 360, child: card),
+      ),
+      childWhenDragging: Opacity(opacity: 0.45, child: card),
+      child: card,
+    );
+  }
+}

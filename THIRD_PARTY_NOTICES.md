@@ -20,6 +20,7 @@ This repository uses and/or depends on third-party tools and packages with their
 - `firebase_auth` — BSD-3-Clause
 - `google_sign_in` — BSD-3-Clause
 - `cloud_firestore` — BSD-3-Clause
+- `cloud_functions` — BSD-3-Clause
 - `flutter_riverpod` — MIT
 - `go_router` — BSD-3-Clause
 - `url_launcher` — BSD-3-Clause

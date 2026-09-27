@@ -66,6 +66,46 @@ alias, service-account `project_id`, Hosting URL, reserved
 `release-canary-` namespace, and every ownership field before using Admin SDK
 privileges. They never query, enumerate, or mutate non-canary user data.
 
+### Public YouTube API setup
+
+The public-channel browser requires an operator-managed YouTube Data API v3
+key. It is not an OAuth credential and must never be placed in Flutter
+`--dart-define` values, Firebase web configuration, source, or CI logs.
+
+1. In the exact Google Cloud project backing the target Firebase environment,
+   enable **YouTube Data API v3**.
+2. Create a server API key restricted to YouTube Data API v3. Apply the
+   strongest supported application restriction for the deployed Functions
+   environment and monitor the key in Google Cloud.
+3. Store it as a Firebase Functions secret:
+
+   ```powershell
+   firebase functions:secrets:set YOUTUBE_API_KEY --project <project-id>
+   ```
+
+4. Deploy Functions normally. Firebase binds the secret only to
+   `youtubePublicLibrary`; no real key is required by unit, rules, or local
+   browser tests.
+
+Each channel resolution uses one `channels.list` quota unit. Each uncached
+uploads page normally uses one `channels.list`, one `playlistItems.list`, and
+one batched `videos.list` call. Instance-local channel metadata is cached for
+10 minutes and page metadata for 5 minutes; cold starts do not retain cache.
+The callable accepts at most 50 videos per page, times upstream requests out
+after 8 seconds, caps instances at 10, and permits 30 calls per authenticated
+user per hour using server-owned Firestore rate-limit records. Search and sort
+operate only over the catalogue pages loaded by the client. YouTube project
+quota and Cloud Functions/Firestore/network usage can incur charges under the
+configured Google Cloud billing plan.
+
+The endpoint exposes public metadata only. It has no OAuth flow, refresh
+tokens, private/unlisted access, arbitrary upstream URL proxying, or coupling
+between Firebase Google sign-in and a YouTube channel. App Check is not yet
+initialized in the current clients, so authentication, strict input
+allowlisting, bounded requests, instance caps, and per-user rate limiting are
+the active abuse controls. App Check enforcement should be added only with
+coordinated client registration to avoid breaking legitimate traffic.
+
 Browser validation requires Google Chrome. The stage, browser-smoke, and
 release-canary runners share one ChromeDriver resolver. It honors an explicit
 `-ChromeDriverPath`, then `CHROMEDRIVER_PATH`, then `PATH`; otherwise it
@@ -144,6 +184,14 @@ Calendar, My Programs, and Workout History. Each surface must expose the exact
 seeded synthetic record name; trainer calendar additionally proves the
 athlete, program, and workout assignment tuple. Permission errors, app errors,
 missing templates, and empty results fail the run.
+
+The local emulator canary additionally compiles
+`FAKE_PUBLIC_YOUTUBE_CATALOGUE=true`; it never calls YouTube. It edits the
+seeded exercise, searches and sorts the fake catalogue, performs a native
+pointer drag attachment and a separate Select/Attach replacement, verifies
+the exact immutable version documents through the emulator Admin SDK, and
+retains `trainer-exercise-youtube-drag.png` plus
+`trainer-exercise-youtube-select.png`.
 
 Successful PNG directories are retained as diagnostic release artifacts and
 must remain in the worktree after validation. They are gitignored and must not

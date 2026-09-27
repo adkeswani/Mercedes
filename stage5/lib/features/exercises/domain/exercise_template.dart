@@ -1,5 +1,6 @@
 import 'package:stage5/features/auth/domain/foundation_models.dart';
 import 'package:stage5/features/library/domain/library_metadata.dart';
+import 'package:stage5/features/exercises/domain/youtube_channel.dart';
 
 /// Broad execution category for an exercise.
 enum ExerciseType { strength, climbing, conditioning, mobility, skill, other }
@@ -69,6 +70,7 @@ class ExerciseVersion {
     required this.publishedAt,
     required this.publishedBy,
     this.videoUrl,
+    this.youtubeMetadata,
     this.mediaUrls = const [],
     this.gradingConfiguration,
   });
@@ -78,6 +80,7 @@ class ExerciseVersion {
   final String description;
   final String instructions;
   final String? videoUrl;
+  final YoutubeVideoMetadata? youtubeMetadata;
   final List<String> mediaUrls;
   final ExerciseType exerciseType;
   final ExerciseMeasurementConfiguration measurementConfiguration;
@@ -104,6 +107,7 @@ class ExerciseVersion {
     if (mediaUrls.any((url) => url.trim().isEmpty)) {
       throw ArgumentError('mediaUrls cannot contain empty values');
     }
+    youtubeMetadata?.validate();
     measurementConfiguration.validate();
     gradingConfiguration?.validate();
   }
@@ -145,6 +149,7 @@ class ExerciseTemplate with Auditable implements LibraryItem {
   String get description => version.description;
   String get instructions => version.instructions;
   String? get videoUrl => version.videoUrl;
+  YoutubeVideoMetadata? get youtubeMetadata => version.youtubeMetadata;
   List<String> get mediaUrls => version.mediaUrls;
   ExerciseType get exerciseType => version.exerciseType;
   ExerciseMeasurementConfiguration get measurementConfiguration =>

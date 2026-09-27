@@ -555,6 +555,15 @@ deletion/anonymization plus explicit relationship/history handling.
   and link to each pinned exercise version, preserving historical content.
 - Exercise notes continue to use the logical exercise ID and therefore follow
   the exercise across versions.
+- Public YouTube attachment metadata is versioned execution content. The
+  canonical watch URL plus video ID, title, thumbnail URL, channel ID, and
+  channel title are copied into the new `ExerciseVersion` as non-authoritative
+  display metadata. Replacing or removing an attachment publishes another
+  version and never rewrites historical versions.
+- Public channel browsing is a source-media workflow, not template import.
+  Channel identity is independent of Firebase/Google sign-in. The client keeps
+  only the last channel reference locally; no trainer-channel ownership is
+  inferred or persisted.
 - Exercise, workout, and program headers now share stable tags, an optional
   type-scoped flat folder, and immutable copy provenance. Repository
   organization mutations verify both template and folder ownership.
@@ -674,7 +683,8 @@ implementation:
 - Staff sharing.
 - Waiver-service integration.
 - Payment-site account provisioning.
-- YouTube and CSV import pipelines.
+- YouTube OAuth/private-video and bulk exercise creation pipelines.
+- CSV import pipelines.
 
 These additions must conform to the ownership, versioning, subscription, and
 historical immutability rules defined above.

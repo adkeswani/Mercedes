@@ -69,6 +69,7 @@ if (-not $SkipBuild) {
             --no-pub `
             --dart-define=USE_FIREBASE_EMULATORS=true `
             --dart-define=ENABLE_RELEASE_CANARY_LOGIN=true `
+            --dart-define=FAKE_PUBLIC_YOUTUBE_CATALOGUE=true `
             --dart-define=FIREBASE_ENVIRONMENT=dev `
             --dart-define=FIREBASE_WEB_API_KEY=fake-api-key `
             --dart-define=FIREBASE_WEB_APP_ID=1:123456789:web:releasecanary `

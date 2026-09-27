@@ -522,6 +522,84 @@ describe('exerciseTemplates', () => {
     await assertSucceeds(batch.commit());
   });
 
+  it('allows bounded canonical YouTube metadata and denies malformed metadata',
+      async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const validHeader = db.collection('exerciseTemplates').doc('youtube');
+    const valid = db.batch();
+    valid.set(validHeader, {
+      ownerId: OWNER,
+      currentVersion: 1,
+      createdBy: OWNER,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+      deletedAt: null,
+      deletedBy: null,
+    });
+    valid.set(validHeader.collection('exerciseVersions').doc('1'), {
+      versionNumber: 1,
+      name: 'Squat',
+      description: 'Public video',
+      instructions: 'Brace and squat',
+      videoUrl: 'https://www.youtube.com/watch?v=videoId0001',
+      youtubeMetadata: {
+        videoId: 'videoId0001',
+        title: 'Squat tutorial',
+        thumbnailUrl: 'https://img.example/squat.jpg',
+        channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa',
+        channelTitle: 'Public Trainer',
+      },
+      mediaUrls: [],
+      exerciseType: 'strength',
+      measurementConfiguration: {
+        primary: 'weight',
+        secondary: ['repetitions'],
+      },
+      gradingConfiguration: null,
+      publishedAt: serverTimestamp(),
+      publishedBy: OWNER,
+    });
+    await assertSucceeds(valid.commit());
+
+    const invalidHeader = db.collection('exerciseTemplates').doc('bad-youtube');
+    const invalid = db.batch();
+    invalid.set(invalidHeader, {
+      ownerId: OWNER,
+      currentVersion: 1,
+      createdBy: OWNER,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+      deletedAt: null,
+      deletedBy: null,
+    });
+    invalid.set(invalidHeader.collection('exerciseVersions').doc('1'), {
+      versionNumber: 1,
+      name: 'Squat',
+      description: 'Bad video',
+      instructions: 'Brace and squat',
+      videoUrl: 'https://example.com/proxy',
+      youtubeMetadata: {
+        videoId: 'videoId0001',
+        title: 'Squat tutorial',
+        thumbnailUrl: '',
+        channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa',
+        channelTitle: 'Public Trainer',
+      },
+      mediaUrls: [],
+      exerciseType: 'strength',
+      measurementConfiguration: {
+        primary: 'weight',
+        secondary: [],
+      },
+      gradingConfiguration: null,
+      publishedAt: serverTimestamp(),
+      publishedBy: OWNER,
+    });
+    await assertFails(invalid.commit());
+  });
+
   it('denies creating without version 1 or with someone else as owner', async () => {
     const db = testEnv.authenticatedContext(STRANGER).firestore();
     await assertFails(

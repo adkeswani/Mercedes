@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/exercises/domain/exercise_template.dart';
+import 'package:stage5/features/exercises/domain/youtube_channel.dart';
 import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
+import 'package:stage5/features/exercises/presentation/youtube_library_panel.dart';
 
 /// Create or edit an exercise template.
 ///
@@ -30,6 +32,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
 
   bool _isLoading = false;
   bool _didLoadExisting = false;
+  YoutubeVideoMetadata? _youtubeMetadata;
 
   @override
   void dispose() {
@@ -45,6 +48,21 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     _descriptionController.text = template.description;
     _instructionsController.text = template.instructions;
     _videoUrlController.text = template.videoUrl ?? '';
+    _youtubeMetadata = template.youtubeMetadata;
+  }
+
+  void _attachYoutubeVideo(PublicYoutubeVideo video) {
+    setState(() {
+      _videoUrlController.text = video.canonicalUrl;
+      _youtubeMetadata = video.metadata;
+    });
+  }
+
+  void _removeYoutubeVideo() {
+    setState(() {
+      _videoUrlController.clear();
+      _youtubeMetadata = null;
+    });
   }
 
   Future<void> _save() async {
@@ -67,6 +85,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
           instructions: _instructionsController.text.trim(),
           userId: uid,
           videoUrl: videoUrl.isEmpty ? null : videoUrl,
+          youtubeMetadata: _youtubeMetadata,
         );
       } else {
         await repo.create(
@@ -75,6 +94,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
           instructions: _instructionsController.text.trim(),
           userId: uid,
           videoUrl: videoUrl.isEmpty ? null : videoUrl,
+          youtubeMetadata: _youtubeMetadata,
         );
       }
 
@@ -169,6 +189,20 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
                 hintText: 'https://...',
               ),
               keyboardType: TextInputType.url,
+              onChanged: (value) {
+                final metadata = _youtubeMetadata;
+                if (metadata != null &&
+                    value.trim() !=
+                        'https://www.youtube.com/watch?v=${metadata.videoId}') {
+                  setState(() => _youtubeMetadata = null);
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+            YoutubeLibraryPanel(
+              attachedVideo: _youtubeMetadata,
+              onAttach: _attachYoutubeVideo,
+              onRemove: _removeYoutubeVideo,
             ),
           ],
         ),
