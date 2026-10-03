@@ -105,6 +105,54 @@ try {
     ) 'Expected YouTube API output to report enabled.'
     $passed++
 
+    $functionsPath = Join-Path $testRoot 'functions'
+    [IO.Directory]::CreateDirectory($functionsPath) | Out-Null
+    [IO.File]::WriteAllText(
+        (Join-Path $functionsPath 'package.json'),
+        '{"scripts":{"build":"tsc"}}'
+    )
+    [IO.File]::WriteAllText(
+        (Join-Path $functionsPath 'package-lock.json'),
+        '{"lockfileVersion":3}'
+    )
+    $missingDependencies = Test-FunctionsBuildPrerequisites `
+        -FunctionsPath $functionsPath
+    Assert-Equal $false $missingDependencies.Ready (
+        'Missing node_modules must block Functions build readiness.'
+    )
+    Assert-Equal $true $missingDependencies.LockfilePresent (
+        'The committed lockfile should be recognized.'
+    )
+    Assert-Equal $true (
+        $missingDependencies.Problems[0] -like '*npm --prefix functions ci*'
+    ) 'Missing dependency guidance must include the exact recovery command.'
+    $passed++
+
+    $typescriptPath = Join-Path $functionsPath 'node_modules\typescript\bin'
+    [IO.Directory]::CreateDirectory($typescriptPath) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $typescriptPath 'tsc'), '')
+    $readyFunctions = Test-FunctionsBuildPrerequisites `
+        -FunctionsPath $functionsPath
+    Assert-Equal $true $readyFunctions.Ready (
+        'Locked dependencies with local tsc should be ready.'
+    )
+    $passed++
+
+    Assert-Equal 24 (Get-NodeMajorVersion 'v24.14.0') (
+        'Node major parsing failed.'
+    )
+    $nodeWarning = Get-FunctionsNodeVersionWarning `
+        -ActualMajor 24 `
+        -RuntimeMajor 22 `
+        -ToolingMajor 24
+    Assert-Equal $true ($nodeWarning -like '*Node.js 22*') (
+        'Runtime mismatch guidance must identify the runtime major.'
+    )
+    Assert-Equal $true ($nodeWarning -like '*runtime-parity*') (
+        'Runtime mismatch guidance must be actionable.'
+    )
+    $passed++
+
     Write-Host "Passed $passed YouTube production setup helper tests."
 }
 finally {

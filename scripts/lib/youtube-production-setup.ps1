@@ -127,3 +127,87 @@ function Test-YoutubeSetupGitState {
         Problems = $problems.ToArray()
     }
 }
+
+function Test-FunctionsBuildPrerequisites {
+    param(
+        [Parameter(Mandatory)]
+        [string]$FunctionsPath
+    )
+
+    $problems = [Collections.Generic.List[string]]::new()
+    $packagePath = Join-Path $FunctionsPath 'package.json'
+    $lockPath = Join-Path $FunctionsPath 'package-lock.json'
+    $modulesPath = Join-Path $FunctionsPath 'node_modules'
+    $typescriptPath = Join-Path $modulesPath 'typescript\bin\tsc'
+
+    if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
+        $problems.Add("Missing Functions manifest: $packagePath")
+    }
+    if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) {
+        $problems.Add(
+            "Missing Functions lockfile: $lockPath. Restore it from Git; " +
+            'the setup script will not generate or update lockfiles.'
+        )
+    }
+    if (-not (Test-Path -LiteralPath $modulesPath -PathType Container)) {
+        $problems.Add(
+            'Locked Functions dependencies are not installed. In interactive ' +
+            'mode, approve the guarded npm ci step, or run ' +
+            "'npm --prefix functions ci --no-audit --no-fund'."
+        )
+    } elseif (-not (Test-Path -LiteralPath $typescriptPath -PathType Leaf)) {
+        $problems.Add(
+            'The local Functions TypeScript compiler is missing. Restore ' +
+            "locked dependencies with 'npm --prefix functions ci " +
+            "--no-audit --no-fund'."
+        )
+    }
+
+    return [pscustomobject]@{
+        Ready = $problems.Count -eq 0
+        LockfilePresent = Test-Path -LiteralPath $lockPath -PathType Leaf
+        Problems = $problems.ToArray()
+    }
+}
+
+function Get-NodeMajorVersion {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Version
+    )
+
+    if ($Version -notmatch '^[vV]?(?<Major>\d+)(?:\.|$)') {
+        throw "Unable to parse Node.js version '$Version'."
+    }
+    return [int]$Matches.Major
+}
+
+function Get-FunctionsNodeVersionWarning {
+    param(
+        [Parameter(Mandatory)]
+        [int]$ActualMajor,
+
+        [Parameter(Mandatory)]
+        [int]$RuntimeMajor,
+
+        [Parameter(Mandatory)]
+        [int]$ToolingMajor
+    )
+
+    if ($ActualMajor -eq $RuntimeMajor) {
+        return $null
+    }
+    if ($ActualMajor -eq $ToolingMajor) {
+        return (
+            "Local Node.js $ActualMajor matches tooling-config.json but the " +
+            "Functions runtime is Node.js $RuntimeMajor. Use Node.js " +
+            "$RuntimeMajor for runtime-parity validation before deployment."
+        )
+    }
+    return (
+        "Local Node.js $ActualMajor matches neither tooling-config.json " +
+        "($ToolingMajor) nor the Functions runtime ($RuntimeMajor). Install " +
+        'the repository-pinned local tooling, and use the runtime major for ' +
+        'runtime-parity validation before deployment.'
+    )
+}

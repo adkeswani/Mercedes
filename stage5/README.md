@@ -381,8 +381,13 @@ values through custom shell commands:
 
 Check-only mode is read-only and fails with actionable diagnostics. Interactive
 mode verifies project/manifest access and clean-main integration, requires
-exact confirmations before API or secret-version creation, delegates secret
-entry to Firebase CLI, and defaults to no for both dry-run and deployment.
+locked Functions dependencies and local `tsc`, requires an exact confirmation
+before a guarded `npm ci` when they are absent, and delegates secret entry to
+Firebase CLI. The Firebase dry run does not release Functions or Firestore
+revisions, but it may enable required service APIs, create service identities,
+or prepare IAM, so the script identifies it as a cloud-preparation mutation
+with its own exact confirmation. Actual deployment remains separately gated;
+both prompts default to no.
 
 Screenshots remain useful diagnostics for layout and identity rendering, but
 they are supplemental: they cannot establish that deployed rules and indexes

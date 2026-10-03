@@ -38,6 +38,10 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $manifestPath = Join-Path $repoRoot 'config\firebase-environments.json'
 $firebaseRcPath = Join-Path $repoRoot '.firebaserc'
+$functionsPath = Join-Path $repoRoot 'functions'
+$functionsPackagePath = Join-Path $functionsPath 'package.json'
+$functionsLockPath = Join-Path $functionsPath 'package-lock.json'
+$toolingConfigPath = Join-Path $repoRoot 'tooling-config.json'
 . (Join-Path $PSScriptRoot 'lib\youtube-production-setup.ps1')
 
 function Write-Step([string]$Message) {
@@ -107,6 +111,43 @@ try {
     foreach ($command in @('git', 'gcloud', 'firebase')) {
         Require-Command $command
         Write-Host "Found $command."
+    }
+    Require-Command 'node'
+    Require-Command 'npm'
+    $functionsState = Test-FunctionsBuildPrerequisites `
+        -FunctionsPath $functionsPath
+    if (-not $functionsState.Ready) {
+        foreach ($problem in $functionsState.Problems) {
+            Write-Warning $problem
+        }
+    } else {
+        Write-Host 'Locked Functions dependencies and local tsc are present.'
+    }
+
+    $functionsPackage =
+        Get-Content -LiteralPath $functionsPackagePath -Raw |
+        ConvertFrom-Json
+    $toolingConfig =
+        Get-Content -LiteralPath $toolingConfigPath -Raw |
+        ConvertFrom-Json
+    $nodeVersion = ConvertTo-NativeOutputText (& node --version)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Unable to inspect the local Node.js version.'
+    }
+    $runtimeNodeMajor = Get-NodeMajorVersion `
+        -Version ([string]$functionsPackage.engines.node)
+    $toolingNodeVersion = @($toolingConfig.wingetPackages) |
+        Where-Object id -EQ 'OpenJS.NodeJS.LTS' |
+        Select-Object -ExpandProperty version -First 1
+    if (-not $toolingNodeVersion) {
+        throw 'tooling-config.json does not pin OpenJS.NodeJS.LTS.'
+    }
+    $nodeWarning = Get-FunctionsNodeVersionWarning `
+        -ActualMajor (Get-NodeMajorVersion -Version $nodeVersion) `
+        -RuntimeMajor $runtimeNodeMajor `
+        -ToolingMajor (Get-NodeMajorVersion -Version $toolingNodeVersion)
+    if ($nodeWarning) {
+        Write-Warning $nodeWarning
     }
 
     Write-Step 'Checking authenticated project access'
@@ -179,7 +220,12 @@ try {
     Write-Host "YOUTUBE_API_KEY metadata exists: $secretExists"
 
     if ($CheckOnly) {
-        if (-not $gitState.Ready -or -not $apiEnabled -or -not $secretExists) {
+        if (
+            -not $gitState.Ready -or
+            -not $apiEnabled -or
+            -not $secretExists -or
+            -not $functionsState.Ready
+        ) {
             throw (
                 'Check-only validation found unresolved prerequisites. ' +
                 'No cloud or repository mutation was attempted.'
@@ -279,11 +325,72 @@ try {
         "--project $($target.ProjectId) --dry-run --force"
     )
     Write-Host "Backend dry-run command: $dryRunCommand"
+    Write-Warning (
+        'This dry run does not release Functions or Firestore revisions, but ' +
+        'Firebase CLI may enable required service APIs, create service ' +
+        'identities, or prepare IAM. It is a cloud-preparation mutation.'
+    )
     $confirmationEnvironment = $Environment.ToUpperInvariant()
     $dryRunPassed = $false
     if (Confirm-ExactPhrase `
-            -Prompt 'Run the non-mutating backend dry run?' `
+            -Prompt 'Allow the Firebase cloud-preparation dry run?' `
             -Phrase "DRY RUN $confirmationEnvironment") {
+        if (-not $functionsState.Ready) {
+            if (-not $functionsState.LockfilePresent) {
+                throw (
+                    'Cannot restore Functions dependencies without the ' +
+                    'committed package-lock.json.'
+                )
+            }
+            if (-not (Confirm-ExactPhrase `
+                    -Prompt (
+                        'Install exactly the locked Functions dependencies ' +
+                        'with npm ci? No manifest or lockfile changes are allowed.'
+                    ) `
+                    -Phrase 'INSTALL FUNCTIONS DEPENDENCIES')) {
+                throw (
+                    'Functions dependencies remain unresolved; dry run was ' +
+                    'not invoked.'
+                )
+            }
+            $packageHash = (Get-FileHash `
+                    -LiteralPath $functionsPackagePath `
+                    -Algorithm SHA256).Hash
+            $lockHash = (Get-FileHash `
+                    -LiteralPath $functionsLockPath `
+                    -Algorithm SHA256).Hash
+            & npm --prefix $functionsPath ci --no-audit --no-fund
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Locked Functions dependency installation failed.'
+            }
+            if (
+                $packageHash -ne (Get-FileHash `
+                    -LiteralPath $functionsPackagePath `
+                    -Algorithm SHA256).Hash -or
+                $lockHash -ne (Get-FileHash `
+                    -LiteralPath $functionsLockPath `
+                    -Algorithm SHA256).Hash
+            ) {
+                throw (
+                    'npm ci changed a Functions manifest or lockfile; ' +
+                    'refusing to continue.'
+                )
+            }
+            $functionsState = Test-FunctionsBuildPrerequisites `
+                -FunctionsPath $functionsPath
+            if (-not $functionsState.Ready) {
+                throw (
+                    'Functions dependencies remain incomplete after npm ci: ' +
+                    ($functionsState.Problems -join ' ')
+                )
+            }
+            Write-Host 'Locked Functions dependencies installed and verified.'
+        }
+        & npm --prefix $functionsPath run build
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Functions TypeScript build failed; dry run was not invoked.'
+        }
+        Write-Host 'Functions TypeScript build passed.'
         & firebase deploy `
             --only 'functions,firestore:rules,firestore:indexes' `
             --project $target.ProjectId `
@@ -293,7 +400,11 @@ try {
             throw 'Firebase backend dry run failed.'
         }
         $dryRunPassed = $true
-        Write-Host 'Firebase backend dry run passed.'
+        Write-Host (
+            'Firebase backend dry run passed; no Functions or Firestore ' +
+            'revision was released. Cloud preparation may have mutated APIs, ' +
+            'service identities, or IAM.'
+        )
     } else {
         Write-Host 'Dry run not invoked.'
     }

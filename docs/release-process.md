@@ -87,16 +87,33 @@ The recommended production path is the guarded operator script:
 The script defaults to `prod` / `mercedes-app-11ce2`, accepts explicit
 `-Environment`, `-Project`, and `-RequiredCommit` values, and enforces
 `config/firebase-environments.json`. It verifies Git, gcloud, Firebase CLI,
-authenticated project access, clean `main`, and exact intended commit. When
-integration is incomplete it only prints safe `git fetch`, `git switch main`,
-and `git merge --ff-only` commands; it never merges, rebases, pushes, or
-force-pushes. `-CheckOnly` performs no cloud or repository mutation.
+authenticated project access, clean `main`, exact intended commit, and the
+presence of locked Functions dependencies plus local `tsc`. When integration
+is incomplete it only prints safe `git fetch`, `git switch main`, and
+`git merge --ff-only` commands; it never merges, rebases, pushes, or
+force-pushes. `-CheckOnly` reports missing Functions dependencies with the
+exact recovery command and performs no cloud, dependency, or repository
+mutation.
 
 The script prints and attempts to open the exact Google Cloud Credentials URL.
 If browser launch is unavailable, use the printed URL and continue at the
 prompt. It never accepts the API key: Firebase CLI owns the secure value prompt
 for `functions:secrets:set`. API enablement, key creation/restriction, secret
-version creation, dry-run, and deployment remain explicit operator decisions.
+version creation, dependency installation, dry-run, and deployment remain
+explicit operator decisions. If locked Functions dependencies are absent,
+interactive mode requires the exact `INSTALL FUNCTIONS DEPENDENCIES` phrase
+before running `npm --prefix functions ci --no-audit --no-fund`; it verifies
+that `package.json` and `package-lock.json` did not change, verifies local
+`tsc`, and builds before invoking Firebase. The repository local-tooling pin is
+Node.js 24 while the deployed Functions runtime is Node.js 22, so the script
+warns operators to use Node.js 22 for runtime-parity validation.
+
+The Firebase backend dry run does not release a Functions or Firestore
+revision. It is not fully non-mutating: Firebase CLI may enable required
+service APIs such as Cloud Run or Eventarc, create service identities, or
+prepare secret IAM. The script therefore labels it a cloud-preparation
+mutation and requires the separate exact `DRY RUN <ENVIRONMENT>` phrase.
+Actual deployment remains behind the later `DEPLOY <ENVIRONMENT>` gate.
 
 The equivalent manual steps are:
 
@@ -146,12 +163,14 @@ The equivalent manual steps are:
    `failed-precondition`; it never falls back to a client key or live
    unauthenticated proxy.
 
-   The operator script can invoke the documented backend dry run after a separate
-   typed confirmation. It then prints the exact `deploy.ps1` command and can
-   invoke it only after that dry run succeeds and the operator enters the
-   unmistakable `DEPLOY PRODUCTION` confirmation; the default answer is always
-   no. Explicit non-production environments use their corresponding uppercase
-   environment name in both confirmation phrases.
+   The operator script can invoke the documented backend dry run after a
+   separate typed confirmation. The dry run does not release Functions or
+   Firestore revisions, but may prepare cloud APIs, service identities, or IAM.
+   It then prints the exact `deploy.ps1` command and can invoke it only after
+   that dry run succeeds and the operator enters the unmistakable
+   `DEPLOY PROD` confirmation; the default answer is always no. Explicit
+   non-production environments use their corresponding uppercase environment
+   name in both confirmation phrases.
 
 To rotate the key, create a new API-restricted key, set it as a new secret
 version, deploy only the callable, verify authenticated browsing, and then
@@ -303,7 +322,8 @@ The web release order is deliberate:
 6. Sign in as a real test user and resolve a known public channel; verify that
    quota, not-found, and unavailable errors remain sanitized.
 
-Before the real release, validate the backend configuration without mutation:
+Before the real release, validate the backend configuration without releasing
+new Functions or Firestore revisions:
 
 ```powershell
 firebase deploy `
@@ -312,6 +332,11 @@ firebase deploy `
   --dry-run `
   --force
 ```
+
+This command is a cloud-preparation mutation: Firebase CLI may enable required
+service APIs, create service identities, or prepare IAM even with `--dry-run`.
+Run it only after reviewing those possible project changes and explicitly
+confirming them.
 
 If the backend deployment fails, Hosting is not deployed. If index readiness
 fails, Hosting is not deployed. If Hosting fails after the backend succeeds,
