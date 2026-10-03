@@ -707,6 +707,7 @@ return document.body ? {
       JSON.stringify(diagnostics),
     );
   });
+  await activateFlutterSemantics(baseUrl, sessionId);
   await assertRoute(baseUrl, sessionId, route);
 }
 

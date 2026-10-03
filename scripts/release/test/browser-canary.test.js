@@ -1,6 +1,8 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 
 const {
@@ -51,4 +53,23 @@ test("auth bridge removes credentials after invoking normal app sign-in", async 
     /removeAttribute\("data-release-canary-auth-password"\)/,
   );
   assert.doesNotMatch(request.body.script, /not-a-real-password/);
+});
+
+test("sign-in reactivates Flutter semantics after authentication", () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, "..", "browser-canary.js"),
+    "utf8",
+  );
+  const signInStart = source.indexOf("async function signIn({");
+  const signInEnd = source.indexOf("\nasync function runIdentity(", signInStart);
+  const signInSource = source.slice(signInStart, signInEnd);
+  const authenticationWait = signInSource.indexOf(
+    "authentication and header identity",
+  );
+  const semanticsActivation = signInSource.indexOf(
+    "await activateFlutterSemantics",
+  );
+
+  assert.ok(authenticationWait >= 0);
+  assert.ok(semanticsActivation > authenticationWait);
 });

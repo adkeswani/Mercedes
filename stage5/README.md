@@ -444,6 +444,16 @@ attributes synchronously and authentication is not bypassed. This correction
 has focused non-browser coverage but remains browser-unverified under the
 no-retry boundary above.
 
+An explicitly authorized rerun on 2026-10-03 proved the authentication fix:
+the trainer identity header rendered and was retained at
+`stage5/test-artifacts/release-canary/20261003T220501Z-00f03ae3/trainer-header-identity.png`.
+The run then stopped on the dashboard's visible `All` filter because replacing
+semantics-based login had also removed the harness's earlier semantics
+activation. The retained failure artifact is
+`stage5/test-artifacts/release-canary/20261003T220501Z-00f03ae3/trainer-failure.png`.
+The harness now activates Flutter semantics immediately after authentication.
+No YouTube browser assertion ran in that bounded rerun.
+
 The desktop-sized viewport is the current smoke-test baseline. After navigation
 and responsive layouts stabilize further, add a phone-sized viewport (for
 example, 390x844) as a separate run of the same authentication assertion rather
