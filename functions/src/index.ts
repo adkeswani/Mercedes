@@ -52,15 +52,24 @@ async function consumeYoutubeRateLimit(uid: string): Promise<void> {
 export const youtubePublicLibrary = onCall(
   {
     secrets: [youtubeApiKey],
+    region: "us-central1",
     timeoutSeconds: 15,
     memory: "256MiB",
     maxInstances: 10,
+    cors: true,
+    enforceAppCheck: false,
   },
   async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError(
+        "unauthenticated",
+        "Sign in to browse public YouTube channels.",
+      );
+    }
     try {
       return await handleYoutubePublicRequest(
         request.data,
-        request.auth?.uid ?? null,
+        request.auth.uid,
         consumeYoutubeRateLimit,
         publicYoutubeService(),
       );
@@ -70,7 +79,7 @@ export const youtubePublicLibrary = onCall(
       }
       logger.error("Public YouTube request failed", {
         uid: request.auth?.uid,
-        error,
+        errorName: error instanceof Error ? error.name : "UnknownError",
       });
       throw new HttpsError(
         "internal",

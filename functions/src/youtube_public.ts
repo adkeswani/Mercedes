@@ -1,6 +1,7 @@
 export type YoutubeErrorCode =
   "invalid-argument" |
   "unauthenticated" |
+  "failed-precondition" |
   "not-found" |
   "resource-exhausted" |
   "deadline-exceeded" |
@@ -159,8 +160,8 @@ export class YoutubePublicService {
   ) {
     if (!apiKey) {
       throw new YoutubePublicError(
-        "internal",
-        "YouTube API is not configured.",
+        "failed-precondition",
+        "Public YouTube browsing is not configured.",
       );
     }
   }

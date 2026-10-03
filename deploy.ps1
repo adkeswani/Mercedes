@@ -230,6 +230,7 @@ if ($deploysWeb) {
         $webBuildArguments +=
             '--dart-define=ENABLE_RELEASE_CANARY_LOGIN=true'
     }
+
 }
 
 # Verify we're on main
@@ -243,6 +244,20 @@ if ($dirty) {
     Write-Fail "Working tree is dirty. Commit or stash changes first."
 }
 Write-Ok "On main, clean working tree"
+
+if ($deploysWeb) {
+    Write-Step "Checking required Firebase Functions secrets"
+    firebase functions:secrets:get YOUTUBE_API_KEY `
+        --project $resolvedProjectId |
+        Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail (
+            "YOUTUBE_API_KEY is unavailable in '$resolvedProjectId'. " +
+            'Create it with firebase functions:secrets:set before deploying.'
+        )
+    }
+    Write-Ok "Required Functions secret metadata is available"
+}
 
 # Run tests
 if (-not $SkipTests) {

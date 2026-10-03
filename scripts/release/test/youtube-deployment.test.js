@@ -1,0 +1,53 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const test = require("node:test");
+
+const root = path.resolve(__dirname, "..", "..", "..");
+const read = (...segments) =>
+  fs.readFileSync(path.join(root, ...segments), "utf8");
+
+test("Firebase configuration includes every YouTube release surface", () => {
+  const config = JSON.parse(read("firebase.json"));
+  assert.equal(config.functions[0].source, "functions");
+  assert.ok(config.functions[0].predeploy.includes(
+    "npm --prefix \"$RESOURCE_DIR\" run build",
+  ));
+  assert.equal(config.firestore.rules, "firestore.rules");
+  assert.equal(config.firestore.indexes, "firestore.indexes.json");
+  assert.equal(config.hosting.public, "stage5/build/web");
+});
+
+test("callable binds its secret and bounded runtime security options", () => {
+  const source = read("functions", "src", "index.ts");
+  assert.match(source, /defineSecret\("YOUTUBE_API_KEY"\)/);
+  assert.match(source, /secrets: \[youtubeApiKey\]/);
+  assert.match(source, /region: "us-central1"/);
+  assert.match(source, /maxInstances: 10/);
+  assert.match(source, /enforceAppCheck: false/);
+  assert.match(source, /if \(!request\.auth\?\.uid\)/);
+  assert.doesNotMatch(source, /logger\.error\([^]*\berror,\s*\n/);
+});
+
+test("web release fails closed on a missing secret and deploys in order", () => {
+  const deploy = read("deploy.ps1");
+  const secretCheck = deploy.indexOf(
+    "firebase functions:secrets:get YOUTUBE_API_KEY",
+  );
+  const backendDeploy = deploy.indexOf(
+    'firebase deploy --only "functions,firestore:rules,firestore:indexes"',
+  );
+  const indexWait = deploy.indexOf("scripts\\wait-firestore-indexes.ps1");
+  const hostingDeploy = deploy.indexOf(
+    "firebase deploy --only hosting",
+  );
+  const parityCheck = deploy.indexOf("scripts\\verify-deployed-config.ps1");
+
+  assert.ok(secretCheck >= 0);
+  assert.ok(backendDeploy > secretCheck);
+  assert.ok(indexWait > backendDeploy);
+  assert.ok(hostingDeploy > indexWait);
+  assert.ok(parityCheck > hostingDeploy);
+});

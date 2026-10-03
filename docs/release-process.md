@@ -73,19 +73,63 @@ key. It is not an OAuth credential and must never be placed in Flutter
 `--dart-define` values, Firebase web configuration, source, or CI logs.
 
 1. In the exact Google Cloud project backing the target Firebase environment,
-   enable **YouTube Data API v3**.
+   enable **YouTube Data API v3**:
+
+   ```powershell
+   gcloud services enable youtube.googleapis.com --project <project-id>
+   ```
+
 2. Create a server API key restricted to YouTube Data API v3. Apply the
    strongest supported application restriction for the deployed Functions
-   environment and monitor the key in Google Cloud.
+   environment and monitor the key in Google Cloud. Cloud Functions does not
+   provide a stable outbound IP by default, so do not invent an IP restriction
+   that would break production. The YouTube Data API restriction is mandatory;
+   use a supported application restriction only when the environment provides
+   a stable verifiable identity or egress boundary.
 3. Store it as a Firebase Functions secret:
 
    ```powershell
    firebase functions:secrets:set YOUTUBE_API_KEY --project <project-id>
    ```
 
-4. Deploy Functions normally. Firebase binds the secret only to
+4. Confirm secret metadata without reading or printing the secret:
+
+   ```powershell
+   gcloud services list --enabled `
+     --filter 'name:youtube.googleapis.com' `
+     --format 'value(name)' `
+     --project <project-id>
+   firebase functions:secrets:get YOUTUBE_API_KEY --project <project-id>
+   ```
+
+5. Deploy Functions normally. Firebase binds the secret only to
    `youtubePublicLibrary`; no real key is required by unit, rules, or local
-   browser tests.
+   browser tests. `deploy.ps1` performs the metadata check and fails before
+   build/deploy when the secret is absent or inaccessible. A direct Firebase
+   deployment also cannot create a healthy secret-bound revision without an
+   accessible secret version. If a deployed revision is ever misconfigured
+   with an empty value, the callable returns a sanitized
+   `failed-precondition`; it never falls back to a client key or live
+   unauthenticated proxy.
+
+To rotate the key, create a new API-restricted key, set it as a new secret
+version, deploy only the callable, verify authenticated browsing, and then
+disable the old key/version during a rollback window:
+
+```powershell
+firebase functions:secrets:set YOUTUBE_API_KEY --project <project-id>
+firebase deploy --only functions:youtubePublicLibrary --project <project-id>
+gcloud secrets versions list YOUTUBE_API_KEY --project <project-id>
+gcloud secrets versions disable <old-version> `
+  --secret YOUTUBE_API_KEY `
+  --project <project-id>
+```
+
+After the rollback window, destroy the disabled Secret Manager version and
+delete the old Google Cloud API key. Never print the key with
+`functions:secrets:access`, place it in shell history, or commit it. Restoring
+the prior secret version and redeploying the callable is the rollback path if
+the new key fails verification.
 
 Each channel resolution uses one `channels.list` quota unit. Each uncached
 uploads page normally uses one `channels.list`, one `playlistItems.list`, and
@@ -105,6 +149,13 @@ initialized in the current clients, so authentication, strict input
 allowlisting, bounded requests, instance caps, and per-user rate limiting are
 the active abuse controls. App Check enforcement should be added only with
 coordinated client registration to avoid breaking legitimate traffic.
+The callable runs in `us-central1` on the repository-pinned Node.js 22 runtime.
+Firebase callable protocol CORS handling remains enabled, but Firebase
+Authentication is required before secret/service initialization and the
+allowlisted `resolve`/`videos` actions cannot proxy arbitrary URLs. App Check
+is explicitly not enforced until every supported client initializes it; this
+is a known staged-security boundary, not an implicit claim that App Check is
+active.
 
 Browser validation requires Google Chrome. The stage, browser-smoke, and
 release-canary runners share one ChromeDriver resolver. It honors an explicit
@@ -187,16 +238,69 @@ missing templates, and empty results fail the run.
 
 The local emulator canary additionally compiles
 `FAKE_PUBLIC_YOUTUBE_CATALOGUE=true`; it never calls YouTube. It edits the
-seeded exercise, searches and sorts the fake catalogue, performs a native
-pointer drag attachment and a separate Select/Attach replacement, verifies
-the exact immutable version documents through the emulator Admin SDK, and
-retains `trainer-exercise-youtube-drag.png` plus
+seeded exercise, searches and sorts the fake catalogue, invokes the same
+attachment/save commands through a debug/emulator/query/fake-catalogue-gated
+browser bridge for a drag-equivalent path and a distinct Select/Attach
+replacement, verifies the exact immutable version documents through the
+emulator Admin SDK, and retains `trainer-exercise-youtube-drag.png` plus
 `trainer-exercise-youtube-select.png`.
 
 Successful PNG directories are retained as diagnostic release artifacts and
 must remain in the worktree after validation. They are gitignored and must not
 be committed. Cleanup may remove logs, temporary process output, Firebase
 caches, generated plugin noise, and failed transient attempts only.
+
+### Public YouTube release and rollback checks
+
+The web release order is deliberate:
+
+1. Confirm the secret metadata and build/test Functions.
+2. Deploy Functions, Firestore rules, and Firestore indexes together.
+3. Wait until every index is ready.
+4. Deploy Hosting.
+5. Verify deployed Firestore rule/index parity.
+6. Sign in as a real test user and resolve a known public channel; verify that
+   quota, not-found, and unavailable errors remain sanitized.
+
+Before the real release, validate the backend configuration without mutation:
+
+```powershell
+firebase deploy `
+  --only 'functions,firestore:rules,firestore:indexes' `
+  --project <project-id> `
+  --dry-run `
+  --force
+```
+
+If the backend deployment fails, Hosting is not deployed. If index readiness
+fails, Hosting is not deployed. If Hosting fails after the backend succeeds,
+the prior client remains live against the backward-compatible callable/rules;
+fix Hosting or redeploy the prior backend commit. If post-release YouTube
+verification fails, redeploy the previous callable and secret version before
+rolling back Hosting. Firestore version documents remain immutable throughout.
+
+The parity helper compares deployed Firestore rules and indexes; it does not
+prove a Functions revision, secret value, API enablement, Hosting asset, or
+YouTube quota. The secret metadata preflight, Firebase dry run, deployed
+callable smoke, retained browser screenshots, and Firestore version assertions
+cover those separate surfaces. No repository command creates the API key or
+commits a secret.
+
+### Branch integration ordering
+
+The public YouTube work is self-contained in commits `7b87fd9` and `9c7218a`
+plus this deployment-readiness commit. It does **not** depend on builder commit
+`904fea0`, which is not an ancestor of this branch. Do not merge that unrelated
+builder branch merely to deploy YouTube.
+
+Both branches edit `docs/domain-model-design.md`,
+`docs/remaining-features.md`, `docs/technical-design.md`, `firestore.rules`,
+`stage5/README.md`, and `test-rules/firestore-rules.test.ts`. If both features
+are approved for the same release, land the builder change first, then rebase
+or cherry-pick the YouTube commits onto the updated `main`; resolve those six
+files additively and rerun Functions, rules, Stage 5, and release-helper gates.
+Deploy only from the resulting clean `main` commit. If builder is not approved,
+integrate the YouTube commits directly without it.
 
 ## Production promotion
 

@@ -91,6 +91,16 @@ test("rejects arbitrary hosts, malformed references, tokens, and bounds", () => 
   assert.throws(() => validateMaxResults(51), {code: "invalid-argument"});
 });
 
+test("fails closed with a sanitized error when the API key is absent", () => {
+  assert.throws(
+    () => new YoutubePublicService(""),
+    {
+      code: "failed-precondition",
+      message: "Public YouTube browsing is not configured.",
+    },
+  );
+});
+
 test("resolves handles without exposing the API key in results", async () => {
   let requestedUrl;
   const service = new YoutubePublicService("super-secret", async (url) => {

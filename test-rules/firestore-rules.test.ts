@@ -561,6 +561,12 @@ describe('exerciseTemplates', () => {
       publishedBy: OWNER,
     });
     await assertSucceeds(valid.commit());
+    const immutableVersion = validHeader
+      .collection('exerciseVersions').doc('1');
+    await assertFails(immutableVersion.update({
+      'youtubeMetadata.title': 'Mutated historical title',
+    }));
+    await assertFails(immutableVersion.delete());
 
     const invalidHeader = db.collection('exerciseTemplates').doc('bad-youtube');
     const invalid = db.batch();

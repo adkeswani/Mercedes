@@ -361,7 +361,11 @@ cloud resources are modified by local validation.
 Before deploying the public YouTube browser, enable YouTube Data API v3 in the
 target Firebase project's Google Cloud project and set the server key with
 `firebase functions:secrets:set YOUTUBE_API_KEY --project <project-id>`.
-Restrict the key to YouTube Data API v3. The callable uses uploads playlists
+Restrict the key to YouTube Data API v3, then confirm metadata with
+`firebase functions:secrets:get YOUTUBE_API_KEY --project <project-id>`;
+this command does not reveal the value. `deploy.ps1` fails closed when the
+secret is unavailable and deploys Functions/rules/indexes before Hosting.
+No key or secret version is committed. The callable uses uploads playlists
 and batched video details, caps pages at 50, times out upstream calls, caches
 channel/page metadata for 10/5 minutes per warm instance, caps instances at
 10, and limits each authenticated user to 30 calls per hour. See

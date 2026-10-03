@@ -91,6 +91,16 @@ channel uploads playlist, pages `playlistItems`, and batches `videos.list`
 details. Searches and sort orders in the client apply to the explicitly
 labelled loaded catalogue, which can be expanded page by page.
 
+The callable is a 2nd-generation Node.js 22 function in `us-central1`. Its
+`YOUTUBE_API_KEY` is a function-bound Firebase secret; missing configuration
+fails closed with a sanitized precondition error. Firebase Authentication is
+checked before service initialization, Firestore enforces 30 requests per UID
+per hour, upstream actions/identifiers are allowlisted and bounded, and
+instances are capped. Callable-protocol CORS is enabled, but this is not an
+arbitrary HTTP proxy. App Check enforcement remains off until coordinated
+client initialization; authentication, bounds, rate limiting, and instance
+caps are the current production controls.
+
 ### 2.2.1 Athlete Exercise Notes
 
 ```
