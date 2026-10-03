@@ -72,6 +72,34 @@ The public-channel browser requires an operator-managed YouTube Data API v3
 key. It is not an OAuth credential and must never be placed in Flutter
 `--dart-define` values, Firebase web configuration, source, or CI logs.
 
+The recommended production path is the guarded operator script:
+
+```powershell
+# Read-only; exits nonzero with actionable diagnostics until every
+# prerequisite and clean-main integration check passes.
+.\scripts\setup-youtube-production.ps1 -CheckOnly
+
+# Interactive setup. Every cloud mutation requires an exact typed phrase;
+# dry-run and deployment both default to no.
+.\scripts\setup-youtube-production.ps1
+```
+
+The script defaults to `prod` / `mercedes-app-11ce2`, accepts explicit
+`-Environment`, `-Project`, and `-RequiredCommit` values, and enforces
+`config/firebase-environments.json`. It verifies Git, gcloud, Firebase CLI,
+authenticated project access, clean `main`, and exact intended commit. When
+integration is incomplete it only prints safe `git fetch`, `git switch main`,
+and `git merge --ff-only` commands; it never merges, rebases, pushes, or
+force-pushes. `-CheckOnly` performs no cloud or repository mutation.
+
+The script prints and attempts to open the exact Google Cloud Credentials URL.
+If browser launch is unavailable, use the printed URL and continue at the
+prompt. It never accepts the API key: Firebase CLI owns the secure value prompt
+for `functions:secrets:set`. API enablement, key creation/restriction, secret
+version creation, dry-run, and deployment remain explicit operator decisions.
+
+The equivalent manual steps are:
+
 1. In the exact Google Cloud project backing the target Firebase environment,
    enable **YouTube Data API v3**:
 
@@ -79,7 +107,13 @@ key. It is not an OAuth credential and must never be placed in Flutter
    gcloud services enable youtube.googleapis.com --project <project-id>
    ```
 
-2. Create a server API key restricted to YouTube Data API v3. Apply the
+2. Open the credentials page:
+
+   ```text
+   https://console.cloud.google.com/apis/credentials?project=<project-id>
+   ```
+
+   Create a server API key restricted to YouTube Data API v3. Apply the
    strongest supported application restriction for the deployed Functions
    environment and monitor the key in Google Cloud. Cloud Functions does not
    provide a stable outbound IP by default, so do not invent an IP restriction
@@ -111,6 +145,13 @@ key. It is not an OAuth credential and must never be placed in Flutter
    with an empty value, the callable returns a sanitized
    `failed-precondition`; it never falls back to a client key or live
    unauthenticated proxy.
+
+   The operator script can invoke the documented backend dry run after a separate
+   typed confirmation. It then prints the exact `deploy.ps1` command and can
+   invoke it only after that dry run succeeds and the operator enters the
+   unmistakable `DEPLOY PRODUCTION` confirmation; the default answer is always
+   no. Explicit non-production environments use their corresponding uppercase
+   environment name in both confirmation phrases.
 
 To rotate the key, create a new API-restricted key, set it as a new secret
 version, deploy only the callable, verify authenticated browsing, and then

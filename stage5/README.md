@@ -371,6 +371,19 @@ channel/page metadata for 10/5 minutes per warm instance, caps instances at
 10, and limits each authenticated user to 30 calls per hour. See
 `../docs/release-process.md` for quota, cost, privacy, and deployment details.
 
+Operators should use the guarded setup workflow rather than copying secret
+values through custom shell commands:
+
+```powershell
+.\scripts\setup-youtube-production.ps1 -CheckOnly
+.\scripts\setup-youtube-production.ps1
+```
+
+Check-only mode is read-only and fails with actionable diagnostics. Interactive
+mode verifies project/manifest access and clean-main integration, requires
+exact confirmations before API or secret-version creation, delegates secret
+entry to Firebase CLI, and defaults to no for both dry-run and deployment.
+
 Screenshots remain useful diagnostics for layout and identity rendering, but
 they are supplemental: they cannot establish that deployed rules and indexes
 match the client query contract.
