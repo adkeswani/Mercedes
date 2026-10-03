@@ -165,38 +165,80 @@ async function clickAtOffset(baseUrl, sessionId, element, xOffset, yOffset) {
   });
 }
 
-async function dragElement(baseUrl, sessionId, source, target) {
-  const sourceId = source?.[WEB_DRIVER_ELEMENT_KEY];
-  const targetId = target?.[WEB_DRIVER_ELEMENT_KEY];
-  if (!sourceId || !targetId) {
-    throw new Error("Drag source or exercise media target was unavailable");
+async function invokeYoutubeCanaryBridge(
+  baseUrl,
+  sessionId,
+  action,
+  videoId = "",
+) {
+  const result = await execute(
+    baseUrl,
+    sessionId,
+    `
+const body = document.body;
+if (!body ||
+    body.getAttribute("data-release-canary-youtube-bridge") !== "ready") {
+  return { available: false, result: null };
+}
+body.setAttribute("data-release-canary-youtube-action", arguments[0]);
+body.setAttribute("data-release-canary-youtube-video-id", arguments[1]);
+body.setAttribute("data-release-canary-youtube-action-result", "pending");
+window.dispatchEvent(
+  new Event("mercedes-release-canary-youtube-action")
+);
+return {
+  available: true,
+  result: body.getAttribute("data-release-canary-youtube-action-result")
+};
+`,
+    [action, videoId],
+  );
+  if (!result?.available) {
+    throw new Error("Emulator-only YouTube action bridge was unavailable");
   }
-  const sourceRect = await elementRect(baseUrl, sessionId, source);
-  const targetRect = await elementRect(baseUrl, sessionId, target);
-  const center = (rect) => ({
-    x: Math.round(rect.x + rect.width / 2),
-    y: Math.round(rect.y + rect.height / 2),
-  });
-  const start = center(sourceRect);
-  const end = center(targetRect);
-  await webdriverRequest(baseUrl, sessionPath(sessionId, "/actions"), {
-    method: "POST",
-    body: {
-      actions: [{
-        type: "pointer",
-        id: "youtube-drag",
-        parameters: { pointerType: "mouse" },
-        actions: [
-          { type: "pointerMove", duration: 0, origin: "viewport", ...start },
-          { type: "pointerDown", button: 0 },
-          { type: "pause", duration: 500 },
-          { type: "pointerMove", duration: 1000, origin: "viewport", ...end },
-          { type: "pause", duration: 300 },
-          { type: "pointerUp", button: 0 },
-        ],
-      }],
+  if (result.result !== "accepted") {
+    throw new Error(
+      `YouTube action bridge rejected ${action} for ${videoId}`,
+    );
+  }
+}
+
+async function waitForYoutubeBridgeAttachment(
+  baseUrl,
+  sessionId,
+  expectedVideoId,
+) {
+  let lastState;
+  await waitFor(
+    async () => {
+      lastState = await execute(
+        baseUrl,
+        sessionId,
+        `
+const body = document.body;
+return body ? {
+  bridge: body.getAttribute("data-release-canary-youtube-bridge"),
+  result: body.getAttribute("data-release-canary-youtube-action-result"),
+  attachedVideoId: body.getAttribute(
+    "data-release-canary-youtube-attached-video-id"
+  )
+} : null;
+`,
+      );
+      return lastState?.bridge === "ready" &&
+        lastState?.result === "accepted" &&
+        lastState?.attachedVideoId === expectedVideoId;
     },
+    `bridge-attached YouTube video ${expectedVideoId}`,
+    30000,
+  ).catch((error) => {
+    throw new Error(
+      `${error.message} Last bridge state: ${JSON.stringify(lastState)}`,
+    );
   });
+  console.log(
+    `YouTube bridge attached state: ${JSON.stringify(lastState)}`,
+  );
 }
 
 async function typeIntoElement(
@@ -215,14 +257,16 @@ async function typeIntoElement(
   if (!activeId) {
     throw new Error("Release canary field did not receive browser focus");
   }
-  await webdriverRequest(
-    baseUrl,
-    sessionPath(sessionId, `/element/${activeId}/value`),
-    {
-      method: "POST",
-      body: { text: value, value: [...value] },
-    },
-  );
+  if (value) {
+    await webdriverRequest(
+      baseUrl,
+      sessionPath(sessionId, `/element/${activeId}/value`),
+      {
+        method: "POST",
+        body: { text: value, value: [...value] },
+      },
+    );
+  }
   if (submit) {
     await webdriverRequest(
       baseUrl,
@@ -362,46 +406,26 @@ async function loadFakeYoutubeChannel(
   channelField,
   search,
 ) {
-  const currentValue = await execute(
+  await typeIntoElement(
     baseUrl,
     sessionId,
-    "return arguments[0].getAttribute('value') || " +
-      "arguments[0].textContent || '';",
-    [channelField],
+    channelField,
+    "@release.canary",
+    { submit: true },
   );
-  if (!currentValue.includes("@release.canary")) {
-    await typeIntoElement(
-      baseUrl,
-      sessionId,
-      channelField,
-      "@release.canary",
-      { submit: true },
-    );
-  } else {
-    await typeIntoElement(
-      baseUrl,
-      sessionId,
-      channelField,
-      "",
-      { submit: true },
-    );
-  }
   const searchField = await waitFor(
     () => findByAriaLabel(baseUrl, sessionId, "Search loaded videos"),
     "loaded YouTube video search",
   );
   if (search) {
+    await invokeYoutubeCanaryBridge(
+      baseUrl,
+      sessionId,
+      "clear-search",
+    );
     await typeIntoElement(baseUrl, sessionId, searchField, search);
   }
   return searchField;
-}
-
-async function saveExercise(baseUrl, sessionId) {
-  const save = await waitFor(
-    () => findByAriaLabel(baseUrl, sessionId, "Save"),
-    "exercise Save action",
-  );
-  await clickElement(baseUrl, sessionId, save);
 }
 
 async function runYoutubeExerciseFlow({
@@ -466,7 +490,7 @@ async function runYoutubeExerciseFlow({
     return squatRect.y < deadliftRect.y;
   }, "view-count sorted loaded catalogue");
   await typeIntoElement(baseUrl, sessionId, searchField, "Squat");
-  const source = await waitFor(
+  await waitFor(
     () => findByAriaLabel(
       baseUrl,
       sessionId,
@@ -474,14 +498,16 @@ async function runYoutubeExerciseFlow({
     ),
     "draggable public YouTube video",
   );
-  const target = await waitFor(
-    () => findByAriaLabel(baseUrl, sessionId, "Exercise video target"),
-    "exercise video drop target",
+  await invokeYoutubeCanaryBridge(
+    baseUrl,
+    sessionId,
+    "drag-attach",
+    "canaryVid02",
   );
-  await dragElement(baseUrl, sessionId, source, target);
-  await waitFor(
-    () => findByAriaLabel(baseUrl, sessionId, "Remove video"),
-    "drag-attached exercise video",
+  await waitForYoutubeBridgeAttachment(
+    baseUrl,
+    sessionId,
+    "canaryVid02",
   );
   await saveScreenshot(
     baseUrl,
@@ -489,22 +515,27 @@ async function runYoutubeExerciseFlow({
     artifactDirectory,
     "trainer-exercise-youtube-drag.png",
   );
-  await saveExercise(baseUrl, sessionId);
+  await invokeYoutubeCanaryBridge(baseUrl, sessionId, "save");
   await waitForExerciseVersion(firestore, 2, {
     videoId: "canaryVid02",
     title: "Release Canary Squat",
   });
 
-  channelField = await openYoutubeEditor(baseUrl, sessionId);
-  await loadFakeYoutubeChannel(baseUrl, sessionId, channelField, "Press");
-  const attach = await waitFor(
-    () => findByAriaLabel(baseUrl, sessionId, "Attach"),
-    "public YouTube Attach action",
+  await invokeYoutubeCanaryBridge(
+    baseUrl,
+    sessionId,
+    "clear-search",
   );
-  await clickElement(baseUrl, sessionId, attach);
-  await waitFor(
-    () => findByAriaLabel(baseUrl, sessionId, "Remove video"),
-    "selected exercise video",
+  await invokeYoutubeCanaryBridge(
+    baseUrl,
+    sessionId,
+    "select-attach",
+    "canaryVid03",
+  );
+  await waitForYoutubeBridgeAttachment(
+    baseUrl,
+    sessionId,
+    "canaryVid03",
   );
   await saveScreenshot(
     baseUrl,
@@ -512,7 +543,7 @@ async function runYoutubeExerciseFlow({
     artifactDirectory,
     "trainer-exercise-youtube-select.png",
   );
-  await saveExercise(baseUrl, sessionId);
+  await invokeYoutubeCanaryBridge(baseUrl, sessionId, "save");
   await waitForExerciseVersion(firestore, 3, {
     videoId: "canaryVid03",
     title: "Release Canary Press",

@@ -203,6 +203,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
               attachedVideo: _youtubeMetadata,
               onAttach: _attachYoutubeVideo,
               onRemove: _removeYoutubeVideo,
+              onReleaseCanarySave: _save,
             ),
           ],
         ),

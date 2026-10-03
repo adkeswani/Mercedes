@@ -10,6 +10,108 @@ import 'package:stage5/features/exercises/presentation/youtube_library_panel.dar
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 void main() {
+  test('release canary bridge actions use the attachment command', () {
+    final attached = <PublicYoutubeVideo>[];
+    var cleared = false;
+    var saved = false;
+
+    final dragResult = handleReleaseCanaryYoutubeBridgeAction(
+      action: 'drag-attach',
+      videoId: _first.id,
+      videos: [_first],
+      onAttach: attached.add,
+      onClearSearch: () => cleared = true,
+      onSave: () => saved = true,
+    );
+    final selectResult = handleReleaseCanaryYoutubeBridgeAction(
+      action: 'select-attach',
+      videoId: _first.id,
+      videos: [_first],
+      onAttach: attached.add,
+      onClearSearch: () => cleared = true,
+      onSave: () => saved = true,
+    );
+    expect(dragResult.accepted, isTrue);
+    expect(dragResult.attachedVideoId, _first.id);
+    expect(selectResult.accepted, isTrue);
+    expect(selectResult.attachedVideoId, _first.id);
+    expect(attached, [_first, _first]);
+    final clearResult = handleReleaseCanaryYoutubeBridgeAction(
+      action: 'clear-search',
+      videoId: '',
+      videos: [_first],
+      onAttach: attached.add,
+      onClearSearch: () => cleared = true,
+      onSave: () => saved = true,
+    );
+    expect(clearResult.accepted, isTrue);
+    expect(clearResult.attachedVideoId, isNull);
+    expect(cleared, isTrue);
+    final saveResult = handleReleaseCanaryYoutubeBridgeAction(
+      action: 'save',
+      videoId: '',
+      videos: [_first],
+      onAttach: attached.add,
+      onClearSearch: () => cleared = true,
+      onSave: () => saved = true,
+    );
+    expect(saveResult.accepted, isTrue);
+    expect(saveResult.attachedVideoId, isNull);
+    expect(saved, isTrue);
+    final rejectedResult = handleReleaseCanaryYoutubeBridgeAction(
+      action: 'drag-attach',
+      videoId: 'not-loaded',
+      videos: [_first],
+      onAttach: attached.add,
+      onClearSearch: () => cleared = true,
+      onSave: () => saved = true,
+    );
+    expect(rejectedResult.accepted, isFalse);
+    expect(rejectedResult.attachedVideoId, isNull);
+  });
+
+  test('release canary select action accepts the filtered fake fixture', () {
+    final attached = <PublicYoutubeVideo>[];
+    final filtered = filterAndSortYoutubeVideos(
+      FakeYoutubePublicApi.videos,
+      query: 'Press',
+      sort: YoutubeVideoSort.viewCount,
+    );
+
+    expect(filtered.map((video) => video.id), ['canaryVid03']);
+    final result = handleReleaseCanaryYoutubeBridgeAction(
+      action: 'select-attach',
+      videoId: 'canaryVid03',
+      videos: filtered,
+      onAttach: attached.add,
+    );
+    expect(result.accepted, isTrue);
+    expect(result.attachedVideoId, 'canaryVid03');
+    expect(attached.single.title, 'Release Canary Press');
+  });
+
+  test('search reset clears the actual controller and catalogue filter', () {
+    final controller = TextEditingController(text: 'Squat');
+    addTearDown(controller.dispose);
+    var updates = 0;
+
+    resetYoutubeSearchController(controller, (callback) {
+      updates += 1;
+      callback();
+    });
+
+    expect(updates, 1);
+    expect(controller.text, isEmpty);
+    expect(
+      filterAndSortYoutubeVideos(
+        [_first, _second],
+        query: controller.text,
+        sort: YoutubeVideoSort.newest,
+      ),
+      hasLength(2),
+    );
+  });
+
   testWidgets('renders loading, error, empty, and populated channel states',
       (tester) async {
     final completer = Completer<PublicYoutubeChannel>();
@@ -89,13 +191,16 @@ void main() {
 
     await tester.tap(find.byKey(const Key('youtube-attach-videoId0001')));
     await tester.pump();
-    await tester.drag(
-      find.byKey(const Key('youtube-video-videoId0001')),
-      tester.getCenter(find.byKey(youtubeMediaTargetKey)) -
-          tester.getCenter(
-            find.byKey(const Key('youtube-video-videoId0001')),
-          ),
-    );
+    final source = find.byKey(const Key('youtube-video-videoId0001'));
+    final target = find.byKey(youtubeMediaTargetKey);
+    final gesture = await tester.startGesture(tester.getCenter(source));
+    await gesture.moveBy(const Offset(24, 0));
+    await tester.pump();
+    await gesture.moveTo(tester.getCenter(target));
+    await tester.pump();
+    await gesture.moveBy(const Offset(2, 0));
+    await tester.pump();
+    await gesture.up();
     await tester.pumpAndSettle();
 
     expect(attached.length, 2);
@@ -122,6 +227,31 @@ void main() {
       find.byKey(const Key('youtube-attach-videoId0001')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('remove action exposes explicit button semantics',
+      (tester) async {
+    var removed = false;
+    await _pumpPanel(
+      tester,
+      api: _FakeApi(),
+      attachedVideo: _first.metadata,
+      onRemove: () => removed = true,
+    );
+    await tester.enterText(
+      find.byKey(youtubeChannelFieldKey),
+      '@public.trainer',
+    );
+    await tester.tap(find.byKey(youtubeLoadChannelKey));
+    await tester.pumpAndSettle();
+    final semantics = tester.ensureSemantics();
+
+    final remove = find.bySemanticsLabel('Remove video');
+    expect(remove, findsOneWidget);
+    await tester.tap(remove);
+    await tester.pump();
+    expect(removed, isTrue);
+    semantics.dispose();
   });
 }
 
@@ -204,7 +334,9 @@ class _MemoryPreference implements YoutubeChannelPreference {
 Future<void> _pumpPanel(
   WidgetTester tester, {
   required YoutubePublicApi api,
+  YoutubeVideoMetadata? attachedVideo,
   ValueChanged<PublicYoutubeVideo>? onAttach,
+  VoidCallback? onRemove,
   Size size = const Size(900, 1000),
 }) async {
   tester.view.physicalSize = size;
@@ -219,8 +351,9 @@ Future<void> _pumpPanel(
             child: YoutubeLibraryPanel(
               api: api,
               preference: _MemoryPreference(),
+              attachedVideo: attachedVideo,
               onAttach: onAttach ?? (_) {},
-              onRemove: () {},
+              onRemove: onRemove ?? () {},
             ),
           ),
         ),

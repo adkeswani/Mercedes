@@ -1,10 +1,12 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 
 import 'package:stage5/core/browser_smoke_config.dart';
 
 const releaseCanaryLoginCompiledIn = bool.fromEnvironment(
   'ENABLE_RELEASE_CANARY_LOGIN',
+);
+const releaseCanaryYoutubeCatalogueCompiledIn = bool.fromEnvironment(
+  'FAKE_PUBLIC_YOUTUBE_CATALOGUE',
 );
 
 bool isReleaseCanaryRequest({
@@ -18,10 +20,38 @@ bool isReleaseCanaryRequest({
 }
 
 bool get releaseCanaryMode => isReleaseCanaryRequest(
-  compiledIn: releaseCanaryLoginCompiledIn,
-  isWeb: kIsWeb,
-  location: Uri.base,
-);
+      compiledIn: releaseCanaryLoginCompiledIn,
+      isWeb: kIsWeb,
+      location: Uri.base,
+    );
+
+bool isReleaseCanaryYoutubeBridgeEnabled({
+  required bool isDebugBuild,
+  required bool isWeb,
+  required bool useFirebaseEmulators,
+  required bool releaseCanaryCompiledIn,
+  required bool fakeCatalogueCompiledIn,
+  required Uri location,
+}) {
+  return isDebugBuild &&
+      useFirebaseEmulators &&
+      fakeCatalogueCompiledIn &&
+      isReleaseCanaryRequest(
+        compiledIn: releaseCanaryCompiledIn,
+        isWeb: isWeb,
+        location: location,
+      );
+}
+
+bool get releaseCanaryYoutubeBridgeEnabled =>
+    isReleaseCanaryYoutubeBridgeEnabled(
+      isDebugBuild: kDebugMode,
+      isWeb: kIsWeb,
+      useFirebaseEmulators: browserSmokeConfig.useFirebaseEmulators,
+      releaseCanaryCompiledIn: releaseCanaryLoginCompiledIn,
+      fakeCatalogueCompiledIn: releaseCanaryYoutubeCatalogueCompiledIn,
+      location: Uri.base,
+    );
 
 bool get browserAutomationEnabled =>
     browserSmokeConfig.autoLoginEnabled || releaseCanaryMode;

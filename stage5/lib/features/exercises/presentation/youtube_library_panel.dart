@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:stage5/core/release_canary_config.dart';
+import 'package:stage5/core/release_canary_youtube_bridge.dart';
+import 'package:stage5/core/release_canary_youtube_bridge_contract.dart';
 import 'package:stage5/features/exercises/data/youtube_channel_preference.dart';
 import 'package:stage5/features/exercises/data/youtube_public_api.dart';
 import 'package:stage5/features/exercises/domain/youtube_channel.dart';
@@ -12,18 +15,63 @@ const youtubeSearchFieldKey = Key('youtube-search-field');
 const youtubeMediaTargetKey = Key('youtube-media-target');
 const youtubeRemoveVideoKey = Key('youtube-remove-video');
 
+void resetYoutubeSearchController(
+  TextEditingController controller,
+  void Function(VoidCallback callback) update,
+) {
+  update(controller.clear);
+}
+
+ReleaseCanaryYoutubeActionResult handleReleaseCanaryYoutubeBridgeAction({
+  required String action,
+  required String videoId,
+  required Iterable<PublicYoutubeVideo> videos,
+  required ValueChanged<PublicYoutubeVideo> onAttach,
+  VoidCallback? onClearSearch,
+  VoidCallback? onSave,
+}) {
+  if (action == 'clear-search') {
+    if (onClearSearch == null) {
+      return const ReleaseCanaryYoutubeActionResult.rejected();
+    }
+    onClearSearch();
+    return const ReleaseCanaryYoutubeActionResult.accepted();
+  }
+  if (action == 'save') {
+    if (onSave == null) {
+      return const ReleaseCanaryYoutubeActionResult.rejected();
+    }
+    onSave();
+    return const ReleaseCanaryYoutubeActionResult.accepted();
+  }
+  if (action != 'drag-attach' && action != 'select-attach') {
+    return const ReleaseCanaryYoutubeActionResult.rejected();
+  }
+  final matches = videos.where((video) => video.id == videoId);
+  if (matches.length != 1) {
+    return const ReleaseCanaryYoutubeActionResult.rejected();
+  }
+  final video = matches.single;
+  onAttach(video);
+  return ReleaseCanaryYoutubeActionResult.accepted(
+    attachedVideoId: video.id,
+  );
+}
+
 class YoutubeLibraryPanel extends ConsumerStatefulWidget {
   const YoutubeLibraryPanel({
     required this.onAttach,
     required this.onRemove,
     this.attachedVideo,
     this.api,
+    this.onReleaseCanarySave,
     this.preference,
     super.key,
   });
 
   final ValueChanged<PublicYoutubeVideo> onAttach;
   final VoidCallback onRemove;
+  final VoidCallback? onReleaseCanarySave;
   final YoutubeVideoMetadata? attachedVideo;
   final YoutubePublicApi? api;
   final YoutubeChannelPreference? preference;
@@ -44,6 +92,7 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
   bool _loading = false;
   bool _loadingMore = false;
   int _requestGeneration = 0;
+  VoidCallback _disposeReleaseCanaryBridge = () {};
 
   YoutubePublicApi get _api => widget.api ?? ref.read(youtubePublicApiProvider);
 
@@ -53,7 +102,33 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
   @override
   void initState() {
     super.initState();
+    _disposeReleaseCanaryBridge = registerReleaseCanaryYoutubeBridge(
+      enabled: releaseCanaryYoutubeBridgeEnabled,
+      onAction: _handleReleaseCanaryYoutubeAction,
+    );
     _restoreLastChannel();
+  }
+
+  ReleaseCanaryYoutubeActionResult _handleReleaseCanaryYoutubeAction(
+    String action,
+    String videoId,
+  ) {
+    return handleReleaseCanaryYoutubeBridgeAction(
+      action: action,
+      videoId: videoId,
+      videos: filterAndSortYoutubeVideos(
+        _videos,
+        query: _searchController.text,
+        sort: _sort,
+      ),
+      onAttach: widget.onAttach,
+      onClearSearch: _clearSearch,
+      onSave: widget.onReleaseCanarySave,
+    );
+  }
+
+  void _clearSearch() {
+    resetYoutubeSearchController(_searchController, setState);
   }
 
   Future<void> _restoreLastChannel() async {
@@ -64,6 +139,7 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
 
   @override
   void dispose() {
+    _disposeReleaseCanaryBridge();
     _channelController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -73,7 +149,8 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
     if (_loading) return;
     final input = _channelController.text.trim();
     if (parseYoutubeChannelReference(input) == null &&
-        !(fakeYoutubeCatalogueEnabled && input == 'release-canary')) {
+        !(releaseCanaryYoutubeCatalogueCompiledIn &&
+            input == 'release-canary')) {
       setState(() {
         _error = 'Enter a YouTube channel URL, @handle, custom URL, or ID.';
       });
@@ -377,11 +454,18 @@ class _MediaTarget extends StatelessWidget {
                         '${metadata!.title}\n${metadata!.channelTitle}',
                       ),
                     ),
-                    TextButton.icon(
-                      key: youtubeRemoveVideoKey,
-                      onPressed: onRemove,
-                      icon: const Icon(Icons.delete_outline),
-                      label: const Text('Remove video'),
+                    Semantics(
+                      label: 'Remove video',
+                      button: true,
+                      onTap: onRemove,
+                      child: ExcludeSemantics(
+                        child: TextButton.icon(
+                          key: youtubeRemoveVideoKey,
+                          onPressed: onRemove,
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Remove video'),
+                        ),
+                      ),
                     ),
                   ],
                 ),

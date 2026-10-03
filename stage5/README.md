@@ -269,6 +269,17 @@ Screenshots are diagnostic artifacts rather than golden assertions.
 The runner drives the real Flutter application through ChromeDriver and the
 emulator-only login seam. Successful screenshot directories must remain in the
 worktree after validation; they are gitignored and must not be committed.
+
+Flutter Web's semantics DOM does not reliably propagate ChromeDriver element
+clears into `TextEditingController`, or native pointer gestures into
+`Draggable`/`DragTarget` lifecycles. Native search, Attach, and drag behavior is
+therefore covered by widget tests. The emulator-backed YouTube mutation canary
+uses a debug-web, emulator, release-canary-query, and fake-catalogue-gated
+action/status bridge to reset the actual Flutter search controller, invoke the
+same attachment/save commands, capture rendered screenshots, and verify
+immutable Firestore versions. The bridge is browser-test infrastructure only
+and is unavailable in production builds.
+
 The shared resolver validates the ChromeDriver major before launch, downloads
 only over HTTPS from the official Chrome for Testing metadata and artifact
 hosts, safely extracts under a locked temporary cache directory, and atomically
