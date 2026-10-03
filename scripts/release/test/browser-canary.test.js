@@ -73,3 +73,14 @@ test("sign-in reactivates Flutter semantics after authentication", () => {
   assert.ok(authenticationWait >= 0);
   assert.ok(semanticsActivation > authenticationWait);
 });
+
+test("text assertions consume WebDriver execute results directly", () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, "..", "browser-canary.js"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(source, /\bstate\.value\.includes\(/);
+  assert.match(source, /\bstate\.includes\("3 videos indexed"\)/);
+  assert.match(source, /\bstate\.includes\("Open on YouTube"\)/);
+});

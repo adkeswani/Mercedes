@@ -454,6 +454,15 @@ activation. The retained failure artifact is
 The harness now activates Flutter semantics immediately after authentication.
 No YouTube browser assertion ran in that bounded rerun.
 
+A final authorized emulator run reached the YouTube editor and visibly rendered
+the complete three-video fake catalogue, `3 videos indexed`, and fresh-cache
+state in
+`stage5/test-artifacts/release-canary/20261003T220804Z-2472d08a/trainer-failure.png`.
+The run stopped because the harness treated WebDriver's already-unwrapped text
+result as `{ value: ... }`. Both affected text assertions now consume the
+returned string directly. Search/sort, attach, thumbnail, save/reopen, and
+backend-metadata browser assertions remained beyond that run's boundary.
+
 The desktop-sized viewport is the current smoke-test baseline. After navigation
 and responsive layouts stabilize further, add a phone-sized viewport (for
 example, 390x844) as a separate run of the same authentication assertion rather

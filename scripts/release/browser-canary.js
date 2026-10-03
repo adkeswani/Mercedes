@@ -501,8 +501,8 @@ async function loadFakeYoutubeChannel(
       sessionId,
       "return document.body.innerText || '';",
     );
-    return state.value.includes("3 videos indexed") &&
-      state.value.includes("Catalogue is fresh.");
+    return state.includes("3 videos indexed") &&
+      state.includes("Catalogue is fresh.");
   }, "completed and fresh fake YouTube catalogue");
   if (search) {
     await invokeYoutubeCanaryBridge(
@@ -616,9 +616,9 @@ async function runYoutubeExerciseFlow({
       sessionId,
       "return document.body.innerText || '';",
     );
-    return state.value.includes("Release Canary Squat") &&
-      state.value.includes("Open on YouTube") &&
-      state.value.includes("Remove video");
+    return state.includes("Release Canary Squat") &&
+      state.includes("Open on YouTube") &&
+      state.includes("Remove video");
   }, "reopened persisted YouTube thumbnail metadata");
 
   await invokeYoutubeCanaryBridge(
