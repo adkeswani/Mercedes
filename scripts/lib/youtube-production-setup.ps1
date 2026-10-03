@@ -1,5 +1,23 @@
 Set-StrictMode -Version Latest
 
+function ConvertTo-NativeOutputText {
+    param(
+        [AllowNull()]
+        [object[]]$Value
+    )
+
+    return (@($Value) -join [Environment]::NewLine).Trim()
+}
+
+function Test-YoutubeApiServiceListOutput {
+    param(
+        [AllowNull()]
+        [object[]]$Value
+    )
+
+    return (ConvertTo-NativeOutputText $Value) -eq 'youtube.googleapis.com'
+}
+
 function Resolve-YoutubeSetupTarget {
     param(
         [Parameter(Mandatory)]

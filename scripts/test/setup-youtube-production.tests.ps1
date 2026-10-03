@@ -95,6 +95,16 @@ try {
     Assert-Equal 3 $blocked.Problems.Count 'Expected every git diagnostic.'
     $passed++
 
+    Assert-Equal $false (Test-YoutubeApiServiceListOutput $null) (
+        'Empty gcloud output must report the YouTube API as disabled.'
+    )
+    $passed++
+
+    Assert-Equal $true (
+        Test-YoutubeApiServiceListOutput 'youtube.googleapis.com'
+    ) 'Expected YouTube API output to report enabled.'
+    $passed++
+
     Write-Host "Passed $passed YouTube production setup helper tests."
 }
 finally {

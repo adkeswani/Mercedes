@@ -65,25 +65,25 @@ function Require-Command([string]$Name) {
 
 function Get-GitValue {
     param([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
-    $value = (& git -C $repoRoot @Arguments).Trim()
-    if ($LASTEXITCODE -ne 0) {
+    $output = & git -C $repoRoot @Arguments
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
         throw "git $($Arguments -join ' ') failed."
     }
-    return $value
+    return ConvertTo-NativeOutputText $output
 }
 
 function Test-YoutubeApiEnabled([string]$ProjectId) {
-    $enabled = (
-        & gcloud services list `
-            --enabled `
-            '--filter=config.name:youtube.googleapis.com' `
-            '--format=value(config.name)' `
-            --project $ProjectId
-    ).Trim()
-    if ($LASTEXITCODE -ne 0) {
+    $output = & gcloud services list `
+        --enabled `
+        '--filter=config.name:youtube.googleapis.com' `
+        '--format=value(config.name)' `
+        --project $ProjectId
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
         throw "Unable to inspect enabled APIs for '$ProjectId'."
     }
-    return $enabled -eq 'youtube.googleapis.com'
+    return Test-YoutubeApiServiceListOutput $output
 }
 
 function Test-YoutubeSecretMetadata([string]$ProjectId) {
