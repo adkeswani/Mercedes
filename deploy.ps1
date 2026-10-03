@@ -71,9 +71,26 @@ $productionProjectId = 'mercedes-app-11ce2'
 function Write-Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 function Write-Ok($msg) { Write-Host "  OK: $msg" -ForegroundColor Green }
 function Write-Fail($msg) { Write-Host "  FAIL: $msg" -ForegroundColor Red; exit 1 }
+function Write-DeveloperModeReminder {
+    Write-Host ''
+    Write-Host (
+        '  Windows reminder: Flutter plugin symlink creation is no longer ' +
+        'needed for this deployment.'
+    ) -ForegroundColor Yellow
+    Write-Host (
+        '  Open Developer settings manually with this command:'
+    ) -ForegroundColor Yellow
+    Write-Host '    start ms-settings:developers' -ForegroundColor Yellow
+    Write-Host (
+        '  Turn off only Developer Mode; leave normal Windows security ' +
+        'protections enabled.'
+    ) -ForegroundColor Yellow
+}
 
 $deploysWeb = $Target -eq 'web' -or $Target -eq 'all'
 $deploysAndroid = $Target -eq 'android' -or $Target -eq 'all'
+$webDeploymentCompleted = $false
+$androidBuildCompleted = $false
 if ($deploysWeb -and [string]::IsNullOrWhiteSpace($Project)) {
     Write-Fail 'Web deployment requires an explicit -Project ID or CLI alias.'
 }
@@ -324,6 +341,7 @@ if ($Target -eq 'web' -or $Target -eq 'all') {
     Write-Ok (
         "Firebase web release completed for $Environment/$resolvedProjectId"
     )
+    $webDeploymentCompleted = $true
 }
 
 # Android deployment
@@ -352,7 +370,18 @@ if ($Target -eq 'android' -or $Target -eq 'all') {
         $aabPath = Join-Path $stageRoot "build\app\outputs\bundle\release\app-release.aab"
         Write-Ok "AAB built at: $aabPath"
         Write-Host "  Upload to Google Play Console: https://play.google.com/console" -ForegroundColor Yellow
+        $androidBuildCompleted = $true
     }
 }
 
-Write-Step "Deployment complete"
+$deploymentCompleted =
+    (-not $deploysWeb -or $webDeploymentCompleted) -and
+    (-not $deploysAndroid -or $androidBuildCompleted)
+if ($deploymentCompleted) {
+    Write-Step "Deployment complete"
+    if ($IsWindows) {
+        Write-DeveloperModeReminder
+    }
+} else {
+    Write-Step "Deployment incomplete"
+}

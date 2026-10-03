@@ -51,3 +51,33 @@ test("web release fails closed on a missing secret and deploys in order", () => 
   assert.ok(hostingDeploy > indexWait);
   assert.ok(parityCheck > hostingDeploy);
 });
+
+test("Windows Developer Mode reminder follows only complete deployments", () => {
+  const deploy = read("deploy.ps1");
+  const completionAssignment = deploy.indexOf("$deploymentCompleted =");
+  const completionGuard = deploy.indexOf("if ($deploymentCompleted)");
+  const reminderCall = deploy.indexOf("Write-DeveloperModeReminder");
+  const reminderCommand = deploy.indexOf("start ms-settings:developers");
+
+  assert.ok(completionAssignment >= 0);
+  assert.ok(completionGuard > completionAssignment);
+  assert.ok(reminderCall >= 0);
+  assert.ok(reminderCommand > reminderCall);
+  assert.match(
+    deploy,
+    /\$deploymentCompleted\s*=\s*\r?\n\s*\(-not \$deploysWeb -or \$webDeploymentCompleted\) -and\s*\r?\n\s*\(-not \$deploysAndroid -or \$androidBuildCompleted\)/,
+  );
+  assert.match(
+    deploy,
+    /if \(\$deploymentCompleted\)[^]*if \(\$IsWindows\)[^]*Write-DeveloperModeReminder/,
+  );
+  assert.match(
+    deploy,
+    /Turn off only Developer Mode; leave normal Windows security [^]*protections enabled\./,
+  );
+  assert.doesNotMatch(
+    deploy,
+    /Start-Process\s+['"]ms-settings:developers['"]/i,
+  );
+  assert.doesNotMatch(deploy, /Set-ItemProperty|reg(?:\.exe)?\s+add/i);
+});

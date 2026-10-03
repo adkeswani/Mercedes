@@ -174,6 +174,16 @@ The equivalent manual steps are:
    failed probe exits immediately with `start ms-settings:developers` rather
    than failing later in Flutter tooling.
 
+   After every requested target completes successfully on Windows,
+   `deploy.ps1` prints one post-deployment reminder to run
+   `start ms-settings:developers` manually and turn off only **Developer
+   Mode**, while leaving normal Windows security protections enabled. It does
+   not change the registry or any setting and does not open Settings
+   automatically. The reminder is not printed for check-only or dry-run work,
+   a declined, failed, or cancelled deployment, or a skipped Android build.
+   Guided setup delegates this message to `deploy.ps1`, so it is printed only
+   once when setup invokes a successful deployment.
+
    The operator script can invoke the documented backend dry run after a
    separate typed confirmation. The dry run does not release Functions or
    Firestore revisions, but may prepare cloud APIs, service identities, or IAM.

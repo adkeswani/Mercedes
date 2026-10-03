@@ -64,6 +64,19 @@ test("Windows symlink support is checked before setup or deployment work", () =>
   assert.doesNotMatch(symlinkHelper, /Set-ItemProperty|reg(?:\.exe)?\s+add/i);
 });
 
+test("guided deployment relies on deploy.ps1 for one completion reminder", () => {
+  assert.doesNotMatch(source, /Turn off only Developer Mode/);
+  assert.match(deploy, /start ms-settings:developers/);
+  assert.match(
+    deploy,
+    /Turn off only Developer Mode; leave normal Windows security [^]*protections enabled\./,
+  );
+  assert.match(
+    source,
+    /if \(\$dryRunPassed\s+-and \(Confirm-ExactPhrase[^]*& \(Join-Path \$repoRoot 'deploy\.ps1'\)/,
+  );
+});
+
 test("secret value stays exclusively inside Firebase secure prompting", () => {
   assert.match(
     source,
