@@ -496,13 +496,11 @@ async function loadFakeYoutubeChannel(
     "complete-catalogue YouTube video search",
   );
   await waitFor(async () => {
-    const state = await execute(
-      baseUrl,
-      sessionId,
-      "return document.body.innerText || '';",
-    );
-    return state.includes("3 videos indexed") &&
-      state.includes("Catalogue is fresh.");
+    const [progress, freshness] = await Promise.all([
+      findByAriaLabel(baseUrl, sessionId, "3 videos indexed"),
+      findByAriaLabel(baseUrl, sessionId, "Catalogue is fresh."),
+    ]);
+    return Boolean(progress && freshness);
   }, "completed and fresh fake YouTube catalogue");
   if (search) {
     await invokeYoutubeCanaryBridge(
@@ -611,14 +609,16 @@ async function runYoutubeExerciseFlow({
   channelField = await openYoutubeEditor(baseUrl, sessionId);
   await loadFakeYoutubeChannel(baseUrl, sessionId, channelField, "");
   await waitFor(async () => {
-    const state = await execute(
-      baseUrl,
-      sessionId,
-      "return document.body.innerText || '';",
-    );
-    return state.includes("Release Canary Squat") &&
-      state.includes("Open on YouTube") &&
-      state.includes("Remove video");
+    const [video, open, remove] = await Promise.all([
+      findByAriaLabel(
+        baseUrl,
+        sessionId,
+        "YouTube video Release Canary Squat",
+      ),
+      findByAriaLabel(baseUrl, sessionId, "Open on YouTube"),
+      findByAriaLabel(baseUrl, sessionId, "Remove video"),
+    ]);
+    return Boolean(video && open && remove);
   }, "reopened persisted YouTube thumbnail metadata");
 
   await invokeYoutubeCanaryBridge(

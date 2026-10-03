@@ -463,6 +463,14 @@ result as `{ value: ... }`. Both affected text assertions now consume the
 returned string directly. Search/sort, attach, thumbnail, save/reopen, and
 backend-metadata browser assertions remained beyond that run's boundary.
 
+One further explicitly authorized run rendered the same complete/fresh
+catalogue at
+`stage5/test-artifacts/release-canary/20261003T221231Z-d2ea8acb/trainer-failure.png`
+but demonstrated that Flutter's painted text is not exposed through
+`document.body.innerText`. Catalogue progress/freshness and reopened-thumbnail
+checks now query Flutter semantics labels, matching the existing video and
+control assertions. No further browser retry was performed.
+
 The desktop-sized viewport is the current smoke-test baseline. After navigation
 and responsive layouts stabilize further, add a phone-sized viewport (for
 example, 390x844) as a separate run of the same authentication assertion rather
