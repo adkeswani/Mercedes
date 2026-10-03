@@ -271,17 +271,24 @@ void main() {
     );
     await tester.tap(find.byKey(youtubeLoadChannelKey));
     await tester.pumpAndSettle();
+    final semantics = tester.ensureSemantics();
 
     expect(find.byKey(youtubeThumbnailFallbackKey), findsOneWidget);
     expect(find.text(_first.title), findsWidgets);
     expect(find.text(_first.channelTitle), findsWidgets);
     expect(find.text('Replace'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Attached YouTube video ${_first.title}'),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel('Open on YouTube'), findsOneWidget);
     await tester.tap(find.byKey(youtubeOpenVideoKey));
     await tester.pump();
     expect(
       opened,
       Uri.parse('https://www.youtube.com/watch?v=videoId0001'),
     );
+    semantics.dispose();
   });
 
   testWidgets('shows indexing progress and stale freshness explicitly',

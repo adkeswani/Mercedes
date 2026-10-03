@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/core/release_canary_youtube_bridge.dart';
 import 'package:stage5/core/release_canary_youtube_bridge_contract.dart';
@@ -10,6 +9,7 @@ import 'package:stage5/features/exercises/data/youtube_channel_preference.dart';
 import 'package:stage5/features/exercises/data/youtube_public_api.dart';
 import 'package:stage5/features/exercises/domain/youtube_channel.dart';
 import 'package:stage5/features/exercises/presentation/youtube_public_providers.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const youtubeChannelFieldKey = Key('youtube-channel-field');
 const youtubeLoadChannelKey = Key('youtube-load-channel');
@@ -597,56 +597,68 @@ class _MediaTarget extends StatelessWidget {
               ? const Text(
                   'Exercise video target — drag a video here or use Attach.',
                 )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: Stack(
-                        fit: StackFit.expand,
+              : Semantics(
+                  container: true,
+                  explicitChildNodes: true,
+                  label: 'Attached YouTube video ${metadata!.title}',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            _YoutubeThumbnail(url: metadata!.thumbnailUrl),
+                            const Center(
+                              child: Icon(
+                                Icons.play_circle_fill,
+                                size: 64,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        metadata!.title,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(metadata!.channelTitle),
+                      Wrap(
+                        alignment: WrapAlignment.end,
                         children: [
-                          _YoutubeThumbnail(url: metadata!.thumbnailUrl),
-                          const Center(
-                            child: Icon(
-                              Icons.play_circle_fill,
-                              size: 64,
-                              color: Colors.white,
+                          Semantics(
+                            label: 'Open on YouTube',
+                            button: true,
+                            onTap: () => onOpen(metadata!),
+                            child: ExcludeSemantics(
+                              child: TextButton.icon(
+                                key: youtubeOpenVideoKey,
+                                onPressed: () => onOpen(metadata!),
+                                icon: const Icon(Icons.open_in_new),
+                                label: const Text('Open on YouTube'),
+                              ),
+                            ),
+                          ),
+                          Semantics(
+                            label: 'Remove video',
+                            button: true,
+                            onTap: onRemove,
+                            child: ExcludeSemantics(
+                              child: TextButton.icon(
+                                key: youtubeRemoveVideoKey,
+                                onPressed: onRemove,
+                                icon: const Icon(Icons.delete_outline),
+                                label: const Text('Remove video'),
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      metadata!.title,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(metadata!.channelTitle),
-                    Wrap(
-                      alignment: WrapAlignment.end,
-                      children: [
-                        TextButton.icon(
-                          key: youtubeOpenVideoKey,
-                          onPressed: () => onOpen(metadata!),
-                          icon: const Icon(Icons.open_in_new),
-                          label: const Text('Open on YouTube'),
-                        ),
-                        Semantics(
-                          label: 'Remove video',
-                          button: true,
-                          onTap: onRemove,
-                          child: ExcludeSemantics(
-                            child: TextButton.icon(
-                              key: youtubeRemoveVideoKey,
-                              onPressed: onRemove,
-                              icon: const Icon(Icons.delete_outline),
-                              label: const Text('Remove video'),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
         );
       },

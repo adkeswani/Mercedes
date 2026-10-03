@@ -641,7 +641,7 @@ async function runYoutubeExerciseFlow({
       findByAriaLabel(
         baseUrl,
         sessionId,
-        "YouTube video Release Canary Squat",
+        "Attached YouTube video Release Canary Squat",
       ),
       findByAriaLabel(baseUrl, sessionId, "Open on YouTube"),
       findByAriaLabel(baseUrl, sessionId, "Remove video"),

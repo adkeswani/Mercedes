@@ -481,6 +481,14 @@ from preferences. Reopen now navigates away first and channel entry uses
 replace semantics, preventing the duplicate handle. The retained boundary is
 `stage5/test-artifacts/release-canary/20261003T221608Z-cdc0c131/trainer-failure.png`.
 
+The next authorized run at
+`stage5/test-artifacts/release-canary/20261003T222005Z-88be800a/trainer-failure.png`
+confirmed the replaced channel value, catalogue reload, persisted canonical
+URL, and reopened 16:9 preview. It stopped because the harness queried the
+catalogue-card semantics label rather than an attached-preview label. The
+preview now exposes explicit attached-video and canonical-open semantics, and
+the harness asserts those labels directly.
+
 The desktop-sized viewport is the current smoke-test baseline. After navigation
 and responsive layouts stabilize further, add a phone-sized viewport (for
 example, 390x844) as a separate run of the same authentication assertion rather
