@@ -111,8 +111,9 @@ void main() {
     );
   });
 
-  testWidgets('renders loading, error, empty, and populated channel states',
-      (tester) async {
+  testWidgets('renders loading, error, empty, and populated channel states', (
+    tester,
+  ) async {
     final completer = Completer<PublicYoutubeChannel>();
     final api = _FakeApi(resolve: (_) => completer.future);
     await _pumpPanel(tester, api: api);
@@ -146,8 +147,9 @@ void main() {
     expect(find.byKey(const Key('youtube-library-error')), findsOneWidget);
   });
 
-  testWidgets('pages and applies server-side view-count sorting',
-      (tester) async {
+  testWidgets('pages and applies server-side view-count sorting', (
+    tester,
+  ) async {
     final api = _FakeApi(
       videos: [_first],
       nextPageToken: 'NEXT',
@@ -171,8 +173,9 @@ void main() {
     expect((tiles[1].title! as Text).data, _first.title);
   });
 
-  testWidgets('drag and Attach invoke the same attachment command',
-      (tester) async {
+  testWidgets('drag and Attach invoke the same attachment command', (
+    tester,
+  ) async {
     final api = _FakeApi(videos: [_first]);
     final attached = <YoutubeVideoMetadata>[];
     await _pumpPanel(
@@ -210,11 +213,7 @@ void main() {
 
   testWidgets('compact layout offers Attach without drag', (tester) async {
     final api = _FakeApi(videos: [_first]);
-    await _pumpPanel(
-      tester,
-      api: api,
-      size: const Size(500, 1000),
-    );
+    await _pumpPanel(tester, api: api, size: const Size(500, 1000));
     await tester.enterText(
       find.byKey(youtubeChannelFieldKey),
       '@public.trainer',
@@ -222,14 +221,12 @@ void main() {
     await tester.tap(find.byKey(youtubeLoadChannelKey));
     await tester.pumpAndSettle();
     expect(find.byType(Draggable<PublicYoutubeVideo>), findsNothing);
-    expect(
-      find.byKey(const Key('youtube-attach-videoId0001')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('youtube-attach-videoId0001')), findsOneWidget);
   });
 
-  testWidgets('remove action exposes explicit button semantics',
-      (tester) async {
+  testWidgets('remove action exposes explicit button semantics', (
+    tester,
+  ) async {
     var removed = false;
     await _pumpPanel(
       tester,
@@ -253,8 +250,9 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('renders thumbnail fallback and opens the canonical URL',
-      (tester) async {
+  testWidgets('renders thumbnail fallback and opens the canonical URL', (
+    tester,
+  ) async {
     Uri? opened;
     await _pumpPanel(
       tester,
@@ -284,19 +282,73 @@ void main() {
     expect(find.bySemanticsLabel('Open on YouTube'), findsOneWidget);
     await tester.tap(find.byKey(youtubeOpenVideoKey));
     await tester.pump();
+    expect(opened, Uri.parse('https://www.youtube.com/watch?v=videoId0001'));
+    semantics.dispose();
+  });
+
+  testWidgets('result cards reuse the 16:9 thumbnail with failure fallback', (
+    tester,
+  ) async {
+    final video = PublicYoutubeVideo(
+      id: _first.id,
+      title: _first.title,
+      thumbnailUrl: 'https://i.ytimg.com/vi/${_first.id}/mqdefault.jpg',
+      channelId: _first.channelId,
+      channelTitle: _first.channelTitle,
+      publishedAt: _first.publishedAt,
+    );
+    await _pumpPanel(tester, api: _FakeApi(videos: [video]));
+    await tester.enterText(
+      find.byKey(youtubeChannelFieldKey),
+      '@public.trainer',
+    );
+    await tester.tap(find.byKey(youtubeLoadChannelKey));
+    await tester.pumpAndSettle();
+    final semantics = tester.ensureSemantics();
+
+    final thumbnail = find.byKey(Key('youtube-thumbnail-${video.id}'));
+    expect(thumbnail, findsOneWidget);
+    expect(tester.getSize(thumbnail).aspectRatio, closeTo(16 / 9, 0.01));
+    final thumbnailWidget = tester.widget<YoutubeThumbnail>(
+      find.descendant(of: thumbnail, matching: find.byType(YoutubeThumbnail)),
+    );
+    expect(thumbnailWidget.semanticLabel, '${video.title} YouTube thumbnail');
+    expect(thumbnailWidget.url, video.thumbnailUrl);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 160,
+          height: 90,
+          child: YoutubeThumbnail(
+            url: video.thumbnailUrl,
+            semanticLabel: '${video.title} YouTube thumbnail',
+            fallbackKey: Key('youtube-thumbnail-fallback-${video.id}'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final image = tester.widget<Image>(
+      find.byType(Image),
+    );
+    final fallback = image.errorBuilder!(
+      tester.element(find.byType(Image)),
+      StateError('network failed'),
+      StackTrace.empty,
+    );
+    await tester.pumpWidget(MaterialApp(home: fallback));
     expect(
-      opened,
-      Uri.parse('https://www.youtube.com/watch?v=videoId0001'),
+      find.byKey(Key('youtube-thumbnail-fallback-${video.id}')),
+      findsOneWidget,
     );
     semantics.dispose();
   });
 
-  testWidgets('shows indexing progress and stale freshness explicitly',
-      (tester) async {
-    await _pumpPanel(
-      tester,
-      api: _StatusApi(),
-    );
+  testWidgets('shows indexing progress and stale freshness explicitly', (
+    tester,
+  ) async {
+    await _pumpPanel(tester, api: _StatusApi());
     await tester.enterText(
       find.byKey(youtubeChannelFieldKey),
       '@public.trainer',
@@ -311,8 +363,9 @@ void main() {
     );
   });
 
-  testWidgets('ignores stale search responses after a newer request',
-      (tester) async {
+  testWidgets('ignores stale search responses after a newer request', (
+    tester,
+  ) async {
     final api = _RaceApi();
     await _pumpPanel(tester, api: api);
     await tester.enterText(

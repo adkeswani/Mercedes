@@ -17,8 +17,7 @@ void main() {
     expect(
       parseYoutubeChannelReference(
         'https://www.youtube.com/channel/$channelId',
-      )!
-          .value,
+      )!.value,
       channelId,
     );
     expect(
@@ -48,6 +47,8 @@ void main() {
           'id': 'videoId0001',
           'title': 'Squat',
           'thumbnailUrl': 'https://i.ytimg.com/vi/videoId0001/hqdefault.jpg',
+          'thumbnailWidth': 480,
+          'thumbnailHeight': 360,
           'channelId': channelId,
           'channelTitle': 'Public Trainer',
           'publishedAt': '2026-09-20T00:00:00.000Z',
@@ -77,6 +78,8 @@ void main() {
       page.videos.single.metadata.canonicalUrl,
       'https://www.youtube.com/watch?v=videoId0001',
     );
+    expect(page.videos.single.thumbnailWidth, 480);
+    expect(page.videos.single.metadata.thumbnailHeight, 360);
     expect(
       () => PublicYoutubeVideoPage.fromMap({
         'videos': [
@@ -106,6 +109,23 @@ void main() {
       }),
       throwsFormatException,
     );
+  });
+
+  test('backfills old records without thumbnail metadata', () {
+    final video = PublicYoutubeVideo.fromMap({
+      'id': 'videoId0001',
+      'title': 'Legacy squat',
+      'channelId': channelId,
+      'channelTitle': 'Public Trainer',
+      'publishedAt': '2026-09-20T00:00:00Z',
+    });
+
+    expect(
+      video.thumbnailUrl,
+      'https://i.ytimg.com/vi/videoId0001/mqdefault.jpg',
+    );
+    expect(video.thumbnailWidth, isNull);
+    expect(video.thumbnailHeight, isNull);
   });
 
   test('searches and sorts a complete catalogue fixture', () {

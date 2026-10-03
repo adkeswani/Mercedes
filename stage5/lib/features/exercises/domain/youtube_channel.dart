@@ -109,6 +109,8 @@ class PublicYoutubeVideo {
     required this.channelId,
     required this.channelTitle,
     required this.publishedAt,
+    this.thumbnailWidth,
+    this.thumbnailHeight,
     this.viewCount,
   });
 
@@ -119,7 +121,9 @@ class PublicYoutubeVideo {
     final channelTitle = map['channelTitle'] as String? ?? '';
     final publishedAt = DateTime.tryParse(map['publishedAt'] as String? ?? '');
     final rawViewCount = map['viewCount'];
-    final thumbnailUrl = _validatedYoutubeImageUrl(map['thumbnailUrl']);
+    final thumbnailUrl = _validatedYoutubeImageUrl(map['thumbnailUrl']).isEmpty
+        ? 'https://i.ytimg.com/vi/$id/mqdefault.jpg'
+        : _validatedYoutubeImageUrl(map['thumbnailUrl']);
     if (!RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(id) ||
         title.trim().isEmpty ||
         !RegExp(r'^UC[A-Za-z0-9_-]{22}$').hasMatch(channelId) ||
@@ -134,6 +138,8 @@ class PublicYoutubeVideo {
       channelId: channelId,
       channelTitle: channelTitle.trim(),
       publishedAt: publishedAt.toUtc(),
+      thumbnailWidth: _positiveInt(map['thumbnailWidth']),
+      thumbnailHeight: _positiveInt(map['thumbnailHeight']),
       viewCount: rawViewCount is int
           ? rawViewCount
           : int.tryParse(rawViewCount?.toString() ?? ''),
@@ -146,6 +152,8 @@ class PublicYoutubeVideo {
   final String channelId;
   final String channelTitle;
   final DateTime publishedAt;
+  final int? thumbnailWidth;
+  final int? thumbnailHeight;
   final int? viewCount;
 
   String get canonicalUrl => 'https://www.youtube.com/watch?v=$id';
@@ -154,6 +162,8 @@ class PublicYoutubeVideo {
         videoId: id,
         title: title,
         thumbnailUrl: thumbnailUrl,
+        thumbnailWidth: thumbnailWidth,
+        thumbnailHeight: thumbnailHeight,
         channelId: channelId,
         channelTitle: channelTitle,
       );
@@ -166,6 +176,8 @@ class YoutubeVideoMetadata {
     required this.thumbnailUrl,
     required this.channelId,
     required this.channelTitle,
+    this.thumbnailWidth,
+    this.thumbnailHeight,
   });
 
   final String videoId;
@@ -173,12 +185,16 @@ class YoutubeVideoMetadata {
   final String thumbnailUrl;
   final String channelId;
   final String channelTitle;
+  final int? thumbnailWidth;
+  final int? thumbnailHeight;
   String get canonicalUrl => 'https://www.youtube.com/watch?v=$videoId';
 
   void validate() {
     if (!RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(videoId) ||
         title.trim().isEmpty ||
         _validatedYoutubeImageUrl(thumbnailUrl) != thumbnailUrl ||
+        (thumbnailWidth != null && thumbnailWidth! <= 0) ||
+        (thumbnailHeight != null && thumbnailHeight! <= 0) ||
         !RegExp(r'^UC[A-Za-z0-9_-]{22}$').hasMatch(channelId) ||
         channelTitle.trim().isEmpty) {
       throw ArgumentError('Invalid YouTube video metadata');
@@ -186,10 +202,12 @@ class YoutubeVideoMetadata {
   }
 }
 
-String _validatedYoutubeImageUrl(
-  Object? value, {
-  bool allowAvatar = false,
-}) {
+int? _positiveInt(Object? value) {
+  if (value is int && value > 0) return value;
+  return null;
+}
+
+String _validatedYoutubeImageUrl(Object? value, {bool allowAvatar = false}) {
   if (value == null || value == '') {
     return '';
   }

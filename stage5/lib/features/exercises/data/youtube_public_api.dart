@@ -67,7 +67,9 @@ class FakeYoutubePublicApi implements YoutubePublicApi {
     PublicYoutubeVideo(
       id: 'canaryVid01',
       title: 'Release Canary Deadlift',
-      thumbnailUrl: '',
+      thumbnailUrl: 'https://i.ytimg.com/vi/canaryVid01/mqdefault.jpg',
+      thumbnailWidth: 320,
+      thumbnailHeight: 180,
       channelId: channel.id,
       channelTitle: channel.title,
       publishedAt: DateTime.utc(2026, 9, 20),
@@ -76,7 +78,9 @@ class FakeYoutubePublicApi implements YoutubePublicApi {
     PublicYoutubeVideo(
       id: 'canaryVid02',
       title: 'Release Canary Squat',
-      thumbnailUrl: '',
+      thumbnailUrl: 'https://i.ytimg.com/vi/canaryVid02/mqdefault.jpg',
+      thumbnailWidth: 320,
+      thumbnailHeight: 180,
       channelId: channel.id,
       channelTitle: channel.title,
       publishedAt: DateTime.utc(2026, 9, 10),
@@ -85,7 +89,9 @@ class FakeYoutubePublicApi implements YoutubePublicApi {
     PublicYoutubeVideo(
       id: 'canaryVid03',
       title: 'Release Canary Press',
-      thumbnailUrl: '',
+      thumbnailUrl: 'https://i.ytimg.com/vi/canaryVid03/mqdefault.jpg',
+      thumbnailWidth: 320,
+      thumbnailHeight: 180,
       channelId: channel.id,
       channelTitle: channel.title,
       publishedAt: DateTime.utc(2026, 8, 30),

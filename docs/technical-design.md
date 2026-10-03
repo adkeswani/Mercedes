@@ -118,6 +118,20 @@ refresh reads the uploads head until it overlaps known
 IDs and merges the unchanged tail. A full scan at least every 25 days removes
 deleted/private videos and revalidates retained metadata.
 
+> **Deferred future quota policy — not implemented and not a current
+> guarantee.** A later large-channel design should cap initial indexing at the
+> newest 1,000 public videos per channel. The manifest and callable would add
+> `availableCount`, `indexedCount`, and `truncated`; for oversized channels,
+> search and sort would explicitly cover only the indexed newest 1,000. The
+> shared 10,000-unit daily project quota should retain roughly 20–30% headroom,
+> leaving about 7,000–8,000 units for operational indexing. At approximately
+> one channel lookup plus 20 `playlistItems.list` and 20 `videos.list` calls,
+> that supports roughly 170–195 worst-case newly indexed 1,000-video channels
+> per day, not 250. This future cap must preserve the existing shared cache,
+> incremental refresh, per-channel job/lease deduplication, and stale active-
+> generation fallback. A later explicit **Index older videos** continuation may
+> be considered only with a fresh budget check and visible progress/state.
+
 The callable is a 2nd-generation Node.js 22 function in `us-central1`. Its
 `YOUTUBE_API_KEY` is a function-bound Firebase secret; missing configuration
 fails closed with a sanitized precondition error. Firebase Authentication is

@@ -24,6 +24,8 @@ void main() {
     videoId: 'videoId0001',
     title: 'Front squat tutorial',
     thumbnailUrl: 'https://i.ytimg.com/vi/videoId0001/hqdefault.jpg',
+    thumbnailWidth: 480,
+    thumbnailHeight: 360,
     channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa',
     channelTitle: 'Public Trainer',
   );
@@ -199,6 +201,10 @@ void main() {
         rawV2.data()!['youtubeMetadata']['canonicalUrl'],
         'https://www.youtube.com/watch?v=videoId0001',
       );
+      expect(rawV2.data()!['youtubeMetadata']['thumbnailWidth'], 480);
+      expect(rawV2.data()!['youtubeMetadata']['thumbnailHeight'], 360);
+      expect(v2.youtubeMetadata!.thumbnailWidth, 480);
+      expect(v2.youtubeMetadata!.thumbnailHeight, 360);
       expect(
           v2.measurementConfiguration.primary, ExerciseMeasurementType.weight);
       expect(v2.gradingConfiguration!.gymColors, grading.gymColors);

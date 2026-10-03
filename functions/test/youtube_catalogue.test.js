@@ -279,6 +279,29 @@ test("searches and sorts the complete cache before response pagination", async (
   );
 });
 
+test("serializes old cached records with a deterministic thumbnail", async () => {
+  const now = Date.UTC(2026, 9, 1);
+  const store = new MemoryStore();
+  store.seed([video(1, {thumbnailUrl: ""})], now);
+  const service = new YoutubeCatalogueService(
+    new FakeUpstream([]),
+    store,
+    () => now,
+  );
+
+  const result = await service.videos({
+    channelId: channel.id,
+    maxResults: 10,
+  }, "trainer");
+
+  assert.equal(
+    result.videos[0].thumbnailUrl,
+    `https://i.ytimg.com/vi/${video(1).id}/mqdefault.jpg`,
+  );
+  assert.equal(result.videos[0].thumbnailWidth, 320);
+  assert.equal(result.videos[0].thumbnailHeight, 180);
+});
+
 test("keeps the active generation visible until publication", async () => {
   const now = Date.UTC(2026, 9, 1);
   const store = new MemoryStore();

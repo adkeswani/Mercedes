@@ -230,6 +230,18 @@ page sizes, times upstream requests out after 8 seconds, and caps instances at
 Functions, Scheduler, Firestore operations, Secret Manager, and network usage
 can incur charges under the configured billing plan.
 
+**Deferred future policy; do not treat this as current behavior or a current
+capacity guarantee:** cap initial indexing at the newest 1,000 public videos
+per channel and store/display `availableCount`, `indexedCount`, and
+`truncated`. Search and sort would cover the indexed newest 1,000 for an
+oversized channel. Reserve roughly 20–30% of the shared 10,000-unit daily
+project quota, leaving about 7,000–8,000 operational units. A worst-case new
+1,000-video channel costs about 41 units (one channel lookup plus 20 uploads
+pages and 20 video-detail batches), so plan for roughly 170–195 such channels
+per day rather than 250. Keep the shared cache, incremental refresh,
+per-channel job deduplication, and stale-generation fallback. A later explicit
+**Index older videos** continuation must be budget-checked before it starts.
+
 Fresh catalogues refresh after six hours and become visibly stale after 24
 hours. Quota/upstream failures retain and explicitly label the prior active
 generation. Incremental refresh minimizes calls; a full revalidation at least

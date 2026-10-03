@@ -4,6 +4,7 @@ const test = require("node:test");
 const {
   handleYoutubePublicRequest,
   parseChannelReference,
+  selectYoutubeThumbnail,
   validateMaxResults,
   validatePageToken,
   YoutubePublicError,
@@ -141,7 +142,18 @@ test("pages uploads and batches video details in playlist order", async () => {
             channelId,
             channelTitle: "Public Training",
             publishedAt: "2026-09-02T00:00:00Z",
-            thumbnails: {medium: {url: "https://img.example/2.jpg"}},
+            thumbnails: {
+              maxres: {
+                url: "https://i.ytimg.com/vi/videoId0002/maxresdefault.jpg",
+                width: 1280,
+                height: 720,
+              },
+              high: {
+                url: "https://i.ytimg.com/vi/videoId0002/hqdefault.jpg",
+                width: 480,
+                height: 360,
+              },
+            },
           },
           statistics: {viewCount: "20"},
         },
@@ -152,7 +164,13 @@ test("pages uploads and batches video details in playlist order", async () => {
             channelId,
             channelTitle: "Public Training",
             publishedAt: "2026-09-01T00:00:00Z",
-            thumbnails: {default: {url: "https://img.example/1.jpg"}},
+            thumbnails: {
+              default: {
+                url: "https://i.ytimg.com/vi/videoId0001/default.jpg",
+                width: 120,
+                height: 90,
+              },
+            },
           },
           statistics: {viewCount: "10"},
         },
@@ -169,7 +187,47 @@ test("pages uploads and batches video details in playlist order", async () => {
   assert.equal(calls[1].searchParams.get("pageToken"), "PAGE_token");
   assert.equal(calls[2].searchParams.get("id"), "videoId0001,videoId0002");
   assert.equal(calls.some((call) => call.pathname.endsWith("/search")), false);
-  assert.deepEqual(page.videos.map((video) => video.thumbnailUrl), ["", ""]);
+  assert.deepEqual(page.videos.map((video) => video.thumbnailUrl), [
+    "https://i.ytimg.com/vi/videoId0001/default.jpg",
+    "https://i.ytimg.com/vi/videoId0002/maxresdefault.jpg",
+  ]);
+  assert.deepEqual(
+    page.videos.map((video) => [video.thumbnailWidth, video.thumbnailHeight]),
+    [[120, 90], [1280, 720]],
+  );
+});
+
+test("selects stable thumbnails and falls back deterministically", () => {
+  assert.deepEqual(
+    selectYoutubeThumbnail({
+      standard: {
+        url: "https://i.ytimg.com/vi/videoId0001/sddefault.jpg",
+        width: 640,
+        height: 480,
+      },
+      high: {
+        url: "https://i.ytimg.com/vi/videoId0001/hqdefault.jpg",
+        width: 480,
+        height: 360,
+      },
+    }, "videoId0001"),
+    {
+      url: "https://i.ytimg.com/vi/videoId0001/sddefault.jpg",
+      width: 640,
+      height: 480,
+    },
+  );
+  assert.deepEqual(
+    selectYoutubeThumbnail({
+      maxres: {url: "http://i.ytimg.com/insecure.jpg"},
+      high: {url: "https://example.com/tracker.jpg"},
+    }, "videoId0001"),
+    {
+      url: "https://i.ytimg.com/vi/videoId0001/mqdefault.jpg",
+      width: 320,
+      height: 180,
+    },
+  );
 });
 
 test("maps not found, quota, network, and malformed responses", async () => {

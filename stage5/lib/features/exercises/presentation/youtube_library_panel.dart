@@ -59,9 +59,7 @@ ReleaseCanaryYoutubeActionResult handleReleaseCanaryYoutubeBridgeAction({
   }
   final video = matches.single;
   onAttach(video);
-  return ReleaseCanaryYoutubeActionResult.accepted(
-    attachedVideoId: video.id,
-  );
+  return ReleaseCanaryYoutubeActionResult.accepted(attachedVideoId: video.id);
 }
 
 class YoutubeLibraryPanel extends ConsumerStatefulWidget {
@@ -314,8 +312,9 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
 
   Future<void> _openVideo(YoutubeVideoMetadata metadata) async {
     final uri = Uri.parse(metadata.canonicalUrl);
-    final opened = await (widget.openUrl?.call(uri) ??
-        launchUrl(uri, mode: LaunchMode.externalApplication));
+    final opened =
+        await (widget.openUrl?.call(uri) ??
+            launchUrl(uri, mode: LaunchMode.externalApplication));
     if (!opened && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open this YouTube video.')),
@@ -528,8 +527,8 @@ class _CatalogueFreshness extends StatelessWidget {
     final message = !complete
         ? 'Indexing is in progress. Results may be incomplete.'
         : stale || status == YoutubeCatalogueStatus.error
-            ? 'Showing stale cached results. $refreshed'
-            : 'Catalogue is fresh. $refreshed';
+        ? 'Showing stale cached results. $refreshed'
+        : 'Catalogue is fresh. $refreshed';
     return Text(
       message,
       key: const Key('youtube-catalogue-freshness'),
@@ -553,8 +552,9 @@ class _ChannelIdentity extends StatelessWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: CircleAvatar(
-        foregroundImage:
-            avatar == null || avatar.isEmpty ? null : NetworkImage(avatar),
+        foregroundImage: avatar == null || avatar.isEmpty
+            ? null
+            : NetworkImage(avatar),
         child: const Icon(Icons.video_library_outlined),
       ),
       title: Text(channel.title),
@@ -609,7 +609,11 @@ class _MediaTarget extends StatelessWidget {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            _YoutubeThumbnail(url: metadata!.thumbnailUrl),
+                            YoutubeThumbnail(
+                              url: metadata!.thumbnailUrl,
+                              semanticLabel:
+                                  '${metadata!.title} YouTube thumbnail',
+                            ),
                             const Center(
                               child: Icon(
                                 Icons.play_circle_fill,
@@ -666,25 +670,46 @@ class _MediaTarget extends StatelessWidget {
   }
 }
 
-class _YoutubeThumbnail extends StatelessWidget {
-  const _YoutubeThumbnail({required this.url});
+class YoutubeThumbnail extends StatelessWidget {
+  const YoutubeThumbnail({
+    required this.url,
+    required this.semanticLabel,
+    this.fallbackKey = youtubeThumbnailFallbackKey,
+    super.key,
+  });
 
   final String url;
+  final String semanticLabel;
+  final Key fallbackKey;
 
   @override
   Widget build(BuildContext context) {
     final fallback = ColoredBox(
-      key: youtubeThumbnailFallbackKey,
+      key: fallbackKey,
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: const Center(child: Icon(Icons.video_library_outlined, size: 48)),
     );
     if (url.isEmpty) {
-      return fallback;
+      return Semantics(image: true, label: semanticLabel, child: fallback);
     }
-    return Image.network(
-      url,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => fallback,
+    return Semantics(
+      image: true,
+      label: semanticLabel,
+      child: Image.network(
+        url,
+        fit: BoxFit.cover,
+        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+          if (wasSynchronouslyLoaded || frame != null) return child;
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              fallback,
+              const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ],
+          );
+        },
+        errorBuilder: (_, __, ___) => fallback,
+      ),
     );
   }
 }
@@ -710,7 +735,20 @@ class _VideoCard extends StatelessWidget {
       explicitChildNodes: true,
       child: ListTile(
         key: Key('youtube-video-${video.id}'),
-        leading: const Icon(Icons.play_circle_outline),
+        leading: SizedBox(
+          key: Key('youtube-thumbnail-${video.id}'),
+          width: 96,
+          child: AspectRatio(
+            aspectRatio: 16 / 9,
+            child: ClipRect(
+              child: YoutubeThumbnail(
+                url: video.thumbnailUrl,
+                semanticLabel: '${video.title} YouTube thumbnail',
+                fallbackKey: Key('youtube-thumbnail-fallback-${video.id}'),
+              ),
+            ),
+          ),
+        ),
         title: Text(video.title),
         subtitle: Text(
           '${video.publishedAt.toLocal().toIso8601String().split('T').first}'

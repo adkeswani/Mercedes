@@ -35,6 +35,8 @@ export type PublicVideo = {
   id: string;
   title: string;
   thumbnailUrl: string;
+  thumbnailWidth?: number;
+  thumbnailHeight?: number;
   channelId: string;
   channelTitle: string;
   publishedAt: string;
@@ -462,7 +464,7 @@ export class YoutubePublicService {
           "YouTube returned malformed video metadata.",
         );
       }
-      const thumbnails = objectValue(snippet.thumbnails);
+      const thumbnail = selectYoutubeThumbnail(snippet.thumbnails, id);
       const rawViews = objectValue(item.statistics).viewCount;
       const viewCount = typeof rawViews === "string" && /^\d+$/.test(rawViews) ?
         Number(rawViews) :
@@ -470,10 +472,9 @@ export class YoutubePublicService {
       return {
         id,
         title: requiredText(snippet.title, "video title"),
-        thumbnailUrl: youtubeImageUrl(objectValue(thumbnails.high).url) ||
-          youtubeImageUrl(objectValue(thumbnails.medium).url) ||
-          youtubeImageUrl(objectValue(thumbnails.default).url) ||
-          "",
+        thumbnailUrl: thumbnail.url,
+        thumbnailWidth: thumbnail.width,
+        thumbnailHeight: thumbnail.height,
         channelId,
         channelTitle: requiredText(snippet.channelTitle, "channel title"),
         publishedAt: new Date(publishedAt).toISOString(),
@@ -720,7 +721,9 @@ export class YoutubeCatalogueService {
     if (offset > filtered.length) {
       throw new YoutubePublicError("invalid-argument", "Invalid page token.");
     }
-    const page = filtered.slice(offset, offset + maxResults);
+    const page = filtered
+      .slice(offset, offset + maxResults)
+      .map(normalizeCachedVideoThumbnail);
     const nextOffset = offset + page.length;
     return {
       videos: page,
@@ -942,6 +945,53 @@ function youtubeImageUrl(value: unknown, allowAvatar = false): string {
     return "";
   }
   return url.toString();
+}
+
+export function selectYoutubeThumbnail(
+  value: unknown,
+  videoId: string,
+): {url: string; width?: number; height?: number} {
+  const thumbnails = objectValue(value);
+  for (const quality of ["maxres", "standard", "high", "medium", "default"]) {
+    const candidate = objectValue(thumbnails[quality]);
+    const url = youtubeImageUrl(candidate.url);
+    if (!url) continue;
+    const width = positiveInteger(candidate.width);
+    const height = positiveInteger(candidate.height);
+    return {
+      url,
+      ...(width === undefined ? {} : {width}),
+      ...(height === undefined ? {} : {height}),
+    };
+  }
+  return {
+    url: VIDEO_ID.test(videoId) ?
+      `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` :
+      "",
+    width: 320,
+    height: 180,
+  };
+}
+
+function normalizeCachedVideoThumbnail(video: PublicVideo): PublicVideo {
+  const url = youtubeImageUrl(video.thumbnailUrl);
+  if (url) return video;
+  return {
+    ...video,
+    thumbnailUrl: VIDEO_ID.test(video.id) ?
+      `https://i.ytimg.com/vi/${video.id}/mqdefault.jpg` :
+      "",
+    thumbnailWidth: 320,
+    thumbnailHeight: 180,
+  };
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  return typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value > 0 ?
+    value :
+    undefined;
 }
 
 export const youtubeCataloguePolicy = {

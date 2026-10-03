@@ -10,7 +10,7 @@ enum ExerciseBackfillResult { backfilled, notNeeded }
 /// Firestore repository for logical exercises and immutable versions.
 class ExerciseTemplateRepository {
   ExerciseTemplateRepository({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -46,13 +46,13 @@ class ExerciseTemplateRepository {
         .limit(maxLibraryItemsPerView)
         .snapshots()
         .asyncMap((snapshot) async {
-      final templates = await Future.wait(
-        snapshot.docs.map(
-          (doc) => _resolveTemplate(doc, includeDeleted: false),
-        ),
-      );
-      return templates.whereType<ExerciseTemplate>().toList();
-    });
+          final templates = await Future.wait(
+            snapshot.docs.map(
+              (doc) => _resolveTemplate(doc, includeDeleted: false),
+            ),
+          );
+          return templates.whereType<ExerciseTemplate>().toList();
+        });
   }
 
   Future<ExerciseTemplate?> getById(String id, {int? versionNumber}) async {
@@ -108,8 +108,8 @@ class ExerciseTemplateRepository {
     ExerciseType exerciseType = ExerciseType.other,
     ExerciseMeasurementConfiguration measurementConfiguration =
         const ExerciseMeasurementConfiguration(
-      primary: ExerciseMeasurementType.repetitions,
-    ),
+          primary: ExerciseMeasurementType.repetitions,
+        ),
     ExerciseGradingConfiguration? gradingConfiguration,
     List<String> tags = const [],
     String? folderId,
@@ -373,8 +373,9 @@ class ExerciseTemplateRepository {
 
   /// Backfills every legacy exercise owned by [userId].
   Future<int> backfillOwnedLegacyExercises(String userId) async {
-    final snapshot =
-        await _collection.where('createdBy', isEqualTo: userId).get();
+    final snapshot = await _collection
+        .where('createdBy', isEqualTo: userId)
+        .get();
     var count = 0;
     for (final doc in snapshot.docs) {
       final result = await backfillLegacyVersion(doc.id, userId);
@@ -425,8 +426,9 @@ class ExerciseTemplateRepository {
   }) async {
     final data = header.data()!;
     if (!includeDeleted && data['deletedAt'] != null) return null;
-    final currentVersion =
-        _hasVersionedHeader(data) ? data['currentVersion'] as int : 1;
+    final currentVersion = _hasVersionedHeader(data)
+        ? data['currentVersion'] as int
+        : 1;
     final resolvedVersion = versionNumber ?? currentVersion;
     final version = await _resolveVersion(
       header.reference,
@@ -447,8 +449,9 @@ class ExerciseTemplateRepository {
       updatedAt: _toDateTime(data['updatedAt']),
       updatedBy:
           data['updatedBy'] as String? ?? data['createdBy'] as String? ?? '',
-      deletedAt:
-          data['deletedAt'] != null ? _toDateTime(data['deletedAt']) : null,
+      deletedAt: data['deletedAt'] != null
+          ? _toDateTime(data['deletedAt'])
+          : null,
       deletedBy: data['deletedBy'] as String?,
     );
   }
@@ -616,6 +619,8 @@ class ExerciseTemplateRepository {
       videoId: data['videoId'] as String? ?? '',
       title: data['title'] as String? ?? '',
       thumbnailUrl: data['thumbnailUrl'] as String? ?? '',
+      thumbnailWidth: data['thumbnailWidth'] as int?,
+      thumbnailHeight: data['thumbnailHeight'] as int?,
       channelId: data['channelId'] as String? ?? '',
       channelTitle: data['channelTitle'] as String? ?? '',
     );
@@ -629,6 +634,8 @@ class ExerciseTemplateRepository {
       'videoId': metadata.videoId,
       'title': metadata.title,
       'thumbnailUrl': metadata.thumbnailUrl,
+      'thumbnailWidth': metadata.thumbnailWidth,
+      'thumbnailHeight': metadata.thumbnailHeight,
       'channelId': metadata.channelId,
       'channelTitle': metadata.channelTitle,
       'canonicalUrl': metadata.canonicalUrl,

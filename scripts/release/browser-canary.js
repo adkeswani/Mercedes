@@ -481,10 +481,14 @@ async function waitForExerciseVersion(
     }
     const expectedUrl =
       `https://www.youtube.com/watch?v=${expectedVideo.videoId}`;
+    const expectedThumbnail =
+      `https://i.ytimg.com/vi/${expectedVideo.videoId}/mqdefault.jpg`;
     if (data.videoUrl !== expectedUrl ||
         data.youtubeMetadata?.videoId !== expectedVideo.videoId ||
         data.youtubeMetadata?.title !== expectedVideo.title ||
-        data.youtubeMetadata?.thumbnailUrl !== "" ||
+        data.youtubeMetadata?.thumbnailUrl !== expectedThumbnail ||
+        data.youtubeMetadata?.thumbnailWidth !== 320 ||
+        data.youtubeMetadata?.thumbnailHeight !== 180 ||
         data.youtubeMetadata?.channelId !== "UCaaaaaaaaaaaaaaaaaaaaaa" ||
         data.youtubeMetadata?.channelTitle !==
           "Release Canary Public Channel" ||
@@ -494,8 +498,40 @@ async function waitForExerciseVersion(
         "canonical YouTube metadata",
       );
     }
+
     return true;
   }, `exercise version ${versionNumber} YouTube metadata`, 30000);
+}
+
+async function assertYoutubeThumbnail(baseUrl, sessionId, video) {
+  const url = `https://i.ytimg.com/vi/${video.videoId}/mqdefault.jpg`;
+  const thumbnail = await waitFor(
+    () => findByAriaLabel(
+      baseUrl,
+      sessionId,
+      `${video.title} YouTube thumbnail`,
+    ),
+    `${video.title} thumbnail semantics`,
+  );
+  const rect = await elementRect(baseUrl, sessionId, thumbnail);
+  if (rect.width <= 0 || rect.height <= 0 ||
+      Math.abs(rect.width / rect.height - 16 / 9) > 0.05) {
+    throw new Error(
+      `${video.title} thumbnail was not visibly rendered at 16:9`,
+    );
+  }
+  await waitFor(
+    () => execute(
+      baseUrl,
+      sessionId,
+      `
+return performance.getEntriesByType("resource")
+  .some((entry) => entry.name === arguments[0]);
+`,
+      [url],
+    ),
+    `${video.title} thumbnail network request`,
+  );
 }
 
 async function openYoutubeEditor(baseUrl, sessionId) {
@@ -632,6 +668,10 @@ async function runYoutubeExerciseFlow({
     ),
     "draggable public YouTube video",
   );
+  await assertYoutubeThumbnail(baseUrl, sessionId, {
+    videoId: "canaryVid02",
+    title: "Release Canary Squat",
+  });
   await invokeYoutubeCanaryBridge(
     baseUrl,
     sessionId,
