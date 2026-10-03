@@ -436,6 +436,14 @@ has no supported non-browser-only mode, so it was not invoked afterward; its
 unit/analyzer/rules matrices were run through their focused entry points
 instead. The artifact is retained and gitignored.
 
+The recurring blocker was traced to WebDriver typing through Flutter Web's
+transient semantics password input. Release-canary mode now exposes a narrow
+DOM event bridge that invokes the normal Flutter/Firebase authentication path
+without populating the semantics-backed fields. Credentials are removed from DOM
+attributes synchronously and authentication is not bypassed. This correction
+has focused non-browser coverage but remains browser-unverified under the
+no-retry boundary above.
+
 The desktop-sized viewport is the current smoke-test baseline. After navigation
 and responsive layouts stabilize further, add a phone-sized viewport (for
 example, 390x844) as a separate run of the same authentication assertion rather

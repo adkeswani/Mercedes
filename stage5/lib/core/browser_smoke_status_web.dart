@@ -24,6 +24,13 @@ void markBrowserSmokeFirebaseProject(String projectId) {
   );
 }
 
+void markReleaseCanarySignInState(String state) {
+  html.document.body?.setAttribute(
+    'data-release-canary-auth-state',
+    state,
+  );
+}
+
 void markBrowserSmokeSurfaceReady(String surface, {String? content}) {
   html.document.body?.setAttribute(
     'data-browser-smoke-surface-$surface',

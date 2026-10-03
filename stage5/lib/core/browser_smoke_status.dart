@@ -14,6 +14,10 @@ void markBrowserSmokeFirebaseProject(String projectId) {
   implementation.markBrowserSmokeFirebaseProject(projectId);
 }
 
+void markReleaseCanarySignInState(String state) {
+  implementation.markReleaseCanarySignInState(state);
+}
+
 void markBrowserSmokeSurfaceReady(String surface, {String? content}) {
   implementation.markBrowserSmokeSurfaceReady(surface, content: content);
 }

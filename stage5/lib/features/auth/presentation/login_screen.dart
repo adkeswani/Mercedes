@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:stage5/core/browser_smoke_config.dart';
+import 'package:stage5/core/browser_smoke_status.dart';
+import 'package:stage5/core/release_canary_auth_bridge.dart';
 import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 
@@ -18,12 +22,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _autoLoginScheduled = false;
   final _releaseCanaryEmailController = TextEditingController();
   final _releaseCanaryPasswordController = TextEditingController();
+  late final VoidCallback _disposeReleaseCanaryAuthBridge;
+
+  @override
+  void initState() {
+    super.initState();
+    _disposeReleaseCanaryAuthBridge = registerReleaseCanaryAuthBridge(
+      enabled: releaseCanaryMode,
+      onSignIn: _handleReleaseCanaryBridgeSignIn,
+    );
+  }
 
   @override
   void dispose() {
+    _disposeReleaseCanaryAuthBridge();
     _releaseCanaryEmailController.dispose();
     _releaseCanaryPasswordController.dispose();
     super.dispose();
+  }
+
+  bool _handleReleaseCanaryBridgeSignIn(String email, String password) {
+    if (_isLoading || !isReleaseCanaryEmail(email) || password.isEmpty) {
+      markReleaseCanarySignInState('rejected');
+      return false;
+    }
+    unawaited(
+      _signInForReleaseCanaryCredentials(
+        email: email.trim(),
+        password: password,
+      ),
+    );
+    return true;
   }
 
   Future<void> _signIn(Future<void> Function() operation) async {
@@ -60,9 +89,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _signInForReleaseCanary() {
-    final email = _releaseCanaryEmailController.text.trim();
-    if (!isReleaseCanaryEmail(email) ||
-        _releaseCanaryPasswordController.text.isEmpty) {
+    return _signInForReleaseCanaryCredentials(
+      email: _releaseCanaryEmailController.text.trim(),
+      password: _releaseCanaryPasswordController.text,
+    );
+  }
+
+  Future<void> _signInForReleaseCanaryCredentials({
+    required String email,
+    required String password,
+  }) {
+    if (!isReleaseCanaryEmail(email) || password.isEmpty) {
+      markReleaseCanarySignInState('rejected');
       return _signIn(
         () => Future<void>.error(
           StateError(
@@ -72,11 +110,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ),
       );
     }
+    markReleaseCanarySignInState('submitting');
     return _signIn(() async {
-      await ref.read(authRepositoryProvider).signInWithEmailAndPassword(
-            email: email,
-            password: _releaseCanaryPasswordController.text,
-          );
+      try {
+        await ref.read(authRepositoryProvider).signInWithEmailAndPassword(
+              email: email,
+              password: password,
+            );
+      } catch (_) {
+        markReleaseCanarySignInState('failed');
+        rethrow;
+      }
     });
   }
 

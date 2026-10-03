@@ -293,6 +293,82 @@ return true;
   );
 }
 
+async function waitForReleaseCanaryAuthBridge(baseUrl, sessionId) {
+  await waitFor(
+    () => execute(
+      baseUrl,
+      sessionId,
+      `return document.body?.getAttribute(
+        "data-release-canary-auth-bridge"
+      ) === "ready";`,
+    ),
+    "release canary authentication bridge",
+  );
+}
+
+async function invokeReleaseCanaryAuthBridge(
+  baseUrl,
+  sessionId,
+  email,
+  password,
+) {
+  const result = await execute(
+    baseUrl,
+    sessionId,
+    `
+const body = document.body;
+if (!body ||
+    body.getAttribute("data-release-canary-auth-bridge") !== "ready") {
+  return { available: false, result: null };
+}
+body.setAttribute("data-release-canary-auth-email", arguments[0]);
+body.setAttribute("data-release-canary-auth-password", arguments[1]);
+body.setAttribute("data-release-canary-auth-result", "pending");
+try {
+  window.dispatchEvent(new Event("mercedes-release-canary-authenticate"));
+  return {
+    available: true,
+    result: body.getAttribute("data-release-canary-auth-result")
+  };
+} finally {
+  body.removeAttribute("data-release-canary-auth-email");
+  body.removeAttribute("data-release-canary-auth-password");
+}
+`,
+    [email, password],
+  );
+  if (!result?.available) {
+    throw new Error("Release canary authentication bridge was unavailable");
+  }
+  if (result.result !== "accepted") {
+    throw new Error("Release canary authentication bridge rejected sign-in");
+  }
+}
+
+async function authenticationDiagnostics(baseUrl, sessionId) {
+  const url = await currentUrl(baseUrl, sessionId).catch(() => "unavailable");
+  const state = await execute(
+    baseUrl,
+    sessionId,
+    `
+const body = document.body;
+return body ? {
+  bridge: body.getAttribute("data-release-canary-auth-bridge"),
+  bridgeResult: body.getAttribute("data-release-canary-auth-result"),
+  signInState: body.getAttribute("data-release-canary-auth-state"),
+  email: body.getAttribute("data-browser-smoke-authenticated"),
+  workspace: body.getAttribute("data-browser-smoke-workspace"),
+  identity: body.getAttribute("data-browser-smoke-account-identity"),
+  visibleError: Array.from(
+    body.querySelectorAll('[role="alert"], [aria-live="polite"]')
+  ).map((element) => element.textContent || "")
+    .find((text) => /sign-in failed/i.test(text)) || null
+} : null;
+`,
+  ).catch(() => null);
+  return { url, state };
+}
+
 async function saveScreenshot(baseUrl, sessionId, artifactDirectory, name) {
   const encoded = await webdriverRequest(
     baseUrl,
@@ -601,22 +677,12 @@ async function signIn({
     return selectedProject === projectId;
   }, "deployed app Firebase project marker");
 
-  await activateFlutterSemantics(baseUrl, sessionId);
-  const emailField = await waitFor(
-    () => findByAriaLabel(baseUrl, sessionId, "Release canary email"),
-    "release canary email field",
-  );
-  await typeIntoElement(baseUrl, sessionId, emailField, email);
-  const passwordField = await waitFor(
-    () => findByAriaLabel(baseUrl, sessionId, "Release canary password"),
-    "release canary password field",
-  );
-  await typeIntoElement(
+  await waitForReleaseCanaryAuthBridge(baseUrl, sessionId);
+  await invokeReleaseCanaryAuthBridge(
     baseUrl,
     sessionId,
-    passwordField,
+    email,
     password,
-    { submit: true },
   );
 
   await waitFor(async () => {
@@ -634,7 +700,13 @@ return document.body ? {
     return state?.email === email &&
       state?.workspace === role &&
       state?.identity === displayName;
-  }, `${role} authentication and header identity`);
+  }, `${role} authentication and header identity`).catch(async (error) => {
+    const diagnostics = await authenticationDiagnostics(baseUrl, sessionId);
+    throw new Error(
+      `${error.message} Authentication diagnostics: ` +
+      JSON.stringify(diagnostics),
+    );
+  });
   await assertRoute(baseUrl, sessionId, route);
 }
 
@@ -865,7 +937,13 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(`Deployed release canary failed: ${error.message}`);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`Deployed release canary failed: ${error.message}`);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  invokeReleaseCanaryAuthBridge,
+};

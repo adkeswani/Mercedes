@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:stage5/core/release_canary_auth_bridge_contract.dart';
 import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/core/release_canary_youtube_bridge_contract.dart';
 
@@ -80,6 +81,19 @@ void main() {
 
   test('only active YouTube bridge registration can clear shared status', () {
     final registrations = ReleaseCanaryYoutubeBridgeRegistrations();
+    final first = registrations.activate();
+    final second = registrations.activate();
+
+    expect(registrations.isActive(first), isFalse);
+    expect(registrations.isActive(second), isTrue);
+    expect(registrations.deactivate(first), isFalse);
+    expect(registrations.isActive(second), isTrue);
+    expect(registrations.deactivate(second), isTrue);
+    expect(registrations.isActive(second), isFalse);
+  });
+
+  test('only active auth bridge registration can clear shared status', () {
+    final registrations = ReleaseCanaryAuthBridgeRegistrations();
     final first = registrations.activate();
     final second = registrations.activate();
 

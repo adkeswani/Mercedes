@@ -326,7 +326,13 @@ invocations safe. The flag is not applied to Hosting and does not replace the
 index-readiness or deployed-parity gates.
 
 The browser canary signs in through the deployed web app as the dedicated
-trainer and athlete. It verifies the selected Firebase project and header
+trainer and athlete. Release-canary mode exposes a narrowly gated DOM event
+bridge that passes the supplied credentials directly to the Flutter login
+flow and invokes the normal Firebase email/password sign-in path. This
+avoids unreliable WebDriver typing into Flutter Web's transient semantics
+inputs; credentials are removed from DOM attributes synchronously after the
+event and authentication is never bypassed. The canary verifies the selected
+Firebase project and header
 identity, then checks backend-backed trainer Clients, Exercise Library,
 Workout Library, Program Library, and Calendar/Assignments plus Athlete
 Calendar, My Programs, and Workout History. Each surface must expose the exact
