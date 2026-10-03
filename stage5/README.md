@@ -471,6 +471,16 @@ but demonstrated that Flutter's painted text is not exposed through
 checks now query Flutter semantics labels, matching the existing video and
 control assertions. No further browser retry was performed.
 
+The next explicitly authorized run passed catalogue progress/freshness,
+complete-catalogue view-count sorting and search, drag attachment, save, and
+backend immutable-version metadata. Its retained
+`stage5/test-artifacts/release-canary/20261003T221608Z-cdc0c131/trainer-exercise-youtube-drag.png`
+shows the canonical URL and 16:9 preview. The run stopped after reopening
+because the harness appended `@release.canary` to the channel value restored
+from preferences. Reopen now navigates away first and channel entry uses
+replace semantics, preventing the duplicate handle. The retained boundary is
+`stage5/test-artifacts/release-canary/20261003T221608Z-cdc0c131/trainer-failure.png`.
+
 The desktop-sized viewport is the current smoke-test baseline. After navigation
 and responsive layouts stabilize further, add a phone-sized viewport (for
 example, 390x844) as a separate run of the same authentication assertion rather

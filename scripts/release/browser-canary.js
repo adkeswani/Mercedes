@@ -246,7 +246,7 @@ async function typeIntoElement(
   sessionId,
   element,
   value,
-  { submit = false } = {},
+  { replace = false, submit = false } = {},
 ) {
   await clickElement(baseUrl, sessionId, element);
   const active = await webdriverRequest(
@@ -256,6 +256,19 @@ async function typeIntoElement(
   const activeId = active?.[WEB_DRIVER_ELEMENT_KEY];
   if (!activeId) {
     throw new Error("Release canary field did not receive browser focus");
+  }
+  if (replace) {
+    await webdriverRequest(
+      baseUrl,
+      sessionPath(sessionId, `/element/${activeId}/value`),
+      {
+        method: "POST",
+        body: {
+          text: "\uE009a\uE000\uE003",
+          value: ["\uE009", "a", "\uE000", "\uE003"],
+        },
+      },
+    );
   }
   if (value) {
     await webdriverRequest(
@@ -478,6 +491,21 @@ async function openYoutubeEditor(baseUrl, sessionId) {
   );
 }
 
+async function reopenYoutubeEditor(baseUrl, sessionId) {
+  await execute(
+    baseUrl,
+    sessionId,
+    "window.location.hash = arguments[0]; return true;",
+    ["/trainer/exercises"],
+  );
+  await waitFor(
+    async () =>
+      !(await findByAriaLabel(baseUrl, sessionId, "Public channel")),
+    "exercise editor to close before reopen",
+  );
+  return openYoutubeEditor(baseUrl, sessionId);
+}
+
 async function loadFakeYoutubeChannel(
   baseUrl,
   sessionId,
@@ -489,7 +517,7 @@ async function loadFakeYoutubeChannel(
     sessionId,
     channelField,
     "@release.canary",
-    { submit: true },
+    { replace: true, submit: true },
   );
   const searchField = await waitFor(
     () => findByAriaLabel(baseUrl, sessionId, "Search complete catalogue"),
@@ -606,7 +634,7 @@ async function runYoutubeExerciseFlow({
     title: "Release Canary Squat",
   });
 
-  channelField = await openYoutubeEditor(baseUrl, sessionId);
+  channelField = await reopenYoutubeEditor(baseUrl, sessionId);
   await loadFakeYoutubeChannel(baseUrl, sessionId, channelField, "");
   await waitFor(async () => {
     const [video, open, remove] = await Promise.all([

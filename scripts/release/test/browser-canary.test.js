@@ -94,3 +94,14 @@ test("YouTube assertions use Flutter semantics instead of painted DOM text", () 
     /findByAriaLabel\(baseUrl, sessionId, "Open on YouTube"\)/,
   );
 });
+
+test("reopened catalogue replaces the restored channel value", () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, "..", "browser-canary.js"),
+    "utf8",
+  );
+
+  assert.match(source, /text: "\\uE009a\\uE000\\uE003"/);
+  assert.match(source, /\{ replace: true, submit: true \}/);
+  assert.match(source, /await reopenYoutubeEditor\(baseUrl, sessionId\)/);
+});
