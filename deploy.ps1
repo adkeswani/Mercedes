@@ -66,6 +66,7 @@ $environmentManifestPath =
     Join-Path $repoRoot 'config\firebase-environments.json'
 $firebaseRcPath = Join-Path $repoRoot '.firebaserc'
 $productionProjectId = 'mercedes-app-11ce2'
+. (Join-Path $repoRoot 'scripts\lib\windows-flutter-symlink.ps1')
 
 function Write-Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 function Write-Ok($msg) { Write-Host "  OK: $msg" -ForegroundColor Green }
@@ -101,6 +102,17 @@ if (
         'A production canary-enabled build requires both ' +
         '-EnableReleaseCanaryLogin and -AllowProductionCanary.'
     )
+}
+
+if (Test-FlutterProjectRequiresPluginSymlinks -ProjectPath $stageRoot) {
+    Write-Step 'Checking Windows Flutter plugin symlink support'
+    $symlinkState = Test-WindowsSymlinkCapability
+    if (-not $symlinkState.Ready) {
+        Write-Fail $symlinkState.Problem
+    }
+    if ($symlinkState.Applicable) {
+        Write-Ok 'Non-elevated Windows symbolic-link creation verified'
+    }
 }
 $resolvedProjectId = $Project
 function Get-RequiredWebOption {

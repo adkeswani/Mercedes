@@ -10,6 +10,11 @@ const source = fs.readFileSync(
   path.join(root, "scripts", "setup-youtube-production.ps1"),
   "utf8",
 );
+const symlinkHelper = fs.readFileSync(
+  path.join(root, "scripts", "lib", "windows-flutter-symlink.ps1"),
+  "utf8",
+);
+const deploy = fs.readFileSync(path.join(root, "deploy.ps1"), "utf8");
 const releaseProcess = fs.readFileSync(
   path.join(root, "docs", "release-process.md"),
   "utf8",
@@ -28,6 +33,35 @@ test("YouTube setup script defaults safely and supports check-only mode", () => 
   assert.match(source, /npm --prefix \$functionsPath ci --no-audit --no-fund/);
   assert.match(source, /Phrase 'INSTALL FUNCTIONS DEPENDENCIES'/);
   assert.match(source, /npm --prefix \$functionsPath run build/);
+});
+
+test("Windows symlink support is checked before setup or deployment work", () => {
+  const setupPreflight = source.indexOf(
+    "Test-WindowsSymlinkCapability",
+  );
+  const projectResolution = source.indexOf(
+    "Resolve-YoutubeSetupTarget",
+  );
+  const deployPreflight = deploy.indexOf(
+    "Test-WindowsSymlinkCapability",
+  );
+  const deployTests = deploy.indexOf("# Run tests");
+
+  assert.ok(setupPreflight >= 0);
+  assert.ok(setupPreflight < projectResolution);
+  assert.ok(deployPreflight >= 0);
+  assert.ok(deployPreflight < deployTests);
+  assert.match(source, /Phrase 'OPEN DEVELOPER SETTINGS'/);
+  assert.match(source, /Phrase 'DEVELOPER MODE ENABLED'/);
+  assert.match(source, /Start-Process 'ms-settings:developers'/);
+  assert.match(
+    source,
+    /if \(\$CheckOnly\)[^]*No Settings page was opened/,
+  );
+  assert.match(symlinkHelper, /\[Guid\]::NewGuid\(\)/);
+  assert.match(symlinkHelper, /finally \{/);
+  assert.doesNotMatch(source, /Set-ItemProperty|reg(?:\.exe)?\s+add/i);
+  assert.doesNotMatch(symlinkHelper, /Set-ItemProperty|reg(?:\.exe)?\s+add/i);
 });
 
 test("secret value stays exclusively inside Firebase secure prompting", () => {

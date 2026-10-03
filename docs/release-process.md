@@ -93,7 +93,13 @@ is incomplete it only prints safe `git fetch`, `git switch main`, and
 `git merge --ff-only` commands; it never merges, rebases, pushes, or
 force-pushes. `-CheckOnly` reports missing Functions dependencies with the
 exact recovery command and performs no cloud, dependency, or repository
-mutation.
+mutation. On Windows, it first verifies real non-elevated symbolic-link
+creation in a unique temporary directory and always removes the probe.
+Check-only mode never opens Settings or changes Developer Mode. If the probe
+fails, open it manually with `start ms-settings:developers`, turn on
+**Developer Mode**, and rerun the check. Interactive mode offers to open that
+page only after the exact `OPEN DEVELOPER SETTINGS` confirmation, then requires
+`DEVELOPER MODE ENABLED` and rechecks the actual capability before continuing.
 
 The script prints and attempts to open the exact Google Cloud Credentials URL.
 If browser launch is unavailable, use the printed URL and continue at the
@@ -162,6 +168,11 @@ The equivalent manual steps are:
    with an empty value, the callable returns a sanitized
    `failed-precondition`; it never falls back to a client key or live
    unauthenticated proxy.
+
+   On Windows, `deploy.ps1` performs the same real symbolic-link capability
+   probe for Flutter projects with platform plugins before tests or builds. A
+   failed probe exits immediately with `start ms-settings:developers` rather
+   than failing later in Flutter tooling.
 
    The operator script can invoke the documented backend dry run after a
    separate typed confirmation. The dry run does not release Functions or

@@ -2,6 +2,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot '..\lib\youtube-production-setup.ps1')
+. (Join-Path $PSScriptRoot '..\lib\windows-flutter-symlink.ps1')
 
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) (
     'mercedes-youtube-setup-tests-' + [Guid]::NewGuid().ToString('N')
@@ -93,6 +94,83 @@ try {
         -Clean $false
     Assert-Equal $false $blocked.Ready 'Unsafe git state must fail.'
     Assert-Equal 3 $blocked.Problems.Count 'Expected every git diagnostic.'
+    $passed++
+
+    $pluginProjectPath = Join-Path $testRoot 'plugin-project'
+    [IO.Directory]::CreateDirectory($pluginProjectPath) | Out-Null
+    [IO.File]::WriteAllText(
+        (Join-Path $pluginProjectPath 'pubspec.lock'),
+        "packages:`n  url_launcher_windows:`n    dependency: transitive"
+    )
+    Assert-Equal $true (
+        Test-FlutterProjectRequiresPluginSymlinks `
+            -ProjectPath $pluginProjectPath
+    ) 'A platform plugin package must require the Windows symlink preflight.'
+    $passed++
+
+    $noPluginProjectPath = Join-Path $testRoot 'no-plugin-project'
+    [IO.Directory]::CreateDirectory($noPluginProjectPath) | Out-Null
+    [IO.File]::WriteAllText(
+        (Join-Path $noPluginProjectPath 'pubspec.lock'),
+        "packages:`n  collection:`n    dependency: transitive"
+    )
+    Assert-Equal $false (
+        Test-FlutterProjectRequiresPluginSymlinks `
+            -ProjectPath $noPluginProjectPath
+    ) 'A project without platform plugins must not require the preflight.'
+    $passed++
+
+    $probeRoot = Join-Path $testRoot 'probe-root'
+    [IO.Directory]::CreateDirectory($probeRoot) | Out-Null
+    $failedProbe = Test-WindowsSymlinkCapability `
+        -TempRoot $probeRoot `
+        -IsWindowsOverride $true `
+        -CreateSymbolicLink {
+            param($LinkPath, $TargetPath)
+            throw 'mock symlink denial'
+        }
+    Assert-Equal $false $failedProbe.Ready (
+        'A denied symbolic link must fail the capability preflight.'
+    )
+    Assert-Equal $true (
+        $failedProbe.Problem -like '*start ms-settings:developers*'
+    ) 'Failure guidance must print the exact Settings command.'
+    Assert-Equal 0 @(
+        Get-ChildItem -LiteralPath $probeRoot -Force
+    ).Count 'The failed probe must always clean its unique directory.'
+    $passed++
+
+    $successfulProbe = Test-WindowsSymlinkCapability `
+        -TempRoot $probeRoot `
+        -IsWindowsOverride $true `
+        -CreateSymbolicLink {
+            param($LinkPath, $TargetPath)
+            Copy-Item -LiteralPath $TargetPath -Destination $LinkPath
+        } `
+        -ValidateSymbolicLink {
+            param($LinkPath, $ExpectedContent)
+            (Get-Content -LiteralPath $LinkPath -Raw) -eq $ExpectedContent
+        }
+    Assert-Equal $true $successfulProbe.Ready (
+        'A verified symbolic link must pass the capability preflight.'
+    )
+    Assert-Equal 0 @(
+        Get-ChildItem -LiteralPath $probeRoot -Force
+    ).Count 'The successful probe must always clean its unique directory.'
+    $passed++
+
+    $notWindowsProbe = Test-WindowsSymlinkCapability `
+        -TempRoot $probeRoot `
+        -IsWindowsOverride $false `
+        -CreateSymbolicLink {
+            throw 'This mock must not run outside Windows.'
+        }
+    Assert-Equal $true $notWindowsProbe.Ready (
+        'The preflight must pass when Windows is not applicable.'
+    )
+    Assert-Equal $false $notWindowsProbe.Applicable (
+        'The preflight must identify a non-Windows host.'
+    )
     $passed++
 
     Assert-Equal $false (Test-YoutubeApiServiceListOutput $null) (

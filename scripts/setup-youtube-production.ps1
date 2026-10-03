@@ -43,6 +43,7 @@ $functionsPackagePath = Join-Path $functionsPath 'package.json'
 $functionsLockPath = Join-Path $functionsPath 'package-lock.json'
 $toolingConfigPath = Join-Path $repoRoot 'tooling-config.json'
 . (Join-Path $PSScriptRoot 'lib\youtube-production-setup.ps1')
+. (Join-Path $PSScriptRoot 'lib\windows-flutter-symlink.ps1')
 
 function Write-Step([string]$Message) {
     Write-Host "`n=== $Message ===" -ForegroundColor Cyan
@@ -98,6 +99,54 @@ function Test-YoutubeSecretMetadata([string]$ProjectId) {
 }
 
 try {
+    Write-Step 'Checking Windows Flutter plugin symlink support'
+    $symlinkState = Test-WindowsSymlinkCapability
+    if (-not $symlinkState.Ready) {
+        Write-Warning $symlinkState.Problem
+        if ($CheckOnly) {
+            throw (
+                'Check-only validation requires Windows symlink support. ' +
+                'No Settings page was opened and no setting was changed.'
+            )
+        }
+
+        Write-Host $script:WindowsDeveloperModeInstruction
+        if (Confirm-ExactPhrase `
+                -Prompt 'Open the Windows Developer settings page?' `
+                -Phrase 'OPEN DEVELOPER SETTINGS') {
+            try {
+                Start-Process 'ms-settings:developers'
+            }
+            catch {
+                Write-Warning (
+                    'Could not open Windows Settings. Use the printed ' +
+                    'command manually.'
+                )
+            }
+        } else {
+            Write-Host (
+                'Settings was not opened. Use the printed command manually.'
+            )
+        }
+        if (-not (Confirm-ExactPhrase `
+                -Prompt 'After turning on Developer Mode, recheck support?' `
+                -Phrase 'DEVELOPER MODE ENABLED')) {
+            throw 'Developer Mode enablement was not confirmed.'
+        }
+        $symlinkState = Test-WindowsSymlinkCapability
+        if (-not $symlinkState.Ready) {
+            throw (
+                'Windows symlink support is still unavailable. ' +
+                $symlinkState.Problem
+            )
+        }
+    }
+    if ($symlinkState.Applicable) {
+        Write-Host 'Non-elevated Windows symbolic-link creation verified.'
+    } else {
+        Write-Host 'Windows symbolic-link preflight is not applicable.'
+    }
+
     Write-Step 'Resolving environment and project'
     $target = Resolve-YoutubeSetupTarget `
         -Environment $Environment `
