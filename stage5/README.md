@@ -489,6 +489,18 @@ catalogue-card semantics label rather than an attached-preview label. The
 preview now exposes explicit attached-video and canonical-open semantics, and
 the harness asserts those labels directly.
 
+After switching the reopened-preview capture to a real WebDriver wheel action,
+the complete emulator canary passed on 2026-10-03. The retained artifact
+directory is
+`stage5/test-artifacts/release-canary/20261003T223819Z-eaced305/`; it contains
+trainer and athlete identity/surface captures plus
+`trainer-exercise-youtube-drag.png`,
+`trainer-exercise-youtube-reopened.png`, and
+`trainer-exercise-youtube-select.png`. The run verified complete/fresh
+catalogue state, server-side search and view-count sorting, drag and select
+attachment equivalence, 16:9 fallback preview and controls, save/reopen, and
+immutable backend metadata using emulator-only fake YouTube data.
+
 The desktop-sized viewport is the current smoke-test baseline. After navigation
 and responsive layouts stabilize further, add a phone-sized viewport (for
 example, 390x844) as a separate run of the same authentication assertion rather

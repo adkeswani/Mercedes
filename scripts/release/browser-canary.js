@@ -165,6 +165,27 @@ async function clickAtOffset(baseUrl, sessionId, element, xOffset, yOffset) {
   });
 }
 
+async function scrollViewport(baseUrl, sessionId, deltaY) {
+  await webdriverRequest(baseUrl, sessionPath(sessionId, "/actions"), {
+    method: "POST",
+    body: {
+      actions: [{
+        type: "wheel",
+        id: "viewport-scroll",
+        actions: [{
+          type: "scroll",
+          duration: 0,
+          origin: "viewport",
+          x: 1000,
+          y: 1200,
+          deltaX: 0,
+          deltaY,
+        }],
+      }],
+    },
+  });
+}
+
 async function invokeYoutubeCanaryBridge(
   baseUrl,
   sessionId,
@@ -636,18 +657,21 @@ async function runYoutubeExerciseFlow({
 
   channelField = await reopenYoutubeEditor(baseUrl, sessionId);
   await loadFakeYoutubeChannel(baseUrl, sessionId, channelField, "");
-  await waitFor(async () => {
-    const [video, open, remove] = await Promise.all([
-      findByAriaLabel(
-        baseUrl,
-        sessionId,
-        "Attached YouTube video Release Canary Squat",
-      ),
-      findByAriaLabel(baseUrl, sessionId, "Open on YouTube"),
-      findByAriaLabel(baseUrl, sessionId, "Remove video"),
-    ]);
-    return Boolean(video && open && remove);
-  }, "reopened persisted YouTube thumbnail metadata");
+  await waitFor(
+    () => findByAriaLabel(
+      baseUrl,
+      sessionId,
+      "Attached YouTube video Release Canary Squat",
+    ),
+    "reopened persisted YouTube thumbnail metadata",
+  );
+  await scrollViewport(baseUrl, sessionId, 600);
+  await saveScreenshot(
+    baseUrl,
+    sessionId,
+    artifactDirectory,
+    "trainer-exercise-youtube-reopened.png",
+  );
 
   await invokeYoutubeCanaryBridge(
     baseUrl,

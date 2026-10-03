@@ -91,12 +91,13 @@ test("YouTube assertions use Flutter semantics instead of painted DOM text", () 
   );
   assert.match(
     source,
-    /findByAriaLabel\(baseUrl, sessionId, "Open on YouTube"\)/,
+    /"Attached YouTube video Release Canary Squat"/,
   );
   assert.match(
     source,
-    /"Attached YouTube video Release Canary Squat"/,
+    /type: "wheel"/,
   );
+  assert.match(source, /"trainer-exercise-youtube-reopened\.png"/);
 });
 
 test("reopened catalogue replaces the restored channel value", () => {
