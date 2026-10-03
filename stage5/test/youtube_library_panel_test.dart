@@ -1,13 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:stage5/features/exercises/data/youtube_channel_preference.dart';
 import 'package:stage5/features/exercises/data/youtube_public_api.dart';
 import 'package:stage5/features/exercises/domain/youtube_channel.dart';
 import 'package:stage5/features/exercises/presentation/youtube_library_panel.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 void main() {
   test('release canary bridge actions use the attachment command', () {
@@ -133,11 +132,11 @@ void main() {
     api.videos = [_first, _second];
     await tester.tap(find.byKey(youtubeLoadChannelKey));
     await tester.pumpAndSettle();
-    expect(find.text('2 videos loaded'), findsOneWidget);
+    expect(find.text('2 videos indexed'), findsOneWidget);
     expect(find.text(_first.title), findsOneWidget);
 
     await tester.enterText(find.byKey(youtubeSearchFieldKey), 'press');
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.text(_first.title), findsNothing);
     expect(find.text(_second.title), findsOneWidget);
 
@@ -147,7 +146,7 @@ void main() {
     expect(find.byKey(const Key('youtube-library-error')), findsOneWidget);
   });
 
-  testWidgets('pages and applies loaded-only view-count sorting',
+  testWidgets('pages and applies server-side view-count sorting',
       (tester) async {
     final api = _FakeApi(
       videos: [_first],
@@ -161,11 +160,11 @@ void main() {
     );
     await tester.tap(find.byKey(youtubeLoadChannelKey));
     await tester.pumpAndSettle();
-    expect(find.text('1 videos loaded'), findsOneWidget);
+    expect(find.text('2 videos indexed'), findsOneWidget);
 
     await tester.tap(find.text('Load next page'));
     await tester.pumpAndSettle();
-    expect(find.text('2 videos loaded'), findsOneWidget);
+    expect(find.text('2 videos indexed'), findsOneWidget);
     await tester.tap(find.text('View count'));
     await tester.pumpAndSettle();
     final tiles = tester.widgetList<ListTile>(find.byType(ListTile)).toList();
@@ -253,6 +252,81 @@ void main() {
     expect(removed, isTrue);
     semantics.dispose();
   });
+
+  testWidgets('renders thumbnail fallback and opens the canonical URL',
+      (tester) async {
+    Uri? opened;
+    await _pumpPanel(
+      tester,
+      api: _FakeApi(videos: [_first]),
+      attachedVideo: _first.metadata,
+      openUrl: (uri) async {
+        opened = uri;
+        return true;
+      },
+    );
+    await tester.enterText(
+      find.byKey(youtubeChannelFieldKey),
+      '@public.trainer',
+    );
+    await tester.tap(find.byKey(youtubeLoadChannelKey));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(youtubeThumbnailFallbackKey), findsOneWidget);
+    expect(find.text(_first.title), findsWidgets);
+    expect(find.text(_first.channelTitle), findsWidgets);
+    expect(find.text('Replace'), findsOneWidget);
+    await tester.tap(find.byKey(youtubeOpenVideoKey));
+    await tester.pump();
+    expect(
+      opened,
+      Uri.parse('https://www.youtube.com/watch?v=videoId0001'),
+    );
+  });
+
+  testWidgets('shows indexing progress and stale freshness explicitly',
+      (tester) async {
+    await _pumpPanel(
+      tester,
+      api: _StatusApi(),
+    );
+    await tester.enterText(
+      find.byKey(youtubeChannelFieldKey),
+      '@public.trainer',
+    );
+    await tester.tap(find.byKey(youtubeLoadChannelKey));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Indexing 50 videos...'), findsOneWidget);
+    expect(
+      find.text('Indexing is in progress. Results may be incomplete.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('ignores stale search responses after a newer request',
+      (tester) async {
+    final api = _RaceApi();
+    await _pumpPanel(tester, api: api);
+    await tester.enterText(
+      find.byKey(youtubeChannelFieldKey),
+      '@public.trainer',
+    );
+    await tester.tap(find.byKey(youtubeLoadChannelKey));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(youtubeSearchFieldKey), 'first');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.enterText(find.byKey(youtubeSearchFieldKey), 'second');
+    await tester.pump(const Duration(milliseconds: 350));
+    api.complete('second', [_second]);
+    await tester.pump();
+    api.complete('first', [_first]);
+    await tester.pumpAndSettle();
+
+    expect(find.text(_second.title), findsOneWidget);
+    expect(find.text(_first.title), findsNothing);
+  });
 }
 
 const _channel = PublicYoutubeChannel(
@@ -300,22 +374,92 @@ class _FakeApi implements YoutubePublicApi {
     required String channelId,
     String? pageToken,
     int maxResults = 25,
+    String query = '',
+    YoutubeVideoSort sort = YoutubeVideoSort.newest,
   }) async {
-    if (failure != null) throw failure!;
+    if (failure != null) {
+      throw failure!;
+    }
+    final pageVideos = filterAndSortYoutubeVideos(
+      pageToken == null ? videos : secondPage,
+      query: query,
+      sort: sort,
+    );
     return PublicYoutubeVideoPage(
-      videos: pageToken == null ? videos : secondPage,
+      videos: pageVideos,
       nextPageToken: pageToken == null ? nextPageToken : null,
+      indexedCount: videos.length + secondPage.length,
+      videoCount: videos.length + secondPage.length,
+      lastRefreshedAt: DateTime.utc(2026, 10, 1),
     );
   }
 
   @override
   Future<PublicYoutubeChannel> resolveChannel(String input) async {
-    if (failure != null) throw failure!;
+    if (failure != null) {
+      throw failure!;
+    }
     final resolve = _resolve;
     if (resolve != null) {
       return resolve(input);
     }
     return _channel;
+  }
+}
+
+class _StatusApi extends _FakeApi {
+  _StatusApi() : super(videos: [_first]);
+
+  @override
+  Future<PublicYoutubeVideoPage> loadVideos({
+    required String channelId,
+    String? pageToken,
+    int maxResults = 25,
+    String query = '',
+    YoutubeVideoSort sort = YoutubeVideoSort.newest,
+  }) async {
+    return PublicYoutubeVideoPage(
+      videos: [_first],
+      nextPageToken: null,
+      status: YoutubeCatalogueStatus.indexing,
+      indexedCount: 50,
+      videoCount: 0,
+      complete: false,
+      stale: true,
+    );
+  }
+}
+
+class _RaceApi extends _FakeApi {
+  _RaceApi() : super();
+
+  final Map<String, Completer<PublicYoutubeVideoPage>> _requests = {};
+
+  @override
+  Future<PublicYoutubeVideoPage> loadVideos({
+    required String channelId,
+    String? pageToken,
+    int maxResults = 25,
+    String query = '',
+    YoutubeVideoSort sort = YoutubeVideoSort.newest,
+  }) {
+    if (query.isEmpty) {
+      return Future.value(
+        const PublicYoutubeVideoPage(videos: [], nextPageToken: null),
+      );
+    }
+    return (_requests[query] ??= Completer<PublicYoutubeVideoPage>()).future;
+  }
+
+  void complete(String query, List<PublicYoutubeVideo> videos) {
+    _requests[query]!.complete(
+      PublicYoutubeVideoPage(
+        videos: videos,
+        nextPageToken: null,
+        indexedCount: videos.length,
+        videoCount: videos.length,
+      ),
+    );
   }
 }
 
@@ -337,6 +481,7 @@ Future<void> _pumpPanel(
   YoutubeVideoMetadata? attachedVideo,
   ValueChanged<PublicYoutubeVideo>? onAttach,
   VoidCallback? onRemove,
+  YoutubeUrlOpener? openUrl,
   Size size = const Size(900, 1000),
 }) async {
   tester.view.physicalSize = size;
@@ -354,6 +499,7 @@ Future<void> _pumpPanel(
               attachedVideo: attachedVideo,
               onAttach: onAttach ?? (_) {},
               onRemove: onRemove ?? () {},
+              openUrl: openUrl,
             ),
           ),
         ),

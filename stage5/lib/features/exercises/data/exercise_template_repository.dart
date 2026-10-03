@@ -631,6 +631,7 @@ class ExerciseTemplateRepository {
       'thumbnailUrl': metadata.thumbnailUrl,
       'channelId': metadata.channelId,
       'channelTitle': metadata.channelTitle,
+      'canonicalUrl': metadata.canonicalUrl,
     };
   }
 

@@ -79,6 +79,7 @@ exerciseTemplates/{exerciseId}
       thumbnailUrl: string
       channelId: string
       channelTitle: string
+      canonicalUrl: string
     }?
     publishedAt: timestamp
     publishedBy: string
@@ -86,20 +87,58 @@ exerciseTemplates/{exerciseId}
 
 Public YouTube discovery uses the authenticated `youtubePublicLibrary`
 callable. The client never receives the API key and never assumes that the
-Firebase user owns or controls the selected channel. The function resolves the
-channel uploads playlist, pages `playlistItems`, and batches `videos.list`
-details. Searches and sort orders in the client apply to the explicitly
-labelled loaded catalogue, which can be expanded page by page.
+Firebase user owns or controls the selected channel. The function does not use
+`search.list`; it resolves the uploads playlist, pages `playlistItems.list` at
+50 items, and batches `videos.list`. Search, supported sorting, and response
+pagination run server-side across the complete cached generation.
+
+```text
+youtubeChannelCatalogs/{channelId}
+  channel identity + uploadsPlaylistId
+  status: indexing | ready | error
+  activeGeneration, previousGeneration, buildingGeneration
+  pageCount, videoCount, indexedCount
+  leaseOwner, leaseExpiresAt
+  lastRefreshedAt, lastFullRefreshAt, refreshAfter, staleAfter, lastError
+  pages/{generation}-{zero-padded page index}
+    generation, pageIndex
+    videos[0..49]  # ID/title/channel/published/view/thumbnail URL only
+```
+
+Only Functions/Admin writes these documents. Signed-in clients may read public
+metadata for diagnostics, but app queries use the callable. A transaction
+acquires and renews one lease per channel. Building pages are deterministic
+and bounded; readers continue using `activeGeneration` until publication
+updates the manifest in one transaction, so a partial generation is never
+presented as complete. Initial indexing can report `indexing` plus progress;
+refresh failure reports `error`/`stale` while retaining the previous active
+generation. The immediately previous generation is retained until the next
+refresh lease so an in-flight reader cannot lose its page set. Incremental
+refresh reads the uploads head until it overlaps known
+IDs and merges the unchanged tail. A full scan at least every 25 days removes
+deleted/private videos and revalidates retained metadata.
 
 The callable is a 2nd-generation Node.js 22 function in `us-central1`. Its
 `YOUTUBE_API_KEY` is a function-bound Firebase secret; missing configuration
 fails closed with a sanitized precondition error. Firebase Authentication is
-checked before service initialization, Firestore enforces 30 requests per UID
-per hour, upstream actions/identifiers are allowlisted and bounded, and
-instances are capped. Callable-protocol CORS is enabled, but this is not an
-arbitrary HTTP proxy. App Check enforcement remains off until coordinated
-client initialization; authentication, bounds, rate limiting, and instance
-caps are the current production controls.
+checked before service initialization, Firestore enforces 30 requests per UID per hour, upstream
+actions/identifiers are allowlisted and bounded, and instances are capped.
+Server-owned counters reserve 2,000 units from the default 10,000-unit daily
+project allocation, then cap use at 8,000 units globally and 200 units per UID
+in the Pacific-Time YouTube quota day. Callable-protocol CORS is enabled, but
+this is not an arbitrary HTTP proxy. App Check enforcement remains off until
+coordinated client initialization.
+
+Public API metadata is revalidated within 25 days or deleted by the bounded
+daily `cleanupYoutubeCatalogues` job after 30 days. Older/building generations are deleted opportunistically at the next lease;
+the immediately previous generation protects in-flight reads. No
+descriptions or image bytes are retained. This follows the YouTube API
+Services Developer Policies section III.E.4 (reviewed 2026-10-03):
+<https://developers.google.com/youtube/terms/developer-policies>.
+Video thumbnails are accepted only from HTTPS `i.ytimg.com`; channel avatars
+are additionally limited to YouTube's documented Google-hosted avatar domains.
+Invalid image hosts are discarded server-side and rejected by Flutter/rules
+when immutable exercise metadata is written.
 
 ### 2.2.1 Athlete Exercise Notes
 
@@ -892,7 +931,8 @@ Every Cloud Function in the system, its trigger, and what it does:
 | 7 | `onUserDeleted` | `auth.user().onDelete` | Cascading cleanup: deletes/anonymizes user data across all collections (see below) | Auth / Privacy |
 | 8 | `materializeRecurrence` | HTTPS callable | Expands a recurrence pattern + end date into individual `workoutInstances` documents in a batch write | Scheduling |
 | 9 | `onProgramPublished` | Firestore `onCreate` on `programVersions/{v}` | Snapshots the program structure; optionally updates enrollments referencing the program to the new version based on owner's upgrade choice | Versioning |
-| 10 | `youtubePublicLibrary` | HTTPS callable | Authenticated, rate-limited public-channel resolution and uploads-playlist paging through YouTube Data API v3; API key remains a Functions secret | Exercise media |
+| 10 | `youtubePublicLibrary` | HTTPS callable | Authenticated shared catalogue indexing/query over uploads playlists and batched video details; API key remains a Functions secret | Exercise media |
+| 11 | `cleanupYoutubeCatalogues` | Cloud Scheduler (03:17 America/Los_Angeles daily) | Deletes catalogues whose public API metadata was not refreshed within 30 days | Exercise media / policy |
 
 ### User Deletion Cleanup (onUserDeleted) — Detail
 

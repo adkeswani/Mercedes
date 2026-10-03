@@ -564,6 +564,12 @@ deletion/anonymization plus explicit relationship/history handling.
   Channel identity is independent of Firebase/Google sign-in. The client keeps
   only the last channel reference locally; no trainer-channel ownership is
   inferred or persisted.
+- `youtubeChannelCatalogs/{channelId}` is shared source infrastructure rather
+  than trainer-owned domain data. Its manifest atomically selects an active
+  generation; generation-prefixed page documents contain at most 50 normalized
+  records. Functions/Admin owns writes and leases. Exercise versions copy the
+  selected metadata, so later catalogue revalidation, removal, or a video
+  becoming private cannot rewrite historical training content.
 - Exercise, workout, and program headers now share stable tags, an optional
   type-scoped flat folder, and immutable copy provenance. Repository
   organization mutations verify both template and folder ownership.

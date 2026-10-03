@@ -23,7 +23,7 @@ void main() {
   const youtubeMetadata = YoutubeVideoMetadata(
     videoId: 'videoId0001',
     title: 'Front squat tutorial',
-    thumbnailUrl: 'https://img.example/front-squat.jpg',
+    thumbnailUrl: 'https://i.ytimg.com/vi/videoId0001/hqdefault.jpg',
     channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa',
     channelTitle: 'Public Trainer',
   );
@@ -185,6 +185,20 @@ void main() {
       expect(v1.youtubeMetadata, isNull);
       expect(v2!.name, 'Front Squat');
       expect(v2.youtubeMetadata!.videoId, 'videoId0001');
+      expect(
+        v2.youtubeMetadata!.canonicalUrl,
+        'https://www.youtube.com/watch?v=videoId0001',
+      );
+      final rawV2 = await firestore
+          .collection('exerciseTemplates')
+          .doc(id)
+          .collection('exerciseVersions')
+          .doc('2')
+          .get();
+      expect(
+        rawV2.data()!['youtubeMetadata']['canonicalUrl'],
+        'https://www.youtube.com/watch?v=videoId0001',
+      );
       expect(
           v2.measurementConfiguration.primary, ExerciseMeasurementType.weight);
       expect(v2.gradingConfiguration!.gymColors, grading.gymColors);

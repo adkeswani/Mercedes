@@ -288,7 +288,7 @@ service cloud.firestore {
              || (data.youtubeMetadata is map
                  && data.youtubeMetadata.keys().hasOnly([
                       'videoId', 'title', 'thumbnailUrl', 'channelId',
-                      'channelTitle'
+                      'channelTitle', 'canonicalUrl'
                     ])
                  && data.youtubeMetadata.videoId is string
                  && data.youtubeMetadata.videoId.size() == 11
@@ -297,11 +297,18 @@ service cloud.firestore {
                  && data.youtubeMetadata.title.size() <= 200
                  && data.youtubeMetadata.thumbnailUrl is string
                  && data.youtubeMetadata.thumbnailUrl.size() <= 500
+                 && (data.youtubeMetadata.thumbnailUrl == ''
+                     || data.youtubeMetadata.thumbnailUrl.matches(
+                          '^https://i[.]ytimg[.]com/.*$'
+                        ))
                  && data.youtubeMetadata.channelId is string
                  && data.youtubeMetadata.channelId.size() == 24
                  && data.youtubeMetadata.channelTitle is string
                  && data.youtubeMetadata.channelTitle.size() > 0
                  && data.youtubeMetadata.channelTitle.size() <= 200
+                 && data.youtubeMetadata.canonicalUrl ==
+                    'https://www.youtube.com/watch?v='
+                    + data.youtubeMetadata.videoId
                  && data.videoUrl ==
                     'https://www.youtube.com/watch?v='
                     + data.youtubeMetadata.videoId);
@@ -1084,6 +1091,18 @@ service cloud.firestore {
       // Exercise notes — private to the owning user
       match /exerciseNotes/{noteId} {
         allow read, write: if isSelf(userId);
+      }
+    }
+
+    // Public YouTube metadata is readable by signed-in app users, but the
+    // canonical shared cache is written only by Admin SDK Cloud Functions.
+    match /youtubeChannelCatalogs/{channelId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if false;
+
+      match /pages/{pageId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if false;
       }
     }
 

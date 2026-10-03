@@ -212,16 +212,33 @@ delete the old Google Cloud API key. Never print the key with
 the prior secret version and redeploying the callable is the rollback path if
 the new key fails verification.
 
-Each channel resolution uses one `channels.list` quota unit. Each uncached
-uploads page normally uses one `channels.list`, one `playlistItems.list`, and
-one batched `videos.list` call. Instance-local channel metadata is cached for
-10 minutes and page metadata for 5 minutes; cold starts do not retain cache.
-The callable accepts at most 50 videos per page, times upstream requests out
-after 8 seconds, caps instances at 10, and permits 30 calls per authenticated
-user per hour using server-owned Firestore rate-limit records. Search and sort
-operate only over the catalogue pages loaded by the client. YouTube project
-quota and Cloud Functions/Firestore/network usage can incur charges under the
-configured Google Cloud billing plan.
+The implementation never calls `search.list`. `channels.list`,
+`playlistItems.list`, and `videos.list` each cost one unit, and the default
+combined project allocation is 10,000 units per Pacific-Time day. Initial
+indexing costs approximately one channel lookup plus two units per 50 uploads.
+Incremental refresh normally costs the cached/one-unit channel resolution plus
+two units per new uploads page until a known ID is reached. Full revalidation
+uses two units per 50 uploads. Sources reviewed 2026-10-03:
+<https://developers.google.com/youtube/v3/determine_quota_cost> and
+<https://developers.google.com/youtube/v3/docs/playlistItems/list>.
+
+Firestore counters cap YouTube calls at 8,000 units globally and 200 units per
+UID per quota day, leaving operational headroom under 10,000. The callable
+also permits 30 requests per authenticated UID per hour, validates query/sort/
+page sizes, times upstream requests out after 8 seconds, and caps instances at
+10. Shared channel generations eliminate duplicate per-user indexing. Cloud
+Functions, Scheduler, Firestore operations, Secret Manager, and network usage
+can incur charges under the configured billing plan.
+
+Fresh catalogues refresh after six hours and become visibly stale after 24
+hours. Quota/upstream failures retain and explicitly label the prior active
+generation. Incremental refresh minimizes calls; a full revalidation at least
+every 25 days removes deleted/private uploads. The YouTube API Services
+Developer Policies section III.E.4 requires public/non-authorized API data to
+be refreshed or deleted within 30 days. The daily bounded
+`cleanupYoutubeCatalogues` function recursively deletes expired catalogues;
+no descriptions or thumbnail bytes are stored. Review policy revisions before
+release: <https://developers.google.com/youtube/terms/developer-policies>.
 
 The endpoint exposes public metadata only. It has no OAuth flow, refresh
 tokens, private/unlisted access, arbitrary upstream URL proxying, or coupling
@@ -318,12 +335,14 @@ athlete, program, and workout assignment tuple. Permission errors, app errors,
 missing templates, and empty results fail the run.
 
 The local emulator canary additionally compiles
-`FAKE_PUBLIC_YOUTUBE_CATALOGUE=true`; it never calls YouTube. It edits the
-seeded exercise, searches and sorts the fake catalogue, invokes the same
+`FAKE_PUBLIC_YOUTUBE_CATALOGUE=true`; it never calls YouTube. It verifies
+catalogue completion/freshness, searches and sorts the complete fake
+catalogue, edits the seeded exercise, invokes the same
 attachment/save commands through a debug/emulator/query/fake-catalogue-gated
 browser bridge for a drag-equivalent path and a distinct Select/Attach
-replacement, verifies the exact immutable version documents through the
-emulator Admin SDK, and retains `trainer-exercise-youtube-drag.png` plus
+replacement, saves/reopens, verifies thumbnail controls and exact immutable
+version documents (including canonical URL) through the emulator Admin SDK,
+and retains `trainer-exercise-youtube-drag.png` plus
 `trainer-exercise-youtube-select.png`.
 
 Successful PNG directories are retained as diagnostic release artifacts and
@@ -336,12 +355,15 @@ caches, generated plugin noise, and failed transient attempts only.
 The web release order is deliberate:
 
 1. Confirm the secret metadata and build/test Functions.
-2. Deploy Functions, Firestore rules, and Firestore indexes together.
+2. Deploy all Functions (callable plus cleanup schedule), Firestore rules, and
+   Firestore indexes together.
 3. Wait until every index is ready.
 4. Deploy Hosting.
 5. Verify deployed Firestore rule/index parity.
 6. Sign in as a real test user and resolve a known public channel; verify that
    quota, not-found, and unavailable errors remain sanitized.
+7. Confirm `cleanupYoutubeCatalogues` is enabled with its daily
+   `America/Los_Angeles` schedule and inspect callable/cleanup error logs.
 
 Before the real release, validate the backend configuration without releasing
 new Functions or Firestore revisions:
@@ -359,12 +381,17 @@ service APIs, create service identities, or prepare IAM even with `--dry-run`.
 Run it only after reviewing those possible project changes and explicitly
 confirming them.
 
+No new composite index is required: catalogue page reads use one generation
+equality filter and server-side in-memory sorting over bounded page documents.
 If the backend deployment fails, Hosting is not deployed. If index readiness
 fails, Hosting is not deployed. If Hosting fails after the backend succeeds,
 the prior client remains live against the backward-compatible callable/rules;
 fix Hosting or redeploy the prior backend commit. If post-release YouTube
-verification fails, redeploy the previous callable and secret version before
-rolling back Hosting. Firestore version documents remain immutable throughout.
+verification fails, redeploy the previous Functions revision and secret
+version before rolling back Hosting. Do not remove the cleanup schedule while
+catalogue documents from this revision remain; disable/delete it only after
+the catalogue collection is empty. Firestore exercise version documents
+remain immutable throughout.
 
 The parity helper compares deployed Firestore rules and indexes; it does not
 prove a Functions revision, secret value, API enablement, Hosting asset, or
@@ -375,19 +402,13 @@ commits a secret.
 
 ### Branch integration ordering
 
-The public YouTube work is self-contained in commits `7b87fd9` and `9c7218a`
-plus this deployment-readiness commit. It does **not** depend on builder commit
-`904fea0`, which is not an ancestor of this branch. Do not merge that unrelated
-builder branch merely to deploy YouTube.
-
-Both branches edit `docs/domain-model-design.md`,
-`docs/remaining-features.md`, `docs/technical-design.md`, `firestore.rules`,
-`stage5/README.md`, and `test-rules/firestore-rules.test.ts`. If both features
-are approved for the same release, land the builder change first, then rebase
-or cherry-pick the YouTube commits onto the updated `main`; resolve those six
-files additively and rerun Functions, rules, Stage 5, and release-helper gates.
-Deploy only from the resulting clean `main` commit. If builder is not approved,
-integrate the YouTube commits directly without it.
+The shared catalogue implementation is one Stage 5 topic change spanning the
+callable/scheduled Functions, Firestore rules, Flutter contract/UX, tests, and
+documentation. Do not cherry-pick only one surface: old clients remain
+callable-compatible, but partial rules/backend/client integration would leave
+the release unverified. Keep Stage 4 unchanged, integrate the topic branch to
+`main` with the repository-required fast-forward-only workflow, then rerun the
+complete validation boundary from the exact integrated commit before deploy.
 
 ## Production promotion
 

@@ -374,9 +374,11 @@ async function waitForExerciseVersion(
     if (data.videoUrl !== expectedUrl ||
         data.youtubeMetadata?.videoId !== expectedVideo.videoId ||
         data.youtubeMetadata?.title !== expectedVideo.title ||
+        data.youtubeMetadata?.thumbnailUrl !== "" ||
         data.youtubeMetadata?.channelId !== "UCaaaaaaaaaaaaaaaaaaaaaa" ||
         data.youtubeMetadata?.channelTitle !==
-          "Release Canary Public Channel") {
+          "Release Canary Public Channel" ||
+        data.youtubeMetadata?.canonicalUrl !== expectedUrl) {
       throw new Error(
         `Exercise version ${versionNumber} did not persist equivalent ` +
         "canonical YouTube metadata",
@@ -414,9 +416,18 @@ async function loadFakeYoutubeChannel(
     { submit: true },
   );
   const searchField = await waitFor(
-    () => findByAriaLabel(baseUrl, sessionId, "Search loaded videos"),
-    "loaded YouTube video search",
+    () => findByAriaLabel(baseUrl, sessionId, "Search complete catalogue"),
+    "complete-catalogue YouTube video search",
   );
+  await waitFor(async () => {
+    const state = await execute(
+      baseUrl,
+      sessionId,
+      "return document.body.innerText || '';",
+    );
+    return state.value.includes("3 videos indexed") &&
+      state.value.includes("Catalogue is fresh.");
+  }, "completed and fresh fake YouTube catalogue");
   if (search) {
     await invokeYoutubeCanaryBridge(
       baseUrl,
@@ -488,7 +499,7 @@ async function runYoutubeExerciseFlow({
     const squatRect = await elementRect(baseUrl, sessionId, squat);
     const deadliftRect = await elementRect(baseUrl, sessionId, deadlift);
     return squatRect.y < deadliftRect.y;
-  }, "view-count sorted loaded catalogue");
+  }, "view-count sorted complete catalogue");
   await typeIntoElement(baseUrl, sessionId, searchField, "Squat");
   await waitFor(
     () => findByAriaLabel(
@@ -520,6 +531,19 @@ async function runYoutubeExerciseFlow({
     videoId: "canaryVid02",
     title: "Release Canary Squat",
   });
+
+  channelField = await openYoutubeEditor(baseUrl, sessionId);
+  await loadFakeYoutubeChannel(baseUrl, sessionId, channelField, "");
+  await waitFor(async () => {
+    const state = await execute(
+      baseUrl,
+      sessionId,
+      "return document.body.innerText || '';",
+    );
+    return state.value.includes("Release Canary Squat") &&
+      state.value.includes("Open on YouTube") &&
+      state.value.includes("Remove video");
+  }, "reopened persisted YouTube thumbnail metadata");
 
   await invokeYoutubeCanaryBridge(
     baseUrl,

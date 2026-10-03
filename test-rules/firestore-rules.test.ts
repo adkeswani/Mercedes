@@ -125,6 +125,58 @@ describe('users', () => {
   });
 });
 
+describe('YouTube channel catalogues', () => {
+  const CHANNEL_ID = 'UCaaaaaaaaaaaaaaaaaaaaaa';
+
+  beforeEach(async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const manifest = ctx.firestore()
+        .collection('youtubeChannelCatalogs')
+        .doc(CHANNEL_ID);
+      await manifest.set({
+        title: 'Public Training',
+        status: 'ready',
+        activeGeneration: 'generation-1',
+      });
+      await manifest.collection('pages').doc('generation-1-000000').set({
+        generation: 'generation-1',
+        pageIndex: 0,
+        videos: [{id: 'videoId0001', title: 'Squat'}],
+      });
+    });
+  });
+
+  it('allows authenticated reads of manifests and pages', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const manifest = db.collection('youtubeChannelCatalogs').doc(CHANNEL_ID);
+    await assertSucceeds(manifest.get());
+    await assertSucceeds(manifest.collection('pages').get());
+  });
+
+  it('denies unauthenticated reads', async () => {
+    const db = testEnv.unauthenticatedContext().firestore();
+    const manifest = db.collection('youtubeChannelCatalogs').doc(CHANNEL_ID);
+    await assertFails(manifest.get());
+    await assertFails(manifest.collection('pages').get());
+  });
+
+  it('denies client create, update, and delete for manifests and pages',
+      async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const manifest = db.collection('youtubeChannelCatalogs').doc(CHANNEL_ID);
+    const page = manifest.collection('pages').doc('generation-1-000000');
+    await assertFails(
+      db.collection('youtubeChannelCatalogs').doc('UCbbbbbbbbbbbbbbbbbbbbbb')
+        .set({status: 'ready'})
+    );
+    await assertFails(manifest.update({status: 'error'}));
+    await assertFails(manifest.delete());
+    await assertFails(page.set({videos: []}));
+    await assertFails(page.update({pageIndex: 1}));
+    await assertFails(page.delete());
+  });
+});
+
 // ─── Trainer-client relationships ───
 
 describe('trainerClientRelationships', () => {
@@ -546,9 +598,10 @@ describe('exerciseTemplates', () => {
       youtubeMetadata: {
         videoId: 'videoId0001',
         title: 'Squat tutorial',
-        thumbnailUrl: 'https://img.example/squat.jpg',
+        thumbnailUrl: 'https://i.ytimg.com/vi/videoId0001/hqdefault.jpg',
         channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa',
         channelTitle: 'Public Trainer',
+        canonicalUrl: 'https://www.youtube.com/watch?v=videoId0001',
       },
       mediaUrls: [],
       exerciseType: 'strength',
@@ -592,6 +645,7 @@ describe('exerciseTemplates', () => {
         thumbnailUrl: '',
         channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa',
         channelTitle: 'Public Trainer',
+        canonicalUrl: 'https://www.youtube.com/watch?v=videoId0001',
       },
       mediaUrls: [],
       exerciseType: 'strength',

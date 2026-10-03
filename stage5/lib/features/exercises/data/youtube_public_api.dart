@@ -9,6 +9,8 @@ abstract interface class YoutubePublicApi {
     required String channelId,
     String? pageToken,
     int maxResults = 25,
+    String query = '',
+    YoutubeVideoSort sort = YoutubeVideoSort.newest,
   });
 }
 
@@ -35,6 +37,8 @@ class FirebaseYoutubePublicApi implements YoutubePublicApi {
     required String channelId,
     String? pageToken,
     int maxResults = 25,
+    String query = '',
+    YoutubeVideoSort sort = YoutubeVideoSort.newest,
   }) async {
     final callable = _functions.httpsCallable('youtubePublicLibrary');
     final result = await callable.call<Map<String, dynamic>>({
@@ -42,6 +46,8 @@ class FirebaseYoutubePublicApi implements YoutubePublicApi {
       'channelId': channelId,
       'pageToken': pageToken,
       'maxResults': maxResults,
+      'query': query.trim(),
+      'sort': sort.name,
     });
     return PublicYoutubeVideoPage.fromMap(result.data);
   }
@@ -101,13 +107,24 @@ class FakeYoutubePublicApi implements YoutubePublicApi {
     required String channelId,
     String? pageToken,
     int maxResults = 25,
+    String query = '',
+    YoutubeVideoSort sort = YoutubeVideoSort.newest,
   }) async {
     if (channelId != channel.id) {
       throw StateError('Public YouTube channel was not found');
     }
+    final filtered = filterAndSortYoutubeVideos(
+      videos,
+      query: query,
+      sort: sort,
+    );
     return PublicYoutubeVideoPage(
-      videos: pageToken == null ? videos : const [],
+      videos: pageToken == null ? filtered.take(maxResults).toList() : const [],
       nextPageToken: null,
+      indexedCount: videos.length,
+      videoCount: videos.length,
+      lastRefreshedAt: DateTime.utc(2026, 10, 1),
+      refreshAfter: DateTime.utc(2026, 10, 1, 6),
     );
   }
 }

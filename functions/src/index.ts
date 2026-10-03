@@ -2,23 +2,37 @@ import {auth, runWith} from "firebase-functions/v1";
 import {logger} from "firebase-functions";
 import {defineSecret} from "firebase-functions/params";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
+import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
 import {propagateProgramVersion} from "./subscription_propagation";
 import {
   handleYoutubePublicRequest,
+  cleanupExpiredYoutubeCatalogues,
+  YoutubeCatalogueService,
   YoutubePublicError,
   YoutubePublicService,
 } from "./youtube_public";
+import {
+  FirestoreYoutubeCatalogueStore,
+} from "./youtube_catalogue_firestore";
 
 admin.initializeApp();
 
 const db = admin.firestore();
 const youtubeApiKey = defineSecret("YOUTUBE_API_KEY");
 let youtubeService: YoutubePublicService | undefined;
+const youtubeCatalogueStore = new FirestoreYoutubeCatalogueStore(db);
 
 function publicYoutubeService(): YoutubePublicService {
   youtubeService ??= new YoutubePublicService(youtubeApiKey.value());
   return youtubeService;
+}
+
+function publicYoutubeCatalogueService(): YoutubeCatalogueService {
+  return new YoutubeCatalogueService(
+    publicYoutubeService(),
+    youtubeCatalogueStore,
+  );
 }
 
 async function consumeYoutubeRateLimit(uid: string): Promise<void> {
@@ -53,8 +67,8 @@ export const youtubePublicLibrary = onCall(
   {
     secrets: [youtubeApiKey],
     region: "us-central1",
-    timeoutSeconds: 15,
-    memory: "256MiB",
+    timeoutSeconds: 300,
+    memory: "512MiB",
     maxInstances: 10,
     cors: true,
     enforceAppCheck: false,
@@ -71,7 +85,7 @@ export const youtubePublicLibrary = onCall(
         request.data,
         request.auth.uid,
         consumeYoutubeRateLimit,
-        publicYoutubeService(),
+        publicYoutubeCatalogueService(),
       );
     } catch (error) {
       if (error instanceof YoutubePublicError) {
@@ -86,6 +100,23 @@ export const youtubePublicLibrary = onCall(
         "Public YouTube request failed.",
       );
     }
+  },
+);
+
+export const cleanupYoutubeCatalogues = onSchedule(
+  {
+    schedule: "17 3 * * *",
+    timeZone: "America/Los_Angeles",
+    region: "us-central1",
+    timeoutSeconds: 300,
+    memory: "512MiB",
+  },
+  async () => {
+    const deleted = await cleanupExpiredYoutubeCatalogues(
+      youtubeCatalogueStore,
+      Date.now(),
+    );
+    logger.info("Expired YouTube catalogues cleaned", {deleted});
   },
 );
 

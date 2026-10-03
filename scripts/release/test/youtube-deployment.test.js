@@ -26,9 +26,25 @@ test("callable binds its secret and bounded runtime security options", () => {
   assert.match(source, /secrets: \[youtubeApiKey\]/);
   assert.match(source, /region: "us-central1"/);
   assert.match(source, /maxInstances: 10/);
+  assert.match(source, /timeoutSeconds: 300/);
+  assert.match(source, /memory: "512MiB"/);
   assert.match(source, /enforceAppCheck: false/);
   assert.match(source, /if \(!request\.auth\?\.uid\)/);
   assert.doesNotMatch(source, /logger\.error\([^]*\berror,\s*\n/);
+});
+
+test("catalogue storage is server-owned and needs no composite index", () => {
+  const rules = read("firestore.rules");
+  const indexes = JSON.parse(read("firestore.indexes.json"));
+  assert.match(rules, /match \/youtubeChannelCatalogs\/\{channelId\}/);
+  assert.match(rules, /allow create, update, delete: if false/);
+  assert.equal(
+    indexes.indexes.some(
+      (index) => index.collectionGroup === "youtubeChannelCatalogs" ||
+        index.collectionGroup === "pages",
+    ),
+    false,
+  );
 });
 
 test("web release fails closed on a missing secret and deploys in order", () => {

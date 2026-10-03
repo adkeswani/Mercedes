@@ -47,7 +47,7 @@ void main() {
         {
           'id': 'videoId0001',
           'title': 'Squat',
-          'thumbnailUrl': 'https://img.example/squat.jpg',
+          'thumbnailUrl': 'https://i.ytimg.com/vi/videoId0001/hqdefault.jpg',
           'channelId': channelId,
           'channelTitle': 'Public Trainer',
           'publishedAt': '2026-09-20T00:00:00.000Z',
@@ -55,10 +55,28 @@ void main() {
         },
       ],
       'nextPageToken': 'NEXT',
+      'status': 'indexing',
+      'indexedCount': 50,
+      'videoCount': 120,
+      'complete': false,
+      'stale': true,
+      'lastRefreshedAt': '2026-09-20T00:00:00.000Z',
     });
-    expect(page.videos.single.canonicalUrl,
-        'https://www.youtube.com/watch?v=videoId0001');
+    expect(
+      page.videos.single.canonicalUrl,
+      'https://www.youtube.com/watch?v=videoId0001',
+    );
     expect(page.nextPageToken, 'NEXT');
+    expect(page.status, YoutubeCatalogueStatus.indexing);
+    expect(page.indexedCount, 50);
+    expect(page.videoCount, 120);
+    expect(page.complete, isFalse);
+    expect(page.stale, isTrue);
+    expect(page.lastRefreshedAt, DateTime.utc(2026, 9, 20));
+    expect(
+      page.videos.single.metadata.canonicalUrl,
+      'https://www.youtube.com/watch?v=videoId0001',
+    );
     expect(
       () => PublicYoutubeVideoPage.fromMap({
         'videos': [
@@ -73,9 +91,24 @@ void main() {
       }),
       throwsFormatException,
     );
+    expect(
+      () => PublicYoutubeVideoPage.fromMap({
+        'videos': [
+          {
+            'id': 'videoId0001',
+            'title': 'Bad image host',
+            'thumbnailUrl': 'https://example.com/tracker.jpg',
+            'channelId': channelId,
+            'channelTitle': 'Public Trainer',
+            'publishedAt': '2026-09-20T00:00:00Z',
+          },
+        ],
+      }),
+      throwsFormatException,
+    );
   });
 
-  test('searches and sorts the complete loaded catalogue', () {
+  test('searches and sorts a complete catalogue fixture', () {
     final videos = [
       _video(
         id: 'videoId0001',
@@ -95,10 +128,11 @@ void main() {
         publishedAt: DateTime.utc(2026, 9, 3),
       ),
     ];
-    expect(
-      filterAndSortYoutubeVideos(videos).map((video) => video.id),
-      ['videoId0003', 'videoId0002', 'videoId0001'],
-    );
+    expect(filterAndSortYoutubeVideos(videos).map((video) => video.id), [
+      'videoId0003',
+      'videoId0002',
+      'videoId0001',
+    ]);
     expect(
       filterAndSortYoutubeVideos(
         videos,

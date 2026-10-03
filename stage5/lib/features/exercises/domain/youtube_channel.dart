@@ -1,10 +1,7 @@
 enum YoutubeChannelReferenceType { channelId, handle, username }
 
 class YoutubeChannelReference {
-  const YoutubeChannelReference({
-    required this.type,
-    required this.value,
-  });
+  const YoutubeChannelReference({required this.type, required this.value});
 
   final YoutubeChannelReferenceType type;
   final String value;
@@ -32,7 +29,9 @@ YoutubeChannelReference? parseYoutubeChannelReference(String input) {
     return null;
   }
   final segments = uri.pathSegments.where((segment) => segment.isNotEmpty);
-  if (segments.isEmpty) return null;
+  if (segments.isEmpty) {
+    return null;
+  }
   final path = segments.toList();
   if (path.length == 2 &&
       path.first == 'channel' &&
@@ -84,11 +83,15 @@ class PublicYoutubeChannel {
         uploadsPlaylistId.trim().isEmpty) {
       throw const FormatException('Malformed YouTube channel response');
     }
+    final avatarUrl = _validatedYoutubeImageUrl(
+      map['avatarUrl'],
+      allowAvatar: true,
+    );
     return PublicYoutubeChannel(
       id: id,
       title: title.trim(),
       uploadsPlaylistId: uploadsPlaylistId,
-      avatarUrl: map['avatarUrl'] as String?,
+      avatarUrl: avatarUrl,
     );
   }
 
@@ -116,6 +119,7 @@ class PublicYoutubeVideo {
     final channelTitle = map['channelTitle'] as String? ?? '';
     final publishedAt = DateTime.tryParse(map['publishedAt'] as String? ?? '');
     final rawViewCount = map['viewCount'];
+    final thumbnailUrl = _validatedYoutubeImageUrl(map['thumbnailUrl']);
     if (!RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(id) ||
         title.trim().isEmpty ||
         !RegExp(r'^UC[A-Za-z0-9_-]{22}$').hasMatch(channelId) ||
@@ -126,7 +130,7 @@ class PublicYoutubeVideo {
     return PublicYoutubeVideo(
       id: id,
       title: title.trim(),
-      thumbnailUrl: map['thumbnailUrl'] as String? ?? '',
+      thumbnailUrl: thumbnailUrl,
       channelId: channelId,
       channelTitle: channelTitle.trim(),
       publishedAt: publishedAt.toUtc(),
@@ -169,10 +173,12 @@ class YoutubeVideoMetadata {
   final String thumbnailUrl;
   final String channelId;
   final String channelTitle;
+  String get canonicalUrl => 'https://www.youtube.com/watch?v=$videoId';
 
   void validate() {
     if (!RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(videoId) ||
         title.trim().isEmpty ||
+        _validatedYoutubeImageUrl(thumbnailUrl) != thumbnailUrl ||
         !RegExp(r'^UC[A-Za-z0-9_-]{22}$').hasMatch(channelId) ||
         channelTitle.trim().isEmpty) {
       throw ArgumentError('Invalid YouTube video metadata');
@@ -180,10 +186,39 @@ class YoutubeVideoMetadata {
   }
 }
 
+String _validatedYoutubeImageUrl(
+  Object? value, {
+  bool allowAvatar = false,
+}) {
+  if (value == null || value == '') {
+    return '';
+  }
+  if (value is! String) {
+    throw const FormatException('Malformed YouTube image URL');
+  }
+  final uri = Uri.tryParse(value);
+  final host = uri?.host.toLowerCase();
+  if (uri?.scheme != 'https' ||
+      (host != 'i.ytimg.com' &&
+          !(allowAvatar &&
+              (host == 'yt3.ggpht.com' ||
+                  (host?.endsWith('.googleusercontent.com') ?? false))))) {
+    throw const FormatException('Malformed YouTube image URL');
+  }
+  return uri.toString();
+}
+
 class PublicYoutubeVideoPage {
   const PublicYoutubeVideoPage({
     required this.videos,
     required this.nextPageToken,
+    this.status = YoutubeCatalogueStatus.ready,
+    this.indexedCount = 0,
+    this.videoCount = 0,
+    this.complete = true,
+    this.stale = false,
+    this.lastRefreshedAt,
+    this.refreshAfter,
   });
 
   factory PublicYoutubeVideoPage.fromMap(Map<String, dynamic> map) {
@@ -200,12 +235,35 @@ class PublicYoutubeVideoPage {
           )
           .toList(growable: false),
       nextPageToken: map['nextPageToken'] as String?,
+      status: YoutubeCatalogueStatus.values.firstWhere(
+        (status) => status.name == map['status'],
+        orElse: () => YoutubeCatalogueStatus.ready,
+      ),
+      indexedCount: map['indexedCount'] as int? ?? 0,
+      videoCount: map['videoCount'] as int? ?? 0,
+      complete: map['complete'] as bool? ?? true,
+      stale: map['stale'] as bool? ?? false,
+      lastRefreshedAt: DateTime.tryParse(
+        map['lastRefreshedAt'] as String? ?? '',
+      )?.toUtc(),
+      refreshAfter: DateTime.tryParse(
+        map['refreshAfter'] as String? ?? '',
+      )?.toUtc(),
     );
   }
 
   final List<PublicYoutubeVideo> videos;
   final String? nextPageToken;
+  final YoutubeCatalogueStatus status;
+  final int indexedCount;
+  final int videoCount;
+  final bool complete;
+  final bool stale;
+  final DateTime? lastRefreshedAt;
+  final DateTime? refreshAfter;
 }
+
+enum YoutubeCatalogueStatus { indexing, ready, error }
 
 enum YoutubeVideoSort { newest, oldest, title, viewCount }
 
@@ -227,10 +285,12 @@ List<PublicYoutubeVideo> filterAndSortYoutubeVideos(
     return switch (sort) {
       YoutubeVideoSort.newest => right.publishedAt.compareTo(left.publishedAt),
       YoutubeVideoSort.oldest => left.publishedAt.compareTo(right.publishedAt),
-      YoutubeVideoSort.title =>
-        left.title.toLowerCase().compareTo(right.title.toLowerCase()),
-      YoutubeVideoSort.viewCount =>
-        (right.viewCount ?? -1).compareTo(left.viewCount ?? -1),
+      YoutubeVideoSort.title => left.title.toLowerCase().compareTo(
+            right.title.toLowerCase(),
+          ),
+      YoutubeVideoSort.viewCount => (right.viewCount ?? -1).compareTo(
+          left.viewCount ?? -1,
+        ),
     };
   });
   return result;

@@ -9,10 +9,7 @@ export type YoutubeErrorCode =
   "internal";
 
 export class YoutubePublicError extends Error {
-  constructor(
-    readonly code: YoutubeErrorCode,
-    message: string,
-  ) {
+  constructor(readonly code: YoutubeErrorCode, message: string) {
     super(message);
   }
 }
@@ -44,10 +41,85 @@ export type PublicVideo = {
   viewCount: number | null;
 };
 
-export type PublicVideoPage = {
+export type YoutubeSort = "newest" | "oldest" | "title" | "viewCount";
+export type CatalogueStatus = "indexing" | "ready" | "error";
+
+export type CatalogueManifest = PublicChannel & {
+  status: CatalogueStatus;
+  activeGeneration: string | null;
+  previousGeneration: string | null;
+  buildingGeneration: string | null;
+  pageCount: number;
+  videoCount: number;
+  indexedCount: number;
+  lastRefreshedAt: number | null;
+  lastFullRefreshAt: number | null;
+  refreshAfter: number | null;
+  staleAfter: number | null;
+  leaseOwner: string | null;
+  leaseExpiresAt: number | null;
+  lastError: string | null;
+  updatedAt: number;
+};
+
+export type CataloguePage = {
+  generation: string;
+  pageIndex: number;
+  videos: PublicVideo[];
+};
+
+export type CatalogueQueryResult = {
   videos: PublicVideo[];
   nextPageToken: string | null;
+  status: CatalogueStatus;
+  indexedCount: number;
+  videoCount: number;
+  complete: boolean;
+  stale: boolean;
+  lastRefreshedAt: string | null;
+  refreshAfter: string | null;
 };
+
+export interface YoutubeCatalogueStore {
+  getManifest(channelId: string): Promise<CatalogueManifest | null>;
+  acquireLease(
+    channel: PublicChannel,
+    owner: string,
+    generation: string,
+    now: number,
+    leaseMs: number,
+  ): Promise<boolean>;
+  writePage(
+    channelId: string,
+    owner: string,
+    page: CataloguePage,
+    indexedCount: number,
+    now: number,
+  ): Promise<void>;
+  publish(
+    channelId: string,
+    owner: string,
+    generation: string,
+    pageCount: number,
+    videoCount: number,
+    fullRefresh: boolean,
+    now: number,
+  ): Promise<void>;
+  fail(
+    channelId: string,
+    owner: string,
+    message: string,
+    now: number,
+  ): Promise<void>;
+  readPages(channelId: string, generation: string): Promise<CataloguePage[]>;
+  deleteGeneration(channelId: string, generation: string): Promise<void>;
+  consumeBudget(uid: string, units: number, now: number): Promise<void>;
+}
+
+export interface YoutubeCatalogueCleanupStore {
+  listExpiredCatalogues(cutoff: number, limit: number): Promise<string[]>;
+  deleteCatalogue(channelId: string): Promise<void>;
+}
 
 const CHANNEL_ID = /^UC[A-Za-z0-9_-]{22}$/;
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -59,6 +131,76 @@ const YOUTUBE_HOSTS = new Set([
   "www.youtube.com",
   "m.youtube.com",
 ]);
+const PAGE_SIZE = 50;
+const LEASE_MS = 2 * 60 * 1000;
+const REFRESH_MS = 6 * 60 * 60 * 1000;
+const STALE_MS = 24 * 60 * 60 * 1000;
+const FULL_REFRESH_MS = 25 * 24 * 60 * 60 * 1000;
+const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const GLOBAL_DAILY_BUDGET = 8000;
+const USER_DAILY_BUDGET = 200;
+
+export async function cleanupExpiredYoutubeCatalogues(
+  store: YoutubeCatalogueCleanupStore,
+  now: number,
+  limit = 100,
+): Promise<number> {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+    throw new YoutubePublicError(
+      "invalid-argument",
+      "Cleanup limit must be between 1 and 500.",
+    );
+  }
+
+  const channelIds = await store.listExpiredCatalogues(
+    now - RETENTION_MS,
+    limit,
+  );
+  for (const channelId of channelIds) {
+    await store.deleteCatalogue(channelId);
+  }
+  return channelIds.length;
+}
+
+export function youtubeQuotaDay(now: number): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(now));
+  const value = (type: string) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+export function assertYoutubeBudget(
+  globalUsed: number,
+  userUsed: number,
+  units: number,
+): void {
+  if (
+    ![globalUsed, userUsed, units].every(Number.isSafeInteger) ||
+    globalUsed < 0 ||
+    userUsed < 0 ||
+    units < 1 ||
+    units > 2
+  ) {
+    throw new YoutubePublicError("internal", "Invalid quota budget charge.");
+  }
+  if (globalUsed + units > GLOBAL_DAILY_BUDGET) {
+    throw new YoutubePublicError(
+      "resource-exhausted",
+      "The shared daily YouTube quota budget is exhausted.",
+    );
+  }
+  if (userUsed + units > USER_DAILY_BUDGET) {
+    throw new YoutubePublicError(
+      "resource-exhausted",
+      "Your daily YouTube catalogue budget is exhausted.",
+    );
+  }
+}
 
 export function parseChannelReference(input: unknown): ChannelReference {
   if (typeof input !== "string" || input.length > 300) {
@@ -72,7 +214,6 @@ export function parseChannelReference(input: unknown): ChannelReference {
   if (value.startsWith("@") && HANDLE.test(value.slice(1))) {
     return {kind: "handle", value: value.slice(1)};
   }
-
   let url: URL;
   try {
     url = new URL(value);
@@ -143,14 +284,37 @@ export function validateMaxResults(value: unknown): number {
   return value as number;
 }
 
+function validateQuery(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string" || value.length > 100) {
+    throw new YoutubePublicError(
+      "invalid-argument",
+      "query must be a string of at most 100 characters.",
+    );
+  }
+  return value.trim().toLocaleLowerCase();
+}
+
+function validateSort(value: unknown): YoutubeSort {
+  if (value === undefined || value === null) return "newest";
+  if (
+    value === "newest" ||
+    value === "oldest" ||
+    value === "title" ||
+    value === "viewCount"
+  ) {
+    return value;
+  }
+  throw new YoutubePublicError(
+    "invalid-argument",
+    "sort must be newest, oldest, title, or viewCount.",
+  );
+}
+
 export class YoutubePublicService {
   private readonly channelCache = new Map<
     string,
     {expiresAt: number; value: PublicChannel}
-  >();
-  private readonly pageCache = new Map<
-    string,
-    {expiresAt: number; value: PublicVideoPage}
   >();
 
   constructor(
@@ -166,120 +330,16 @@ export class YoutubePublicService {
     }
   }
 
-  async resolveChannel(input: unknown): Promise<PublicChannel> {
-    const reference = parseChannelReference(input);
-    return this.resolveReference(reference);
-  }
-
-  async listVideos(
-    channelIdValue: unknown,
-    pageTokenValue: unknown,
-    maxResultsValue: unknown,
-  ): Promise<PublicVideoPage> {
-    if (typeof channelIdValue !== "string" || !CHANNEL_ID.test(channelIdValue)) {
-      throw new YoutubePublicError(
-        "invalid-argument",
-        "Invalid YouTube channel ID.",
-      );
-    }
-    const pageToken = validatePageToken(pageTokenValue);
-    const maxResults = validateMaxResults(maxResultsValue);
-    const cacheKey = `${channelIdValue}:${pageToken ?? ""}:${maxResults}`;
-    const cached = this.pageCache.get(cacheKey);
-    if (cached && cached.expiresAt > this.now()) return cached.value;
-
-    const channel = await this.resolveReference({
-      kind: "id",
-      value: channelIdValue,
-    });
-    const playlist = await this.request("playlistItems", {
-      part: "contentDetails,snippet",
-      playlistId: channel.uploadsPlaylistId,
-      maxResults: String(maxResults),
-      ...(pageToken ? {pageToken} : {}),
-    });
-    const playlistItems = arrayValue(playlist.items);
-    const orderedIds = playlistItems
-      .map((item) => objectValue(item).contentDetails)
-      .map((details) => objectValue(details).videoId)
-      .filter((id): id is string => typeof id === "string" && VIDEO_ID.test(id));
-
-    let videos: PublicVideo[] = [];
-    if (orderedIds.length > 0) {
-      const details = await this.request("videos", {
-        part: "snippet,statistics",
-        id: orderedIds.join(","),
-        maxResults: String(orderedIds.length),
-      });
-      const byId = new Map<string, PublicVideo>();
-      for (const rawItem of arrayValue(details.items)) {
-        const item = objectValue(rawItem);
-        const id = stringValue(item.id);
-        const snippet = objectValue(item.snippet);
-        const channelId = stringValue(snippet.channelId);
-        const publishedAt = stringValue(snippet.publishedAt);
-        if (
-          !VIDEO_ID.test(id) ||
-          !CHANNEL_ID.test(channelId) ||
-          Number.isNaN(Date.parse(publishedAt))
-        ) {
-          throw new YoutubePublicError(
-            "unavailable",
-            "YouTube returned malformed video metadata.",
-          );
-        }
-        const thumbnails = objectValue(snippet.thumbnails);
-        const medium = objectValue(thumbnails.medium);
-        const high = objectValue(thumbnails.high);
-        const defaults = objectValue(thumbnails.default);
-        const statistics = objectValue(item.statistics);
-        const rawViews = statistics.viewCount;
-        const viewCount = typeof rawViews === "string" &&
-          /^\d+$/.test(rawViews) ?
-          Number(rawViews) :
-          null;
-        byId.set(id, {
-          id,
-          title: requiredText(snippet.title, "video title"),
-          thumbnailUrl: optionalText(high.url) ||
-            optionalText(medium.url) ||
-            optionalText(defaults.url) ||
-            "",
-          channelId,
-          channelTitle: requiredText(snippet.channelTitle, "channel title"),
-          publishedAt: new Date(publishedAt).toISOString(),
-          viewCount: Number.isSafeInteger(viewCount) ? viewCount : null,
-        });
-      }
-      videos = orderedIds
-        .map((id) => byId.get(id))
-        .filter((video): video is PublicVideo => video !== undefined);
-    }
-
-    const rawNextPageToken = playlist.nextPageToken;
-    const nextPageToken = rawNextPageToken === undefined ?
-      null :
-      validatePageToken(rawNextPageToken);
-    const value = {videos, nextPageToken};
-    this.pageCache.set(cacheKey, {
-      expiresAt: this.now() + 5 * 60 * 1000,
-      value,
-    });
-    return value;
-  }
-
-  private async resolveReference(
-    reference: ChannelReference,
+  async resolveChannel(
+    input: unknown,
+    consume: (units: number) => Promise<void> = async () => {},
   ): Promise<PublicChannel> {
+    const reference = parseChannelReference(input);
     const cacheKey = `${reference.kind}:${reference.value}`;
     const cached = this.channelCache.get(cacheKey);
     if (cached && cached.expiresAt > this.now()) return cached.value;
-
     const lookups: Record<string, string>[] = reference.kind === "custom" ?
-      [
-        {forHandle: reference.value},
-        {forUsername: reference.value},
-      ] :
+      [{forHandle: reference.value}, {forUsername: reference.value}] :
       [reference.kind === "id" ?
         {id: reference.value} :
         reference.kind === "handle" ?
@@ -291,7 +351,7 @@ export class YoutubePublicService {
         part: "snippet,contentDetails",
         maxResults: "1",
         ...lookup,
-      });
+      }, consume);
       first = arrayValue(response.items)[0];
       if (first) break;
     }
@@ -314,29 +374,120 @@ export class YoutubePublicService {
       );
     }
     const thumbnails = objectValue(snippet.thumbnails);
-    const high = objectValue(thumbnails.high);
-    const defaults = objectValue(thumbnails.default);
     const channel: PublicChannel = {
       id,
       title: requiredText(snippet.title, "channel title"),
-      avatarUrl: optionalText(high.url) || optionalText(defaults.url) || null,
+      avatarUrl: youtubeImageUrl(objectValue(thumbnails.high).url, true) ||
+        youtubeImageUrl(objectValue(thumbnails.default).url, true) ||
+        null,
       uploadsPlaylistId,
     };
-    this.channelCache.set(cacheKey, {
-      expiresAt: this.now() + 10 * 60 * 1000,
-      value: channel,
-    });
-    this.channelCache.set(`id:${id}`, {
-      expiresAt: this.now() + 10 * 60 * 1000,
-      value: channel,
-    });
+    for (const key of [cacheKey, `id:${id}`]) {
+      this.channelCache.set(key, {
+        expiresAt: this.now() + 10 * 60 * 1000,
+        value: channel,
+      });
+    }
     return channel;
+  }
+
+  async listUploadPage(
+    channel: PublicChannel,
+    pageToken: string | null,
+    consume: (units: number) => Promise<void> = async () => {},
+  ): Promise<{videos: PublicVideo[]; nextPageToken: string | null}> {
+    const playlist = await this.request("playlistItems", {
+      part: "contentDetails",
+      playlistId: channel.uploadsPlaylistId,
+      maxResults: String(PAGE_SIZE),
+      ...(pageToken ? {pageToken} : {}),
+    }, consume);
+    const orderedIds = arrayValue(playlist.items)
+      .map((item) => objectValue(objectValue(item).contentDetails).videoId)
+      .filter((id): id is string => typeof id === "string" && VIDEO_ID.test(id));
+    const videos = orderedIds.length === 0 ?
+      [] :
+      await this.videoDetails(orderedIds, consume);
+    const byId = new Map(videos.map((video) => [video.id, video]));
+    return {
+      videos: orderedIds
+        .map((id) => byId.get(id))
+        .filter((video): video is PublicVideo => video !== undefined),
+      nextPageToken: validatePageToken(playlist.nextPageToken),
+    };
+  }
+
+  async listVideos(
+    channelIdValue: unknown,
+    pageTokenValue: unknown,
+    maxResultsValue: unknown,
+  ): Promise<{videos: PublicVideo[]; nextPageToken: string | null}> {
+    if (typeof channelIdValue !== "string" || !CHANNEL_ID.test(channelIdValue)) {
+      throw new YoutubePublicError("invalid-argument", "Invalid YouTube channel ID.");
+    }
+    const channel = await this.resolveChannel(channelIdValue);
+    const page = await this.listUploadPage(
+      channel,
+      validatePageToken(pageTokenValue),
+    );
+    const maxResults = validateMaxResults(maxResultsValue);
+    return {
+      videos: page.videos.slice(0, maxResults),
+      nextPageToken: page.nextPageToken,
+    };
+  }
+
+  private async videoDetails(
+    orderedIds: string[],
+    consume: (units: number) => Promise<void>,
+  ): Promise<PublicVideo[]> {
+    const details = await this.request("videos", {
+      part: "snippet,statistics",
+      id: orderedIds.join(","),
+      maxResults: String(orderedIds.length),
+    }, consume);
+    return arrayValue(details.items).map((rawItem) => {
+      const item = objectValue(rawItem);
+      const id = stringValue(item.id);
+      const snippet = objectValue(item.snippet);
+      const channelId = stringValue(snippet.channelId);
+      const publishedAt = stringValue(snippet.publishedAt);
+      if (
+        !VIDEO_ID.test(id) ||
+        !CHANNEL_ID.test(channelId) ||
+        Number.isNaN(Date.parse(publishedAt))
+      ) {
+        throw new YoutubePublicError(
+          "unavailable",
+          "YouTube returned malformed video metadata.",
+        );
+      }
+      const thumbnails = objectValue(snippet.thumbnails);
+      const rawViews = objectValue(item.statistics).viewCount;
+      const viewCount = typeof rawViews === "string" && /^\d+$/.test(rawViews) ?
+        Number(rawViews) :
+        null;
+      return {
+        id,
+        title: requiredText(snippet.title, "video title"),
+        thumbnailUrl: youtubeImageUrl(objectValue(thumbnails.high).url) ||
+          youtubeImageUrl(objectValue(thumbnails.medium).url) ||
+          youtubeImageUrl(objectValue(thumbnails.default).url) ||
+          "",
+        channelId,
+        channelTitle: requiredText(snippet.channelTitle, "channel title"),
+        publishedAt: new Date(publishedAt).toISOString(),
+        viewCount: Number.isSafeInteger(viewCount) ? viewCount : null,
+      };
+    });
   }
 
   private async request(
     resource: "channels" | "playlistItems" | "videos",
     parameters: Record<string, string>,
+    consume: (units: number) => Promise<void>,
   ): Promise<Record<string, unknown>> {
+    await consume(1);
     const url = new URL(`https://www.googleapis.com/youtube/v3/${resource}`);
     for (const [key, value] of Object.entries(parameters)) {
       url.searchParams.set(key, value);
@@ -354,17 +505,12 @@ export class YoutubePublicService {
           "YouTube did not respond in time.",
         );
       }
-      throw new YoutubePublicError(
-        "unavailable",
-        "Could not reach YouTube.",
-      );
+      throw new YoutubePublicError("unavailable", "Could not reach YouTube.");
     } finally {
       clearTimeout(timeout);
     }
     const payload = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw mapUpstreamError(response.status, payload);
-    }
+    if (!response.ok) throw mapUpstreamError(response.status, payload);
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       throw new YoutubePublicError(
         "unavailable",
@@ -375,11 +521,230 @@ export class YoutubePublicService {
   }
 }
 
+export class YoutubeCatalogueService {
+  constructor(
+    private readonly upstream: YoutubePublicService,
+    private readonly store: YoutubeCatalogueStore,
+    private readonly now: () => number = Date.now,
+    private readonly randomId: () => string =
+      () => Math.random().toString(36).slice(2, 14),
+  ) {}
+
+  async resolve(input: unknown, uid: string): Promise<{
+    channel: PublicChannel;
+    catalogue: CatalogueQueryResult;
+  }> {
+    const consume = (units: number) =>
+      this.store.consumeBudget(uid, units, this.now());
+    const channel = await this.upstream.resolveChannel(input, consume);
+    await this.refreshIfNeeded(channel, uid, consume);
+    return {
+      channel,
+      catalogue: await this.query(channel.id, "", "newest", 1, null),
+    };
+  }
+
+  async videos(
+    request: Record<string, unknown>,
+    uid: string,
+  ): Promise<CatalogueQueryResult> {
+    const channelId = request.channelId;
+    if (typeof channelId !== "string" || !CHANNEL_ID.test(channelId)) {
+      throw new YoutubePublicError("invalid-argument", "Invalid YouTube channel ID.");
+    }
+    const query = validateQuery(request.query);
+    const sort = validateSort(request.sort);
+    const maxResults = validateMaxResults(request.maxResults);
+    const token = validatePageToken(request.pageToken);
+    const consume = (units: number) =>
+      this.store.consumeBudget(uid, units, this.now());
+    let manifest = await this.store.getManifest(channelId);
+    if (!manifest || manifest.refreshAfter === null ||
+      manifest.refreshAfter <= this.now()) {
+      const channel = await this.upstream.resolveChannel(channelId, consume);
+      await this.refreshIfNeeded(channel, uid, consume);
+      manifest = await this.store.getManifest(channelId);
+    }
+    if (!manifest) {
+      throw new YoutubePublicError("unavailable", "Catalogue is not available.");
+    }
+    return this.query(channelId, query, sort, maxResults, token);
+  }
+
+  private async refreshIfNeeded(
+    channel: PublicChannel,
+    uid: string,
+    consume: (units: number) => Promise<void>,
+  ): Promise<void> {
+    const before = await this.store.getManifest(channel.id);
+    if (before?.refreshAfter !== null &&
+      before?.refreshAfter !== undefined &&
+      before.refreshAfter > this.now()) {
+      return;
+    }
+    const owner = `${uid}:${this.randomId()}`;
+    const generation = `${this.now()}-${this.randomId()}`;
+    const acquired = await this.store.acquireLease(
+      channel,
+      owner,
+      generation,
+      this.now(),
+      LEASE_MS,
+    );
+    if (!acquired) return;
+    const oldGeneration = before?.activeGeneration ?? null;
+    try {
+      if (
+        before?.buildingGeneration &&
+        before.buildingGeneration !== generation
+      ) {
+        await this.store.deleteGeneration(
+          channel.id,
+          before.buildingGeneration,
+        );
+      }
+      if (
+        before?.previousGeneration &&
+        before.previousGeneration !== generation
+      ) {
+        await this.store.deleteGeneration(
+          channel.id,
+          before.previousGeneration,
+        );
+      }
+      const oldVideos = oldGeneration ?
+        flatten(await this.store.readPages(channel.id, oldGeneration)) :
+        [];
+      const oldIds = new Set(oldVideos.map((video) => video.id));
+      const fullRefresh = !oldGeneration ||
+        !before?.lastFullRefreshAt ||
+        this.now() - before.lastFullRefreshAt >= FULL_REFRESH_MS;
+      const fresh: PublicVideo[] = [];
+      let pageToken: string | null = null;
+      let overlap = false;
+      let uploadPageIndex = 0;
+      do {
+        const page = await this.upstream.listUploadPage(
+          channel,
+          pageToken,
+          consume,
+        );
+        for (const video of page.videos) {
+          if (oldIds.has(video.id)) overlap = true;
+          fresh.push(video);
+        }
+        pageToken = page.nextPageToken;
+        if (page.videos.length > 0) {
+          await this.store.writePage(
+            channel.id,
+            owner,
+            {
+              generation,
+              pageIndex: uploadPageIndex,
+              videos: page.videos,
+            },
+            fresh.length,
+            this.now(),
+          );
+        }
+        uploadPageIndex += 1;
+      } while (pageToken && (fullRefresh || !overlap));
+
+      const merged = deduplicate(fullRefresh ?
+        fresh :
+        [...fresh, ...oldVideos]);
+      await this.store.deleteGeneration(channel.id, generation);
+      for (let index = 0; index < merged.length; index += PAGE_SIZE) {
+        await this.store.writePage(
+          channel.id,
+          owner,
+          {
+            generation,
+            pageIndex: index / PAGE_SIZE,
+            videos: merged.slice(index, index + PAGE_SIZE),
+          },
+          Math.min(index + PAGE_SIZE, merged.length),
+          this.now(),
+        );
+      }
+      const pageCount = Math.ceil(merged.length / PAGE_SIZE);
+      await this.store.publish(
+        channel.id,
+        owner,
+        generation,
+        pageCount,
+        merged.length,
+        fullRefresh,
+        this.now(),
+      );
+    } catch (error) {
+      await this.store.deleteGeneration(channel.id, generation);
+      await this.store.fail(
+        channel.id,
+        owner,
+        publicErrorMessage(error),
+        this.now(),
+      );
+      if (!oldGeneration) throw error;
+    }
+  }
+
+  private async query(
+    channelId: string,
+    query: string,
+    sort: YoutubeSort,
+    maxResults: number,
+    token: string | null,
+  ): Promise<CatalogueQueryResult> {
+    const manifest = await this.store.getManifest(channelId);
+    if (!manifest) {
+      throw new YoutubePublicError("not-found", "Catalogue was not found.");
+    }
+    const generation = manifest.activeGeneration ?? manifest.buildingGeneration;
+    if (!generation) {
+      throw new YoutubePublicError(
+        "unavailable",
+        "Catalogue indexing has not completed.",
+      );
+    }
+    const videos = flatten(await this.store.readPages(channelId, generation));
+    const filtered = videos.filter((video) =>
+      !query ||
+      video.title.toLocaleLowerCase().includes(query) ||
+      video.channelTitle.toLocaleLowerCase().includes(query)
+    );
+    filtered.sort(videoComparator(sort));
+    const offset = token ?
+      decodeCursor(token, generation, query, sort) :
+      0;
+    if (offset > filtered.length) {
+      throw new YoutubePublicError("invalid-argument", "Invalid page token.");
+    }
+    const page = filtered.slice(offset, offset + maxResults);
+    const nextOffset = offset + page.length;
+    return {
+      videos: page,
+      nextPageToken: nextOffset < filtered.length ?
+        encodeCursor(generation, nextOffset, query, sort) :
+        null,
+      status: manifest.status,
+      indexedCount: manifest.indexedCount,
+      videoCount: manifest.videoCount,
+      complete: manifest.status !== "indexing",
+      stale: manifest.status === "error" ||
+        manifest.staleAfter === null ||
+        manifest.staleAfter <= this.now(),
+      lastRefreshedAt: isoOrNull(manifest.lastRefreshedAt),
+      refreshAfter: isoOrNull(manifest.refreshAfter),
+    };
+  }
+}
+
 export async function handleYoutubePublicRequest(
   data: unknown,
   uid: string | null,
   consumeRateLimit: (uid: string) => Promise<void>,
-  service: YoutubePublicService,
+  service: YoutubeCatalogueService | YoutubePublicService,
 ): Promise<Record<string, unknown>> {
   if (!uid) {
     throw new YoutubePublicError(
@@ -392,16 +757,20 @@ export async function handleYoutubePublicRequest(
   }
   await consumeRateLimit(uid);
   const request = data as Record<string, unknown>;
-  if (request.action === "resolve") {
-    return {channel: await service.resolveChannel(request.channel)};
-  }
-  if (request.action === "videos") {
-    const page = await service.listVideos(
-      request.channelId,
-      request.pageToken,
-      request.maxResults,
-    );
-    return {...page};
+  if (service instanceof YoutubeCatalogueService) {
+    if (request.action === "resolve") return service.resolve(request.channel, uid);
+    if (request.action === "videos") return service.videos(request, uid);
+  } else {
+    if (request.action === "resolve") {
+      return {channel: await service.resolveChannel(request.channel)};
+    }
+    if (request.action === "videos") {
+      return service.listVideos(
+        request.channelId,
+        request.pageToken,
+        request.maxResults,
+      );
+    }
   }
   throw new YoutubePublicError(
     "invalid-argument",
@@ -409,9 +778,95 @@ export async function handleYoutubePublicRequest(
   );
 }
 
+function videoComparator(sort: YoutubeSort) {
+  return (left: PublicVideo, right: PublicVideo): number => {
+    const tie = left.id.localeCompare(right.id);
+    switch (sort) {
+    case "oldest":
+      return left.publishedAt.localeCompare(right.publishedAt) || tie;
+    case "title":
+      return left.title.localeCompare(right.title, undefined, {
+        sensitivity: "base",
+      }) || tie;
+    case "viewCount":
+      return (right.viewCount ?? -1) - (left.viewCount ?? -1) || tie;
+    case "newest":
+      return right.publishedAt.localeCompare(left.publishedAt) || tie;
+    }
+  };
+}
+
+function deduplicate(videos: PublicVideo[]): PublicVideo[] {
+  const result: PublicVideo[] = [];
+  const seen = new Set<string>();
+  for (const video of videos) {
+    if (!seen.has(video.id)) {
+      seen.add(video.id);
+      result.push(video);
+    }
+  }
+  return result;
+}
+
+function flatten(pages: CataloguePage[]): PublicVideo[] {
+  return pages
+    .slice()
+    .sort((left, right) => left.pageIndex - right.pageIndex)
+    .flatMap((page) => page.videos);
+}
+
+function encodeCursor(
+  generation: string,
+  offset: number,
+  query: string,
+  sort: YoutubeSort,
+): string {
+  return Buffer.from(JSON.stringify({
+    generation,
+    offset,
+    query,
+    sort,
+  }), "utf8").toString("base64url");
+}
+
+function decodeCursor(
+  token: string,
+  generation: string,
+  query: string,
+  sort: YoutubeSort,
+): number {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(Buffer.from(token, "base64url").toString("utf8"));
+  } catch {
+    throw new YoutubePublicError("invalid-argument", "Invalid page token.");
+  }
+  const cursor = objectValue(decoded);
+  const offset = cursor.offset;
+  if (
+    cursor.generation !== generation ||
+    cursor.query !== query ||
+    cursor.sort !== sort ||
+    !Number.isSafeInteger(offset) ||
+    (offset as number) < 0
+  ) {
+    throw new YoutubePublicError("invalid-argument", "Invalid page token.");
+  }
+  return offset as number;
+}
+
+function isoOrNull(value: number | null): string | null {
+  return value === null ? null : new Date(value).toISOString();
+}
+
+function publicErrorMessage(error: unknown): string {
+  return error instanceof YoutubePublicError ?
+    error.message :
+    "YouTube catalogue refresh failed.";
+}
+
 function mapUpstreamError(status: number, payload: unknown): YoutubePublicError {
-  const root = objectValue(payload);
-  const error = objectValue(root.error);
+  const error = objectValue(objectValue(payload).error);
   const reasons = arrayValue(error.errors)
     .map((item) => optionalText(objectValue(item).reason))
     .filter(Boolean);
@@ -446,7 +901,7 @@ function objectValue(value: unknown): Record<string, unknown> {
 }
 
 function arrayValue(value: unknown): unknown[] {
-  return Array.isArray(value) ? value.slice(0, 50) : [];
+  return Array.isArray(value) ? value.slice(0, PAGE_SIZE) : [];
 }
 
 function stringValue(value: unknown): string {
@@ -467,3 +922,35 @@ function requiredText(value: unknown, label: string): string {
 function optionalText(value: unknown): string {
   return typeof value === "string" ? value.trim().slice(0, 500) : "";
 }
+
+function youtubeImageUrl(value: unknown, allowAvatar = false): string {
+  const text = optionalText(value);
+  if (!text) return "";
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return "";
+  }
+  const host = url.hostname.toLowerCase();
+  if (
+    url.protocol !== "https:" ||
+    (host !== "i.ytimg.com" &&
+      !(allowAvatar && (host === "yt3.ggpht.com" ||
+        host.endsWith(".googleusercontent.com"))))
+  ) {
+    return "";
+  }
+  return url.toString();
+}
+
+export const youtubeCataloguePolicy = {
+  pageSize: PAGE_SIZE,
+  leaseMs: LEASE_MS,
+  refreshMs: REFRESH_MS,
+  staleMs: STALE_MS,
+  fullRefreshMs: FULL_REFRESH_MS,
+  retentionMs: RETENTION_MS,
+  globalDailyBudget: GLOBAL_DAILY_BUDGET,
+  userDailyBudget: USER_DAILY_BUDGET,
+};

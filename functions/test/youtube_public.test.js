@@ -69,6 +69,7 @@ test("resolves custom URLs by handle with a legacy username fallback", async () 
     "https://youtube.com/c/LegacyTrainer",
   );
   assert.equal(channel.id, channelId);
+  assert.equal(channel.avatarUrl, null);
   assert.deepEqual(parameters, [
     {handle: "LegacyTrainer", username: null},
     {handle: null, username: "LegacyTrainer"},
@@ -167,6 +168,8 @@ test("pages uploads and batches video details in playlist order", async () => {
   assert.equal(page.nextPageToken, "NEXT_token");
   assert.equal(calls[1].searchParams.get("pageToken"), "PAGE_token");
   assert.equal(calls[2].searchParams.get("id"), "videoId0001,videoId0002");
+  assert.equal(calls.some((call) => call.pathname.endsWith("/search")), false);
+  assert.deepEqual(page.videos.map((video) => video.thumbnailUrl), ["", ""]);
 });
 
 test("maps not found, quota, network, and malformed responses", async () => {

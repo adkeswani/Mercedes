@@ -54,8 +54,9 @@ Implemented in this slice:
 - Public YouTube source browsing in Exercise create/edit without OAuth. Channel
   IDs, `@handles`, channel URLs, and resolvable legacy custom URLs are resolved
   by an authenticated, rate-limited Cloud Function; API credentials never
-  enter Flutter. Trainers can page through public uploads, search and sort the
-  explicitly labelled loaded catalogue, then drag or Attach one video.
+  enter Flutter. One server-owned, generation-published Firestore catalogue is
+  shared per channel. Trainers page, search, and sort the complete indexed
+  catalogue, see indexing/freshness/stale state, then drag or Attach one video.
 - YouTube attachment writes use one shared command and publish the canonical
   URL plus non-authoritative display metadata into the next immutable exercise
   version. Replacement/removal is explicit. Private and unlisted videos remain
@@ -365,11 +366,17 @@ Restrict the key to YouTube Data API v3, then confirm metadata with
 `firebase functions:secrets:get YOUTUBE_API_KEY --project <project-id>`;
 this command does not reveal the value. `deploy.ps1` fails closed when the
 secret is unavailable and deploys Functions/rules/indexes before Hosting.
-No key or secret version is committed. The callable uses uploads playlists
-and batched video details, caps pages at 50, times out upstream calls, caches
-channel/page metadata for 10/5 minutes per warm instance, caps instances at
-10, and limits each authenticated user to 30 calls per hour. See
-`../docs/release-process.md` for quota, cost, privacy, and deployment details.
+No key or secret version is committed. The callable never uses `search.list`:
+it indexes the uploads playlist in 50-video chunks and batches `videos.list`.
+Transactional leases deduplicate refreshes; active generations remain visible
+until the next generation publishes atomically. Incremental refresh stops at
+known uploads, full revalidation runs at least every 25 days, and stale active
+data remains available on quota/upstream failure. The 10,000-unit project
+quota is protected by an 8,000-unit shared daily budget, a 200-unit per-user
+daily budget, 30 callable requests per user per hour, and a 10-instance cap.
+`cleanupYoutubeCatalogues` removes metadata older than 30 days daily. See
+`../docs/release-process.md` for policy sources, costs, observability, setup,
+deployment, and rollback.
 
 Operators should use the guarded setup workflow rather than copying secret
 values through custom shell commands:
@@ -412,6 +419,22 @@ The script writes browser output to a unique
 and prints that absolute directory plus every artifact path before it exits,
 including on failure. Direct browser-smoke commands continue to use the
 stable `stage5/test-artifacts/browser-login/` paths above.
+
+### Browser validation boundary (2026-10-03)
+
+The single permitted emulator-backed YouTube mutation canary built and seeded
+successfully, then stopped before feature navigation while waiting for trainer
+authentication/header identity. The retained screenshot shows the release
+canary login form with the trainer email populated and authentication
+incomplete:
+
+`stage5/test-artifacts/release-canary/20261003T214456Z-886d590d/trainer-failure.png`
+
+No YouTube catalogue, thumbnail, attach, save, reopen, or backend-metadata
+browser assertion ran. The canary was not retried. The stage-validation script
+has no supported non-browser-only mode, so it was not invoked afterward; its
+unit/analyzer/rules matrices were run through their focused entry points
+instead. The artifact is retained and gitignored.
 
 The desktop-sized viewport is the current smoke-test baseline. After navigation
 and responsive layouts stabilize further, add a phone-sized viewport (for

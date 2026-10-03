@@ -1,6 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:url_launcher/url_launcher.dart';
 import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/core/release_canary_youtube_bridge.dart';
 import 'package:stage5/core/release_canary_youtube_bridge_contract.dart';
@@ -14,6 +16,10 @@ const youtubeLoadChannelKey = Key('youtube-load-channel');
 const youtubeSearchFieldKey = Key('youtube-search-field');
 const youtubeMediaTargetKey = Key('youtube-media-target');
 const youtubeRemoveVideoKey = Key('youtube-remove-video');
+const youtubeOpenVideoKey = Key('youtube-open-video');
+const youtubeThumbnailFallbackKey = Key('youtube-thumbnail-fallback');
+
+typedef YoutubeUrlOpener = Future<bool> Function(Uri uri);
 
 void resetYoutubeSearchController(
   TextEditingController controller,
@@ -66,6 +72,7 @@ class YoutubeLibraryPanel extends ConsumerStatefulWidget {
     this.api,
     this.onReleaseCanarySave,
     this.preference,
+    this.openUrl,
     super.key,
   });
 
@@ -75,6 +82,7 @@ class YoutubeLibraryPanel extends ConsumerStatefulWidget {
   final YoutubeVideoMetadata? attachedVideo;
   final YoutubePublicApi? api;
   final YoutubeChannelPreference? preference;
+  final YoutubeUrlOpener? openUrl;
 
   @override
   ConsumerState<YoutubeLibraryPanel> createState() =>
@@ -91,7 +99,14 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
   String? _error;
   bool _loading = false;
   bool _loadingMore = false;
+  YoutubeCatalogueStatus _catalogueStatus = YoutubeCatalogueStatus.ready;
+  int _indexedCount = 0;
+  int _videoCount = 0;
+  bool _catalogueComplete = true;
+  bool _stale = false;
+  DateTime? _lastRefreshedAt;
   int _requestGeneration = 0;
+  Timer? _searchDebounce;
   VoidCallback _disposeReleaseCanaryBridge = () {};
 
   YoutubePublicApi get _api => widget.api ?? ref.read(youtubePublicApiProvider);
@@ -128,25 +143,40 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
   }
 
   void _clearSearch() {
+    _searchDebounce?.cancel();
     resetYoutubeSearchController(_searchController, setState);
+    _reloadCatalogue();
+  }
+
+  void _scheduleCatalogueReload() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 300),
+      _reloadCatalogue,
+    );
   }
 
   Future<void> _restoreLastChannel() async {
     final value = await _preference.read();
-    if (!mounted || value == null || value.isEmpty) return;
+    if (!mounted || value == null || value.isEmpty) {
+      return;
+    }
     _channelController.text = value;
   }
 
   @override
   void dispose() {
     _disposeReleaseCanaryBridge();
+    _searchDebounce?.cancel();
     _channelController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
   Future<void> _loadChannel() async {
-    if (_loading) return;
+    if (_loading) {
+      return;
+    }
     final input = _channelController.text.trim();
     if (parseYoutubeChannelReference(input) == null &&
         !(releaseCanaryYoutubeCatalogueCompiledIn &&
@@ -164,16 +194,22 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
       _channel = null;
       _videos = const [];
       _nextPageToken = null;
+      _indexedCount = 0;
+      _videoCount = 0;
+      _catalogueComplete = false;
+      _stale = false;
+      _lastRefreshedAt = null;
     });
     try {
       final channel = await _api.resolveChannel(input);
       final page = await _api.loadVideos(channelId: channel.id);
       await _preference.write(input);
-      if (!mounted || generation != _requestGeneration) return;
+      if (!mounted || generation != _requestGeneration) {
+        return;
+      }
       setState(() {
         _channel = channel;
-        _videos = page.videos;
-        _nextPageToken = page.nextPageToken;
+        _applyPage(page, replace: true);
       });
     } catch (error) {
       if (mounted && generation == _requestGeneration) {
@@ -189,7 +225,9 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
   Future<void> _loadMore() async {
     final channel = _channel;
     final token = _nextPageToken;
-    if (channel == null || token == null || _loadingMore) return;
+    if (channel == null || token == null || _loadingMore) {
+      return;
+    }
     final generation = _requestGeneration;
     setState(() {
       _loadingMore = true;
@@ -199,6 +237,8 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
       final page = await _api.loadVideos(
         channelId: channel.id,
         pageToken: token,
+        query: _searchController.text,
+        sort: _sort,
       );
       if (!mounted ||
           generation != _requestGeneration ||
@@ -207,7 +247,7 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
       }
       setState(() {
         _videos = appendYoutubePage(_videos, page.videos);
-        _nextPageToken = page.nextPageToken;
+        _applyPage(page, replace: false);
       });
     } catch (error) {
       if (mounted &&
@@ -221,6 +261,65 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
           _channel?.id == channel.id) {
         setState(() => _loadingMore = false);
       }
+    }
+  }
+
+  Future<void> _reloadCatalogue() async {
+    final channel = _channel;
+    if (channel == null) {
+      return;
+    }
+    final generation = ++_requestGeneration;
+    setState(() {
+      _loadingMore = true;
+      _error = null;
+      _videos = const [];
+      _nextPageToken = null;
+    });
+    try {
+      final page = await _api.loadVideos(
+        channelId: channel.id,
+        query: _searchController.text,
+        sort: _sort,
+      );
+      if (!mounted ||
+          generation != _requestGeneration ||
+          _channel?.id != channel.id) {
+        return;
+      }
+      setState(() => _applyPage(page, replace: true));
+    } catch (error) {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _error = _friendlyError(error));
+      }
+    } finally {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _loadingMore = false);
+      }
+    }
+  }
+
+  void _applyPage(PublicYoutubeVideoPage page, {required bool replace}) {
+    if (replace) {
+      _videos = page.videos;
+    }
+    _nextPageToken = page.nextPageToken;
+    _catalogueStatus = page.status;
+    _indexedCount = page.indexedCount;
+    _videoCount = page.videoCount;
+    _catalogueComplete = page.complete;
+    _stale = page.stale;
+    _lastRefreshedAt = page.lastRefreshedAt;
+  }
+
+  Future<void> _openVideo(YoutubeVideoMetadata metadata) async {
+    final uri = Uri.parse(metadata.canonicalUrl);
+    final opened = await (widget.openUrl?.call(uri) ??
+        launchUrl(uri, mode: LaunchMode.externalApplication));
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open this YouTube video.')),
+      );
     }
   }
 
@@ -241,11 +340,7 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final visible = filterAndSortYoutubeVideos(
-      _videos,
-      query: _searchController.text,
-      sort: _sort,
-    );
+    final visible = _videos;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -319,10 +414,10 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
                       key: youtubeSearchFieldKey,
                       controller: _searchController,
                       decoration: const InputDecoration(
-                        labelText: 'Search loaded videos',
+                        labelText: 'Search complete catalogue',
                         prefixIcon: Icon(Icons.search),
                       ),
-                      onChanged: (_) => setState(() {}),
+                      onChanged: (_) => _scheduleCatalogueReload(),
                     ),
                   ),
                   for (final option in YoutubeVideoSort.values)
@@ -330,23 +425,42 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
                       label: '${_sortLabel(option)} loaded sort',
                       button: true,
                       selected: _sort == option,
-                      onTap: () => setState(() => _sort = option),
+                      onTap: () {
+                        setState(() => _sort = option);
+                        _reloadCatalogue();
+                      },
                       child: ExcludeSemantics(
                         child: ChoiceChip(
                           label: Text(_sortLabel(option)),
                           selected: _sort == option,
-                          onSelected: (_) => setState(() => _sort = option),
+                          onSelected: (_) {
+                            setState(() => _sort = option);
+                            _reloadCatalogue();
+                          },
                         ),
                       ),
                     ),
-                  Text('${_videos.length} videos loaded'),
+                  Text(
+                    _catalogueComplete
+                        ? '$_videoCount videos indexed'
+                        : 'Indexing $_indexedCount videos...',
+                    key: const Key('youtube-catalogue-progress'),
+                  ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              _CatalogueFreshness(
+                status: _catalogueStatus,
+                stale: _stale,
+                complete: _catalogueComplete,
+                lastRefreshedAt: _lastRefreshedAt,
               ),
               const SizedBox(height: 12),
               _MediaTarget(
                 metadata: widget.attachedVideo,
                 onAttach: widget.onAttach,
                 onRemove: widget.onRemove,
+                onOpen: _openVideo,
               ),
               const SizedBox(height: 12),
               if (visible.isEmpty)
@@ -365,6 +479,7 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
                             video: video,
                             draggable: desktop,
                             onAttach: () => widget.onAttach(video),
+                            replacing: widget.attachedVideo != null,
                           ),
                       ],
                     );
@@ -389,6 +504,41 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
       YoutubeVideoSort.title => 'Title',
       YoutubeVideoSort.viewCount => 'View count',
     };
+  }
+}
+
+class _CatalogueFreshness extends StatelessWidget {
+  const _CatalogueFreshness({
+    required this.status,
+    required this.stale,
+    required this.complete,
+    required this.lastRefreshedAt,
+  });
+
+  final YoutubeCatalogueStatus status;
+  final bool stale;
+  final bool complete;
+  final DateTime? lastRefreshedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    final refreshed = lastRefreshedAt == null
+        ? 'Not yet refreshed'
+        : 'Last refreshed ${lastRefreshedAt!.toLocal().toIso8601String()}';
+    final message = !complete
+        ? 'Indexing is in progress. Results may be incomplete.'
+        : stale || status == YoutubeCatalogueStatus.error
+            ? 'Showing stale cached results. $refreshed'
+            : 'Catalogue is fresh. $refreshed';
+    return Text(
+      message,
+      key: const Key('youtube-catalogue-freshness'),
+      style: TextStyle(
+        color: stale || status == YoutubeCatalogueStatus.error
+            ? Theme.of(context).colorScheme.error
+            : null,
+      ),
+    );
   }
 }
 
@@ -418,11 +568,13 @@ class _MediaTarget extends StatelessWidget {
     required this.metadata,
     required this.onAttach,
     required this.onRemove,
+    required this.onOpen,
   });
 
   final YoutubeVideoMetadata? metadata;
   final ValueChanged<PublicYoutubeVideo> onAttach;
   final VoidCallback onRemove;
+  final ValueChanged<YoutubeVideoMetadata> onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -445,27 +597,54 @@ class _MediaTarget extends StatelessWidget {
               ? const Text(
                   'Exercise video target — drag a video here or use Attach.',
                 )
-              : Row(
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(Icons.check_circle_outline),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '${metadata!.title}\n${metadata!.channelTitle}',
+                    AspectRatio(
+                      aspectRatio: 16 / 9,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          _YoutubeThumbnail(url: metadata!.thumbnailUrl),
+                          const Center(
+                            child: Icon(
+                              Icons.play_circle_fill,
+                              size: 64,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Semantics(
-                      label: 'Remove video',
-                      button: true,
-                      onTap: onRemove,
-                      child: ExcludeSemantics(
-                        child: TextButton.icon(
-                          key: youtubeRemoveVideoKey,
-                          onPressed: onRemove,
-                          icon: const Icon(Icons.delete_outline),
-                          label: const Text('Remove video'),
+                    const SizedBox(height: 8),
+                    Text(
+                      metadata!.title,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(metadata!.channelTitle),
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      children: [
+                        TextButton.icon(
+                          key: youtubeOpenVideoKey,
+                          onPressed: () => onOpen(metadata!),
+                          icon: const Icon(Icons.open_in_new),
+                          label: const Text('Open on YouTube'),
                         ),
-                      ),
+                        Semantics(
+                          label: 'Remove video',
+                          button: true,
+                          onTap: onRemove,
+                          child: ExcludeSemantics(
+                            child: TextButton.icon(
+                              key: youtubeRemoveVideoKey,
+                              onPressed: onRemove,
+                              icon: const Icon(Icons.delete_outline),
+                              label: const Text('Remove video'),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -475,16 +654,41 @@ class _MediaTarget extends StatelessWidget {
   }
 }
 
+class _YoutubeThumbnail extends StatelessWidget {
+  const _YoutubeThumbnail({required this.url});
+
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = ColoredBox(
+      key: youtubeThumbnailFallbackKey,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: const Center(child: Icon(Icons.video_library_outlined, size: 48)),
+    );
+    if (url.isEmpty) {
+      return fallback;
+    }
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => fallback,
+    );
+  }
+}
+
 class _VideoCard extends StatelessWidget {
   const _VideoCard({
     required this.video,
     required this.draggable,
     required this.onAttach,
+    required this.replacing,
   });
 
   final PublicYoutubeVideo video;
   final bool draggable;
   final VoidCallback onAttach;
+  final bool replacing;
 
   @override
   Widget build(BuildContext context) {
@@ -508,13 +712,15 @@ class _VideoCard extends StatelessWidget {
             child: FilledButton.tonal(
               key: Key('youtube-attach-${video.id}'),
               onPressed: onAttach,
-              child: const Text('Attach'),
+              child: Text(replacing ? 'Replace' : 'Attach'),
             ),
           ),
         ),
       ),
     );
-    if (!draggable) return card;
+    if (!draggable) {
+      return card;
+    }
     return Draggable<PublicYoutubeVideo>(
       data: video,
       feedback: Material(
