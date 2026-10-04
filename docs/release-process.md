@@ -14,11 +14,10 @@ runner starts the test body (or a test prints its first
 `BROWSER_TEST_STEP_START` marker), the scenario has a separate 90-second
 deadline. Individual navigation and condition waits use 15–30 second limits
 and a two-second Flutter-pump limit, so a functional stall fails before the
-outer process boundary. The initial web root is attached synchronously; its
-first frame and login surface are then observed without test-binding pumps,
-using 100-millisecond real-time polls inside one 30-second startup budget.
-After that first surface, the normal two-second test-pump limit applies.
-Compilation remains outside the startup budget.
+outer process boundary. The recovery canary mounts the initial web root with
+the known-good bounded `pumpWidget` startup step, then observes the login
+surface through the normal named condition polling. Compilation remains
+outside the scenario budget.
 
 Timeout diagnostics identify the deterministic identity, integration-test
 file, current route when available, awaited condition, elapsed time, and

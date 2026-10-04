@@ -34,21 +34,18 @@ void main() {
         app.initializeMercedesApp,
         timeout: const Duration(seconds: 30),
       );
-      await waits.attachRootAndWaitForLiveCondition(
-        attachStep: 'attach initial application root',
-        attachRoot: () {
-          tester.binding.attachRootWidget(
-            tester.binding.wrapWithDefaultView(
-              const ProviderScope(child: MercedesApp()),
-            ),
-          );
-          tester.binding.scheduleFrame();
-        },
-        condition: 'local emulator login button',
-        isSatisfied: () =>
-            find.byKey(browserSmokeLoginButtonKey).evaluate().isNotEmpty,
-        takeFrameworkException: tester.takeException,
-        details: () => 'Visible text: ${_visibleText()}',
+      await waits.runStep(
+        'pump initial application',
+        () => tester.pumpWidget(
+          const ProviderScope(child: MercedesApp()),
+        ),
+      );
+
+      await _waitFor(
+        tester,
+        waits,
+        find.byKey(browserSmokeLoginButtonKey),
+        step: 'local emulator login button',
       );
       await waits.runStep(
         'submit local emulator login',
@@ -99,26 +96,14 @@ void main() {
       );
 
       await waits.runStep(
-        'navigate away from workout',
-        () async {
-          GoRouter.of(
-            tester.element(find.byType(Navigator).first),
-          ).go('/athlete/today');
-        },
-      );
-      await _waitFor(
-        tester,
-        waits,
-        find.text('Today'),
-        step: 'athlete workspace after workout disposal',
+        'dispose application root',
+        () => tester.pumpWidget(const SizedBox.shrink()),
       );
       await waits.runStep(
-        'reopen canonical workout route',
-        () async {
-          GoRouter.of(
-            tester.element(find.byType(Navigator).first),
-          ).go('/athlete/workouts/browser-calendar-workout');
-        },
+        'recreate application root from browser URL',
+        () => tester.pumpWidget(
+          const ProviderScope(child: MercedesApp()),
+        ),
       );
       await _waitFor(
         tester,

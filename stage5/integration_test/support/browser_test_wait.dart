@@ -1,7 +1,6 @@
 import 'dart:async';
 
 typedef BrowserTestRouteReader = String Function();
-typedef BrowserTestDelay = Future<void> Function(Duration duration);
 
 class BrowserTestWaitContext {
   BrowserTestWaitContext({
@@ -15,9 +14,6 @@ class BrowserTestWaitContext {
   final String testFile;
   final String artifactPath;
   final BrowserTestRouteReader currentRoute;
-
-  static const functionalPumpTimeout = Duration(seconds: 2);
-  static const startupPollInterval = Duration(milliseconds: 100);
 
   Future<T> runStep<T>(
     String condition,
@@ -46,7 +42,7 @@ class BrowserTestWaitContext {
     required bool Function() isSatisfied,
     required Future<void> Function() pump,
     Duration timeout = const Duration(seconds: 20),
-    Duration pumpTimeout = functionalPumpTimeout,
+    Duration pumpTimeout = const Duration(seconds: 2),
     String Function()? details,
   }) async {
     final stopwatch = Stopwatch()..start();
@@ -77,86 +73,6 @@ class BrowserTestWaitContext {
       throw error;
     }
     _writeProgress('PASS', condition, stopwatch.elapsed);
-  }
-
-  Future<void> attachRootAndWaitForLiveCondition({
-    required String attachStep,
-    required void Function() attachRoot,
-    required String condition,
-    required bool Function() isSatisfied,
-    Object? Function()? takeFrameworkException,
-    Duration startupTimeout = const Duration(seconds: 30),
-    Duration pollInterval = startupPollInterval,
-    BrowserTestDelay delay = Future<void>.delayed,
-    String Function()? details,
-  }) async {
-    final stopwatch = Stopwatch()..start();
-    var activeStep = attachStep;
-    _writeProgress('START', attachStep, stopwatch.elapsed);
-    try {
-      attachRoot();
-      _throwFrameworkException(
-        step: attachStep,
-        takeFrameworkException: takeFrameworkException,
-      );
-      _writeProgress('PASS', attachStep, stopwatch.elapsed);
-      activeStep = condition;
-      _writeProgress('START', condition, stopwatch.elapsed);
-      while (!isSatisfied() && stopwatch.elapsed < startupTimeout) {
-        _throwFrameworkException(
-          step: condition,
-          takeFrameworkException: takeFrameworkException,
-        );
-        final remaining = startupTimeout - stopwatch.elapsed;
-        if (remaining <= Duration.zero) {
-          break;
-        }
-        final currentDelay =
-            remaining < pollInterval ? remaining : pollInterval;
-        await delay(currentDelay);
-        _throwFrameworkException(
-          step: condition,
-          takeFrameworkException: takeFrameworkException,
-        );
-      }
-      if (!isSatisfied()) {
-        final suffix = details == null ? '' : ' Details: ${details()}';
-        throw TimeoutException(
-          '${_timeoutMessage(
-            condition,
-            startupTimeout,
-            stopwatch.elapsed,
-          )}$suffix',
-        );
-      }
-      _writeProgress('PASS', condition, stopwatch.elapsed);
-    } catch (error) {
-      final frameworkError = takeFrameworkException?.call();
-      if (frameworkError != null) {
-        final reported = StateError(
-          'Flutter framework error during $activeStep: $frameworkError',
-        );
-        _writeProgress(
-          'FAIL',
-          activeStep,
-          stopwatch.elapsed,
-          error: reported,
-        );
-        throw reported;
-      }
-      _writeProgress('FAIL', activeStep, stopwatch.elapsed, error: error);
-      rethrow;
-    }
-  }
-
-  void _throwFrameworkException({
-    required String step,
-    required Object? Function()? takeFrameworkException,
-  }) {
-    final error = takeFrameworkException?.call();
-    if (error != null) {
-      throw StateError('Flutter framework error during $step: $error');
-    }
   }
 
   String _timeoutMessage(
