@@ -253,7 +253,11 @@ class _WorkoutCompletionScreenState
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Workout completed! 💪')),
         );
-        context.pop();
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/athlete/today');
+        }
       }
     } catch (e) {
       if (mounted) {

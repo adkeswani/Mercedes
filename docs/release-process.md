@@ -6,6 +6,29 @@ no project IDs in `config/firebase-environments.json` until they are
 provisioned. Every release command requires both an environment and a project
 ID or matching CLI alias; there is no default alias.
 
+## Stage 5 browser validation timeouts
+
+`scripts/run-stage-validation.ps1` gives Flutter/web compilation and emulator
+startup their existing 240-second process boundary. Once the Flutter test
+runner starts the test body (or a test prints its first
+`BROWSER_TEST_STEP_START` marker), the scenario has a separate 90-second
+deadline. Individual navigation and condition waits use 15–30 second limits
+and a two-second Flutter-pump limit, so a functional stall fails before the
+outer process boundary.
+
+Timeout diagnostics identify the deterministic identity, integration-test
+file, current route when available, awaited condition, elapsed time, and
+artifact directory. Functional failures and scenario timeouts are never
+retried. The only automatic retry remains the single existing retry after all
+functional smoke assertions pass but Chrome does not finish the optional
+screenshot handshake within 20 seconds.
+
+The validation runner starts each browser invocation in a Windows kill-on-close
+job. Success, failure, or timeout closes that job and terminates only its owned
+PowerShell, Firebase, ChromeDriver, and Chrome process tree by job/PID
+ownership; unrelated processes and emulator sessions from other runs are not
+name-killed.
+
 ## One-time staging provisioning
 
 An owner with billing and project-creation permissions must complete these

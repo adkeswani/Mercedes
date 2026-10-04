@@ -712,7 +712,8 @@ try {
             --dart-define=BROWSER_LOGIN_SMOKE=true `
             "--dart-define=BROWSER_SMOKE_ROLE=$($selectedIdentity.Role)" `
             "--dart-define=BROWSER_SMOKE_EMAIL=$($selectedIdentity.Email)" `
-            "--dart-define=BROWSER_SMOKE_PASSWORD=$($selectedIdentity.Password)"
+            "--dart-define=BROWSER_SMOKE_PASSWORD=$($selectedIdentity.Password)" `
+            "--dart-define=BROWSER_TEST_ARTIFACT_PATH=$artifactPath"
         if ($LASTEXITCODE -ne 0) {
             throw "Flutter integration test failed: $relativeTestTarget"
         }

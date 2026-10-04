@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/workouts/data/workout_completion_draft_repository.dart';
@@ -140,6 +141,59 @@ void main() {
     expect(find.text('Completion Details'), findsOneWidget);
     expect(find.textContaining('Duration: 65 min'), findsOneWidget);
     expect(find.text('Mark as Completed'), findsNothing);
+  });
+
+  testWidgets('direct-route completion returns to the athlete workspace',
+      (tester) async {
+    final router = GoRouter(
+      initialLocation: '/athlete/workouts/instance-1',
+      routes: [
+        GoRoute(
+          path: '/athlete/today',
+          builder: (_, __) => const Scaffold(body: Text('Athlete Today')),
+        ),
+        GoRoute(
+          path: '/athlete/workouts/:instanceId',
+          builder: (_, state) => WorkoutCompletionScreen(
+            instanceId: state.pathParameters['instanceId']!,
+          ),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Mark as Completed'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(
+      find.text('Mark as Completed'),
+      findsOneWidget,
+      reason: tester
+          .widgetList<Text>(find.byType(Text))
+          .map((widget) => widget.data)
+          .whereType<String>()
+          .join(' | '),
+    );
+    await tester.tap(find.text('Mark as Completed'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Athlete Today'), findsOneWidget);
+    expect(
+      (await firestore.collection('workoutInstances').doc('instance-1').get())
+          .data()?['status'],
+      'completed',
+    );
+    expect(localStore.value, isNull);
   });
 }
 

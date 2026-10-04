@@ -7,123 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-
-if (-not ('StageValidationProcessJob' -as [type])) {
-    Add-Type -TypeDefinition @'
-using System;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-
-public sealed class StageValidationProcessJob : IDisposable
-{
-    private const uint KillOnJobClose = 0x00002000;
-    private IntPtr handle;
-
-    public StageValidationProcessJob()
-    {
-        handle = CreateJobObject(IntPtr.Zero, null);
-        if (handle == IntPtr.Zero)
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-
-        var info = new ExtendedLimitInformation();
-        info.BasicLimitInformation.LimitFlags = KillOnJobClose;
-        int length = Marshal.SizeOf(info);
-        IntPtr pointer = Marshal.AllocHGlobal(length);
-        try
-        {
-            Marshal.StructureToPtr(info, pointer, false);
-            if (!SetInformationJobObject(handle, 9, pointer, (uint)length))
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(pointer);
-        }
-    }
-
-    public void Add(Process process)
-    {
-        if (!AssignProcessToJobObject(handle, process.Handle))
-        {
-            throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-    }
-
-    public void Dispose()
-    {
-        if (handle != IntPtr.Zero)
-        {
-            CloseHandle(handle);
-            handle = IntPtr.Zero;
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct BasicLimitInformation
-    {
-        public long PerProcessUserTimeLimit;
-        public long PerJobUserTimeLimit;
-        public uint LimitFlags;
-        public UIntPtr MinimumWorkingSetSize;
-        public UIntPtr MaximumWorkingSetSize;
-        public uint ActiveProcessLimit;
-        public UIntPtr Affinity;
-        public uint PriorityClass;
-        public uint SchedulingClass;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct IoCounters
-    {
-        public ulong ReadOperationCount;
-        public ulong WriteOperationCount;
-        public ulong OtherOperationCount;
-        public ulong ReadTransferCount;
-        public ulong WriteTransferCount;
-        public ulong OtherTransferCount;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct ExtendedLimitInformation
-    {
-        public BasicLimitInformation BasicLimitInformation;
-        public IoCounters IoInfo;
-        public UIntPtr ProcessMemoryLimit;
-        public UIntPtr JobMemoryLimit;
-        public UIntPtr PeakProcessMemoryUsed;
-        public UIntPtr PeakJobMemoryUsed;
-    }
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    private static extern IntPtr CreateJobObject(
-        IntPtr securityAttributes,
-        string name
-    );
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool SetInformationJobObject(
-        IntPtr job,
-        int informationClass,
-        IntPtr information,
-        uint informationLength
-    );
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool AssignProcessToJobObject(
-        IntPtr job,
-        IntPtr process
-    );
-
-    [DllImport("kernel32.dll")]
-    private static extern bool CloseHandle(IntPtr handle);
-}
-'@
-}
+. (Join-Path $repoRoot 'scripts\lib\stage-validation-browser.ps1')
 
 function Write-ProcessOutput {
     param(
@@ -197,10 +81,13 @@ function Invoke-BrowserIntegrationTest {
             }
 
             $deadline = [DateTime]::UtcNow.AddSeconds(240)
-            $assertionsPassed = $false
-            $routeAssertionsPassed = $false
+            $testPassed = $false
             $retryEligible = $false
             $assertionMarkerSeenAt = $null
+            $scenarioStartedAt = $null
+            $scenarioProgress = $null
+            $scenarioTimedOut = $false
+            $scenarioTimeoutSeconds = 90
             while (-not $process.HasExited -and [DateTime]::UtcNow -lt $deadline) {
                 Start-Sleep -Seconds 1
                 $output = Get-Content `
@@ -208,8 +95,18 @@ function Invoke-BrowserIntegrationTest {
                     -Raw `
                     -ErrorAction SilentlyContinue
                 if ($output -match 'All tests passed[.!]') {
-                    $assertionsPassed = $true
+                    $testPassed = $true
                     break
+                }
+                $latestProgress = Get-BrowserTestProgress -Output $output
+                if ($latestProgress) {
+                    $scenarioProgress = $latestProgress
+                }
+                if (
+                    -not $scenarioStartedAt -and
+                    (Test-BrowserScenarioStarted -Output $output)
+                ) {
+                    $scenarioStartedAt = [DateTime]::UtcNow
                 }
                 if (
                     -not $assertionMarkerSeenAt -and
@@ -218,10 +115,12 @@ function Invoke-BrowserIntegrationTest {
                     $assertionMarkerSeenAt = [DateTime]::UtcNow
                 }
                 if (
-                    $output -match
-                        "BROWSER_SMOKE_ROUTE_ASSERTIONS_PASSED:$Identity"
+                    $scenarioStartedAt -and
+                    [DateTime]::UtcNow -ge
+                        $scenarioStartedAt.AddSeconds($scenarioTimeoutSeconds)
                 ) {
-                    $routeAssertionsPassed = $true
+                    $scenarioTimedOut = $true
+                    break
                 }
                 if (
                     $assertionMarkerSeenAt -and
@@ -241,29 +140,45 @@ function Invoke-BrowserIntegrationTest {
                 -LiteralPath $outputPath `
                 -Raw `
                 -ErrorAction SilentlyContinue
-            if (
-                $output -match
-                    "BROWSER_SMOKE_ROUTE_ASSERTIONS_PASSED:$Identity"
-            ) {
-                $routeAssertionsPassed = $true
-            }
-            if ($output -match "BROWSER_SMOKE_ASSERTIONS_PASSED:$Identity") {
-                $assertionsPassed = $true
-            }
+            $retryEligible = Test-ScreenshotHandshakeRetryEligible `
+                -Output $output `
+                -Identity $Identity
 
-            if ($assertionsPassed) {
+            if ($testPassed) {
                 Write-ProcessOutput `
                     -OutputPath $outputPath `
                     -ErrorPath $errorPath
                 return
             }
             elseif (-not $process.HasExited) {
-                $lastFailure = 'timed out after 240 seconds'
-                $retryEligible = $routeAssertionsPassed
+                if ($scenarioTimedOut) {
+                    $artifactPath = if (
+                        $env:BROWSER_SMOKE_ARTIFACT_DIR_OVERRIDE
+                    ) {
+                        $env:BROWSER_SMOKE_ARTIFACT_DIR_OVERRIDE
+                    }
+                    else {
+                        '<not provided>'
+                    }
+                    $lastFailure = Format-BrowserScenarioTimeout `
+                        -Identity $Identity `
+                        -TestFile $testLabel `
+                        -ArtifactPath $artifactPath `
+                        -Progress $scenarioProgress `
+                        -TimeoutSeconds $scenarioTimeoutSeconds
+                    $retryEligible = $false
+                }
+                elseif ($retryEligible) {
+                    $lastFailure =
+                        'screenshot handshake timed out after 20 seconds'
+                }
+                else {
+                    $lastFailure = 'process timed out after 240 seconds'
+                }
             }
             elseif ($process.ExitCode -ne 0) {
                 $lastFailure = "exited with code $($process.ExitCode)"
-                $retryEligible = $routeAssertionsPassed
+                $retryEligible = $false
             }
             else {
                 Write-ProcessOutput `
@@ -294,8 +209,8 @@ function Invoke-BrowserIntegrationTest {
         }
         elseif ($attempt -lt 2) {
             Write-Warning (
-                "$testLabel as $Identity $lastFailure after its route " +
-                'assertions passed; retrying the browser infrastructure once.'
+                "$testLabel as $Identity $lastFailure after all functional " +
+                'assertions passed; retrying only the screenshot handshake once.'
             )
         }
         else {
@@ -340,6 +255,10 @@ if ($Stage -eq 'stage5') {
     & (Join-Path $repoRoot 'scripts\test\resolve-chromedriver.tests.ps1')
     if ($LASTEXITCODE -ne 0) {
         throw 'ChromeDriver resolver tests failed.'
+    }
+    & (Join-Path $repoRoot 'scripts\test\stage-validation-browser.tests.ps1')
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Browser validation harness tests failed.'
     }
     . (Join-Path $repoRoot 'scripts\lib\chromedriver.ps1')
     $ChromeDriverPath = Resolve-CompatibleChromeDriver `
