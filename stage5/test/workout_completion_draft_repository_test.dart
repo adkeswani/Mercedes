@@ -227,6 +227,25 @@ void main() {
     expect(localStore.value?.revision, 4);
   });
 
+  test('transaction retries do not retain a superseded conflict decision', () {
+    final pending = draft(revision: 4, clientId: 'current-tab', rpe: 8);
+    final supersededAttempt = decideWorkoutDraftSaveAttempt(
+      draft: pending,
+      server: draft(revision: 4, clientId: 'other-tab', rpe: 6),
+    );
+    final finalAttempt = decideWorkoutDraftSaveAttempt(
+      draft: pending,
+      server: draft(revision: 4, clientId: 'current-tab', rpe: 8),
+    );
+
+    expect(
+      supersededAttempt.result.status,
+      WorkoutDraftSaveStatus.conflict,
+    );
+    expect(finalAttempt.result.status, WorkoutDraftSaveStatus.saved);
+    expect(finalAttempt.result.authoritativeDraft?.clientId, 'current-tab');
+  });
+
   test('rejects ownership mismatch and completed instances', () async {
     expect(
       () => repository.save(draft(athleteId: 'other-athlete')),

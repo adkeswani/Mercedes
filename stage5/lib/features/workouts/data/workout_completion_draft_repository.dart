@@ -12,6 +12,36 @@ class WorkoutDraftSaveResult {
   final WorkoutCompletionDraft? authoritativeDraft;
 }
 
+class WorkoutDraftSaveAttemptDecision {
+  const WorkoutDraftSaveAttemptDecision({
+    required this.shouldWrite,
+    required this.result,
+  });
+
+  final bool shouldWrite;
+  final WorkoutDraftSaveResult result;
+}
+
+WorkoutDraftSaveAttemptDecision decideWorkoutDraftSaveAttempt({
+  required WorkoutCompletionDraft draft,
+  required WorkoutCompletionDraft? server,
+}) {
+  if (server == null || server.revision < draft.revision) {
+    return const WorkoutDraftSaveAttemptDecision(
+      shouldWrite: true,
+      result: WorkoutDraftSaveResult(WorkoutDraftSaveStatus.saved),
+    );
+  }
+  final conflict = server.clientId != draft.clientId;
+  return WorkoutDraftSaveAttemptDecision(
+    shouldWrite: false,
+    result: WorkoutDraftSaveResult(
+      conflict ? WorkoutDraftSaveStatus.conflict : WorkoutDraftSaveStatus.saved,
+      authoritativeDraft: server,
+    ),
+  );
+}
+
 class WorkoutCompletionDraftRepository {
   WorkoutCompletionDraftRepository({
     FirebaseFirestore? firestore,
@@ -147,9 +177,9 @@ class WorkoutCompletionDraftRepository {
     draft.validate();
     await _localStore.write(draft);
     try {
-      WorkoutCompletionDraft? authoritative;
-      var conflict = false;
-      await _firestore.runTransaction<void>((transaction) async {
+      final result = await _firestore.runTransaction<WorkoutDraftSaveResult>((
+        transaction,
+      ) async {
         final instanceSnapshot = await transaction.get(
           _instance(draft.instanceId),
         );
@@ -160,43 +190,26 @@ class WorkoutCompletionDraftRepository {
         );
         final draftRef = _draft(draft.instanceId);
         final serverSnapshot = await transaction.get(draftRef);
+        WorkoutCompletionDraft? server;
         if (serverSnapshot.exists && serverSnapshot.data() != null) {
-          final server = WorkoutCompletionDraft.fromMap(serverSnapshot.data()!);
+          server = WorkoutCompletionDraft.fromMap(serverSnapshot.data()!);
           _verifyIdentity(server, draft.instanceId, draft.athleteId);
-          if (server.revision > draft.revision) {
-            authoritative = server;
-            conflict = server.clientId != draft.clientId;
-            return;
-          }
-          if (server.revision == draft.revision &&
-              server.clientId != draft.clientId) {
-            authoritative = server;
-            conflict = true;
-            return;
-          }
-          if (server.revision == draft.revision) {
-            authoritative = server;
-            return;
-          }
+        }
+        final decision = decideWorkoutDraftSaveAttempt(
+          draft: draft,
+          server: server,
+        );
+        if (!decision.shouldWrite) {
+          return decision.result;
         }
         transaction.set(draftRef, draft.toMap(includeServerTimestamp: true));
+        return decision.result;
       });
-      if (conflict) {
-        if (authoritative != null) {
-          await _localStore.write(authoritative!);
-        }
-        return WorkoutDraftSaveResult(
-          WorkoutDraftSaveStatus.conflict,
-          authoritativeDraft: authoritative,
-        );
-      }
+      final authoritative = result.authoritativeDraft;
       if (authoritative != null) {
-        await _localStore.write(authoritative!);
+        await _localStore.write(authoritative);
       }
-      return WorkoutDraftSaveResult(
-        WorkoutDraftSaveStatus.saved,
-        authoritativeDraft: authoritative,
-      );
+      return result;
     } on FirebaseException {
       return const WorkoutDraftSaveResult(WorkoutDraftSaveStatus.offline);
     }

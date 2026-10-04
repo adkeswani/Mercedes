@@ -361,8 +361,10 @@ prefers the higher revision, then `serverUpdatedAt`, then `updatedAt`, then
 client ID as a deterministic final tie-breaker. A newer revision from the
 current tab ID is adopted as normal continuation, including a late lifecycle
 save from the disposed root; divergent revisions from a different client ID
-produce a visible conflict/restoration message. A Firestore transaction rejects
-stale/equal revisions from another client, and the UI ignores async save
+produce a visible conflict/restoration message. Each retryable Firestore
+transaction attempt returns its own reconciliation decision so a superseded
+attempt cannot leak conflict state into the final result. The transaction
+rejects stale/equal revisions from another client, and the UI ignores async save
 completions for an older instance or revision. Workout completion updates the
 immutable result and deletes the server draft in the same transaction; the
 local copy is cleared only after that transaction succeeds.
