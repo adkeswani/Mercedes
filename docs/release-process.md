@@ -17,7 +17,10 @@ and a two-second Flutter-pump limit, so a functional stall fails before the
 outer process boundary. The recovery canary mounts the initial web root with
 the known-good bounded `pumpWidget` startup step, then observes the login
 surface through the normal named condition polling. Compilation remains
-outside the scenario budget.
+outside the scenario budget. To verify workout recovery, the canary navigates
+away from the canonical workout route and reopens it within the stable app
+root. It does not replace the integration binding's root widget as a proxy for
+a browser reload.
 
 Timeout diagnostics identify the deterministic identity, integration-test
 file, current route when available, awaited condition, elapsed time, and

@@ -108,23 +108,27 @@ void main() {
         expect(savedDraft.data()?['clientId'], initialClientId);
       });
 
-      await waits.runStep(
-        'dispose application root',
-        () => tester.pumpWidget(const SizedBox.shrink()),
+      final workoutContext = tester.element(find.text('Complete Workout'));
+      GoRouter.of(workoutContext).go('/athlete/today');
+      await _waitFor(
+        tester,
+        waits,
+        find.text('Today'),
+        step: 'navigate away from workout',
       );
-      await waits.runStep(
-        'recreate application root from browser URL',
-        () => tester.pumpWidget(
-          const ProviderScope(child: MercedesApp()),
-        ),
-      );
+      expect(find.text('Complete Workout'), findsNothing);
+
       final recreatedClientId = ProviderScope.containerOf(
         tester.element(find.byType(MercedesApp)),
       ).read(workoutDraftClientIdProvider);
       expect(
         recreatedClientId,
         initialClientId,
-        reason: 'Root recreation must retain the current tab client ID.',
+        reason: 'Screen recreation must retain the current tab client ID.',
+      );
+      final athleteContext = tester.element(find.text('Today').first);
+      GoRouter.of(athleteContext).go(
+        '/athlete/workouts/browser-calendar-workout',
       );
       await _waitFor(
         tester,

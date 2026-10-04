@@ -360,7 +360,7 @@ Firestore is authoritative across devices. Reconciliation
 prefers the higher revision, then `serverUpdatedAt`, then `updatedAt`, then
 client ID as a deterministic final tie-breaker. A newer revision from the
 current tab ID is adopted as normal continuation, including a late lifecycle
-save from the disposed root; divergent revisions from a different client ID
+save from a disposed screen; divergent revisions from a different client ID
 produce a visible conflict/restoration message. Each retryable Firestore
 transaction attempt returns its own reconciliation decision so a superseded
 attempt cannot leak conflict state into the final result. The transaction
