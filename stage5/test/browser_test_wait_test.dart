@@ -6,6 +6,17 @@ import 'package:flutter_test/flutter_test.dart';
 import '../integration_test/support/browser_test_wait.dart';
 
 void main() {
+  test('startup and functional pumps have distinct bounded defaults', () {
+    expect(
+      BrowserTestWaitContext.startupFirstFramePumpTimeout,
+      const Duration(seconds: 15),
+    );
+    expect(
+      BrowserTestWaitContext.functionalPumpTimeout,
+      const Duration(seconds: 2),
+    );
+  });
+
   test('runStep reports bounded diagnostic context', () async {
     final waits = BrowserTestWaitContext(
       identity: 'athlete',
@@ -120,7 +131,7 @@ void main() {
         pumpCalls++;
       },
       startupTimeout: const Duration(milliseconds: 100),
-      pumpTimeout: const Duration(milliseconds: 5),
+      firstFramePumpTimeout: const Duration(milliseconds: 5),
     );
 
     expect(attached, isTrue);
@@ -146,7 +157,7 @@ void main() {
         isSatisfied: () => false,
         pump: () => Completer<void>().future,
         startupTimeout: const Duration(milliseconds: 100),
-        pumpTimeout: const Duration(milliseconds: 10),
+        firstFramePumpTimeout: const Duration(milliseconds: 10),
       ),
       throwsA(
         isA<TimeoutException>()
@@ -222,7 +233,7 @@ void main() {
         takeFrameworkException: () =>
             pumpStarted ? StateError('Firebase provider build failed') : null,
         startupTimeout: const Duration(milliseconds: 100),
-        pumpTimeout: const Duration(milliseconds: 10),
+        firstFramePumpTimeout: const Duration(milliseconds: 10),
       ),
       throwsA(
         isA<StateError>().having(
@@ -232,6 +243,48 @@ void main() {
             contains('local emulator login button'),
             contains('Firebase provider build failed'),
           ),
+        ),
+      ),
+    );
+  });
+
+  test('startup pump can outlive the later functional pump bound', () async {
+    var startupReady = false;
+    final waits = BrowserTestWaitContext(
+      identity: 'athlete',
+      testFile: 'integration_test/recovery_test.dart',
+      artifactPath: 'artifacts',
+      currentRoute: () => '/login',
+    );
+
+    Future<void> delayedPump(void Function() onComplete) async {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      onComplete();
+    }
+
+    await waits.attachRootAndWaitForCondition(
+      attachStep: 'attach initial application root',
+      attachRoot: () {},
+      condition: 'local emulator login button',
+      isSatisfied: () => startupReady,
+      pump: () => delayedPump(() => startupReady = true),
+      startupTimeout: const Duration(milliseconds: 100),
+      firstFramePumpTimeout: const Duration(milliseconds: 50),
+    );
+
+    await expectLater(
+      waits.waitForCondition(
+        condition: 'later functional surface',
+        isSatisfied: () => false,
+        pump: () => delayedPump(() {}),
+        timeout: const Duration(milliseconds: 100),
+        pumpTimeout: const Duration(milliseconds: 5),
+      ),
+      throwsA(
+        isA<TimeoutException>().having(
+          (error) => error.message,
+          'message',
+          contains('Flutter pump stalled'),
         ),
       ),
     );

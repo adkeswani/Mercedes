@@ -15,8 +15,10 @@ runner starts the test body (or a test prints its first
 deadline. Individual navigation and condition waits use 15–30 second limits
 and a two-second Flutter-pump limit, so a functional stall fails before the
 outer process boundary. The initial web root is attached synchronously; its
-first frame and login surface are then observed with short bounded pumps inside
-one 30-second startup budget. Compilation remains outside that budget.
+first frame and login surface are then observed with pumps bounded to 15
+seconds each and one 30-second total startup budget. After that first surface,
+the normal two-second pump limit applies. Compilation remains outside the
+startup budget.
 
 Timeout diagnostics identify the deterministic identity, integration-test
 file, current route when available, awaited condition, elapsed time, and

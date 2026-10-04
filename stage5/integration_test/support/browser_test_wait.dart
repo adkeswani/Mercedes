@@ -15,6 +15,9 @@ class BrowserTestWaitContext {
   final String artifactPath;
   final BrowserTestRouteReader currentRoute;
 
+  static const functionalPumpTimeout = Duration(seconds: 2);
+  static const startupFirstFramePumpTimeout = Duration(seconds: 15);
+
   Future<T> runStep<T>(
     String condition,
     Future<T> Function() operation, {
@@ -42,7 +45,7 @@ class BrowserTestWaitContext {
     required bool Function() isSatisfied,
     required Future<void> Function() pump,
     Duration timeout = const Duration(seconds: 20),
-    Duration pumpTimeout = const Duration(seconds: 2),
+    Duration pumpTimeout = functionalPumpTimeout,
     String Function()? details,
   }) async {
     final stopwatch = Stopwatch()..start();
@@ -83,7 +86,7 @@ class BrowserTestWaitContext {
     required Future<void> Function() pump,
     Object? Function()? takeFrameworkException,
     Duration startupTimeout = const Duration(seconds: 30),
-    Duration pumpTimeout = const Duration(seconds: 2),
+    Duration firstFramePumpTimeout = startupFirstFramePumpTimeout,
     String Function()? details,
   }) async {
     final stopwatch = Stopwatch()..start();
@@ -107,8 +110,9 @@ class BrowserTestWaitContext {
         if (remaining <= Duration.zero) {
           break;
         }
-        final currentPumpTimeout =
-            remaining < pumpTimeout ? remaining : pumpTimeout;
+        final currentPumpTimeout = remaining < firstFramePumpTimeout
+            ? remaining
+            : firstFramePumpTimeout;
         await pump().timeout(
           currentPumpTimeout,
           onTimeout: () => throw TimeoutException(
