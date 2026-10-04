@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/workouts/data/workout_completion_draft_repository.dart';
+import 'package:stage5/features/workouts/data/workout_draft_client_id_store.dart';
+import 'package:stage5/features/workouts/data/workout_draft_client_session.dart';
 import 'package:stage5/features/workouts/data/workout_draft_local_store.dart';
 import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
 import 'package:stage5/features/workouts/domain/workout_draft_client_id.dart';
@@ -29,8 +31,21 @@ final workoutDraftClientIdGeneratorProvider =
   return WorkoutDraftClientIdGenerator();
 });
 
+final workoutDraftClientIdStoreProvider =
+    Provider<WorkoutDraftClientIdStore>((ref) {
+  return createWorkoutDraftClientIdStore();
+});
+
+final workoutDraftClientSessionProvider =
+    Provider<WorkoutDraftClientSession>((ref) {
+  return WorkoutDraftClientSession(
+    store: ref.watch(workoutDraftClientIdStoreProvider),
+    generator: ref.watch(workoutDraftClientIdGeneratorProvider),
+  );
+});
+
 final workoutDraftClientIdProvider = Provider<String>((ref) {
-  return ref.watch(workoutDraftClientIdGeneratorProvider).generate();
+  return ref.watch(workoutDraftClientSessionProvider).getOrCreateClientId();
 });
 
 /// Streams workout instances for the current user within a date range.

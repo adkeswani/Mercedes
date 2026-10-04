@@ -11,6 +11,7 @@ class WorkoutDraftClientIdGenerator {
         _randomInt = randomInt ?? Random.secure().nextInt;
 
   static const randomByteCount = 16;
+  static final _validPattern = RegExp(r'^[0-9a-f]+-[0-9a-f]{32}$');
 
   final WorkoutDraftClock _clock;
   final WorkoutDraftRandomInt _randomInt;
@@ -23,5 +24,9 @@ class WorkoutDraftClientIdGenerator {
       growable: false,
     ).join();
     return '$timestamp-$randomHex';
+  }
+
+  static bool isValid(String value) {
+    return value.length <= 128 && _validPattern.hasMatch(value);
   }
 }

@@ -115,6 +115,45 @@ void main() {
     expect(staleAsyncResult.authoritativeDraft?.rpe, 8);
   });
 
+  test('same-tab recreation restores without a false conflict', () async {
+    const stableClientId = 'stable-tab-client';
+    await repository.save(
+      draft(revision: 4, clientId: stableClientId, rpe: 8),
+    );
+    final recreatedRepository = WorkoutCompletionDraftRepository(
+      firestore: firestore,
+      localStore: localStore,
+    );
+
+    final restored = await recreatedRepository.load(
+      instanceId: 'instance-1',
+      athleteId: 'athlete-1',
+    );
+
+    expect(restored.kind, WorkoutDraftRestoreKind.server);
+    expect(restored.draft?.clientId, stableClientId);
+    expect(restored.message, isNot(contains('another')));
+  });
+
+  test('same-client lifecycle save racing recreation is idempotent', () async {
+    const stableClientId = 'stable-tab-client';
+    await repository.save(
+      draft(revision: 4, clientId: stableClientId, rpe: 8),
+    );
+    final recreatedRepository = WorkoutCompletionDraftRepository(
+      firestore: firestore,
+      localStore: localStore,
+    );
+
+    final duplicate = await recreatedRepository.save(
+      draft(revision: 4, clientId: stableClientId, rpe: 3),
+    );
+
+    expect(duplicate.status, WorkoutDraftSaveStatus.saved);
+    expect(localStore.value?.clientId, stableClientId);
+    expect(localStore.value?.rpe, 8);
+  });
+
   test('rejects ownership mismatch and completed instances', () async {
     expect(
       () => repository.save(draft(athleteId: 'other-athlete')),

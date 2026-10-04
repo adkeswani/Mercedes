@@ -351,7 +351,11 @@ revision. Trainers cannot read in-progress notes. Repository methods repeat
 ownership/status checks and throw `StateError` on mismatch.
 
 The browser writes the typed draft to `localStorage` immediately and debounces
-Firestore writes. Firestore is authoritative across devices. Reconciliation
+Firestore writes. Its generated 128-bit client ID is stored separately in
+tab-scoped `sessionStorage`, so app-root recreation or reload remains the same
+client while separate tabs retain independent IDs; it is never derived from
+the athlete or authentication identity. Storage failures enter the existing
+retryable save-error state. Firestore is authoritative across devices. Reconciliation
 prefers the higher revision, then `serverUpdatedAt`, then `updatedAt`, then
 client ID as a deterministic final tie-breaker; any divergent local/server
 pair produces a visible conflict/restoration message. A Firestore transaction

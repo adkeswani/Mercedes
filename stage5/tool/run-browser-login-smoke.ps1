@@ -28,6 +28,7 @@ $stagePath = Split-Path -Parent $PSScriptRoot
 $repoRoot = Split-Path -Parent $stagePath
 $stageName = Split-Path -Leaf $stagePath
 . (Join-Path $repoRoot 'scripts\lib\chromedriver.ps1')
+. (Join-Path $repoRoot 'scripts\lib\browser-automation.ps1')
 $ChromeDriverPath = Resolve-CompatibleChromeDriver `
     -ChromeDriverPath $ChromeDriverPath
 $env:CHROMEDRIVER_PATH = $ChromeDriverPath
@@ -698,22 +699,30 @@ try {
             throw 'ChromeDriver exited before the browser test started.'
         }
 
-        & flutter drive `
-            --driver 'test_driver\integration_test.dart' `
-            --target $relativeTestTarget `
-            -d chrome `
-            --headless `
-            --no-keep-app-running `
-            --browser-dimension=1280x800 `
-            "--driver-port=$driverPort" `
-            --timeout=180 `
-            --no-pub `
-            --dart-define=USE_FIREBASE_EMULATORS=true `
-            --dart-define=BROWSER_LOGIN_SMOKE=true `
-            "--dart-define=BROWSER_SMOKE_ROLE=$($selectedIdentity.Role)" `
-            "--dart-define=BROWSER_SMOKE_EMAIL=$($selectedIdentity.Email)" `
-            "--dart-define=BROWSER_SMOKE_PASSWORD=$($selectedIdentity.Password)" `
+        $flutterDriveArguments = @(
+            'drive',
+            '--driver', 'test_driver\integration_test.dart',
+            '--target', $relativeTestTarget,
+            '-d', 'chrome',
+            '--headless',
+            '--no-keep-app-running',
+            '--browser-dimension=1280x800',
+            "--driver-port=$driverPort",
+            '--timeout=180',
+            '--no-pub',
+            '--dart-define=USE_FIREBASE_EMULATORS=true',
+            '--dart-define=BROWSER_LOGIN_SMOKE=true',
+            "--dart-define=BROWSER_SMOKE_ROLE=$($selectedIdentity.Role)",
+            "--dart-define=BROWSER_SMOKE_EMAIL=$($selectedIdentity.Email)",
+            "--dart-define=BROWSER_SMOKE_PASSWORD=$($selectedIdentity.Password)",
             "--dart-define=BROWSER_TEST_ARTIFACT_PATH=$artifactPath"
+        )
+        foreach ($chromeFlagArgument in (
+                Get-FlutterDriveChromeFlagArguments
+            )) {
+            $flutterDriveArguments += $chromeFlagArgument
+        }
+        & flutter @flutterDriveArguments
         if ($LASTEXITCODE -ne 0) {
             throw "Flutter integration test failed: $relativeTestTarget"
         }
@@ -770,12 +779,12 @@ try {
             alwaysMatch = @{
                 browserName = 'chrome'
                 'goog:chromeOptions' = @{
-                    args = @(
+                    args = @(Get-FocusIndependentChromeFlags -ChromeFlags @(
                         '--headless=new',
                         '--window-size=1280,800',
                         '--disable-gpu',
                         '--no-sandbox'
-                    )
+                    ))
                 }
             }
         }

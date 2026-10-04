@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/workouts/data/workout_completion_draft_repository.dart';
+import 'package:stage5/features/workouts/data/workout_draft_client_id_store_contract.dart';
 import 'package:stage5/features/workouts/data/workout_draft_local_store_contract.dart';
 import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
 import 'package:stage5/features/workouts/data/workout_template_repository.dart';
@@ -156,6 +157,9 @@ void main() {
             },
           ),
         ),
+        workoutDraftClientIdStoreProvider.overrideWithValue(
+          _MemoryClientIdStore(),
+        ),
       ],
     );
     await container.read(authStateProvider.future);
@@ -181,6 +185,113 @@ void main() {
     await tester.pump();
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  });
+
+  testWidgets('client ID storage failure shows retryable save failure',
+      (tester) async {
+    container.dispose();
+    container = ProviderContainer(
+      overrides: [
+        authStateProvider.overrideWith(
+          (ref) => Stream.value(_FakeUser('athlete-1')),
+        ),
+        workoutInstanceRepositoryProvider.overrideWithValue(
+          WorkoutInstanceRepository(firestore: firestore),
+        ),
+        workoutTemplateRepositoryProvider.overrideWithValue(
+          WorkoutTemplateRepository(firestore: firestore),
+        ),
+        workoutDraftLocalStoreProvider.overrideWithValue(localStore),
+        workoutCompletionDraftRepositoryProvider.overrideWithValue(
+          WorkoutCompletionDraftRepository(
+            firestore: firestore,
+            localStore: localStore,
+          ),
+        ),
+        workoutDraftClientIdStoreProvider.overrideWithValue(
+          _ThrowingClientIdStore(),
+        ),
+      ],
+    );
+    await container.read(authStateProvider.future);
+
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Unsaved notes');
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Save failed'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Retry'), findsOneWidget);
+    expect(localStore.value, isNull);
+  });
+
+  testWidgets(
+      'root recreation in one tab restores lifecycle save without conflict',
+      (tester) async {
+    container.dispose();
+    final clientIdStore = _MemoryClientIdStore();
+    final generator = WorkoutDraftClientIdGenerator(
+      clock: () => DateTime.utc(2026, 10, 4, 21, 10),
+      randomInt: (_) => 0xab,
+    );
+
+    ProviderContainer createContainer() {
+      return ProviderContainer(
+        overrides: [
+          authStateProvider.overrideWith(
+            (ref) => Stream.value(_FakeUser('athlete-1')),
+          ),
+          workoutInstanceRepositoryProvider.overrideWithValue(
+            WorkoutInstanceRepository(firestore: firestore),
+          ),
+          workoutTemplateRepositoryProvider.overrideWithValue(
+            WorkoutTemplateRepository(firestore: firestore),
+          ),
+          workoutDraftLocalStoreProvider.overrideWithValue(localStore),
+          workoutCompletionDraftRepositoryProvider.overrideWithValue(
+            WorkoutCompletionDraftRepository(
+              firestore: firestore,
+              localStore: localStore,
+            ),
+          ),
+          workoutDraftClientIdStoreProvider.overrideWithValue(clientIdStore),
+          workoutDraftClientIdGeneratorProvider.overrideWithValue(generator),
+        ],
+      );
+    }
+
+    container = createContainer();
+    await container.read(authStateProvider.future);
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Lifecycle recreation');
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    await tester.pumpAndSettle();
+    final originalClientId = localStore.value?.clientId;
+    expect(originalClientId, isNotNull);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    container.dispose();
+    container = createContainer();
+    await container.read(authStateProvider.future);
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+
+    expect(localStore.value?.clientId, originalClientId);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      'Lifecycle recreation',
+    );
+    expect(find.textContaining('another'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 
   testWidgets('renders a completed workout as immutable details',
@@ -307,4 +418,25 @@ class _MemoryDraftStore implements WorkoutDraftLocalStore {
   Future<void> write(WorkoutCompletionDraft draft) async {
     value = draft;
   }
+}
+
+class _MemoryClientIdStore implements WorkoutDraftClientIdStore {
+  String? value;
+
+  @override
+  String? read() => value;
+
+  @override
+  void write(String clientId) {
+    value = clientId;
+  }
+}
+
+class _ThrowingClientIdStore implements WorkoutDraftClientIdStore {
+  @override
+  String? read() => throw StateError('session storage unavailable');
+
+  @override
+  void write(String clientId) =>
+      throw StateError('session storage unavailable');
 }

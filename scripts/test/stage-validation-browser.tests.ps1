@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repoRoot 'scripts\lib\stage-validation-browser.ps1')
+. (Join-Path $repoRoot 'scripts\lib\browser-automation.ps1')
 
 $passed = 0
 
@@ -76,6 +77,46 @@ foreach ($expected in @(
     Assert-True `
         -Condition $diagnostic.Contains($expected) `
         -Message "Timeout diagnostic omitted: $expected"
+}
+
+$chromeFlags = @(Get-FocusIndependentChromeFlags -ChromeFlags @(
+        '--headless=new',
+        '--disable-renderer-backgrounding=false',
+        '--window-size=1280,800'
+    ))
+foreach ($requiredFlag in @(
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows'
+    )) {
+    Assert-True `
+        -Condition ($chromeFlags -contains $requiredFlag) `
+        -Message "Chrome automation flag was omitted: $requiredFlag"
+}
+Assert-True `
+    -Condition ($chromeFlags -contains '--disable-renderer-backgrounding=false') `
+    -Message 'An explicit Chrome flag value was overridden.'
+Assert-True `
+    -Condition (
+        @($chromeFlags | Where-Object {
+                $_ -like '--disable-renderer-backgrounding*'
+            }).Count -eq 1
+    ) `
+    -Message 'A caller-provided Chrome flag was duplicated.'
+Assert-True `
+    -Condition ($chromeFlags[0] -eq '--headless=new') `
+    -Message 'Existing Chrome flag order was not preserved.'
+
+$flutterDriveFlags = @(Get-FlutterDriveChromeFlagArguments)
+foreach ($requiredFlag in @(
+        '--disable-background-timer-throttling',
+        '--disable-renderer-backgrounding',
+        '--disable-backgrounding-occluded-windows'
+    )) {
+    Assert-True `
+        -Condition (
+            $flutterDriveFlags -contains "--web-browser-flag=$requiredFlag"
+        ) `
+        -Message "Flutter drive did not receive Chrome flag: $requiredFlag"
 }
 
 $tempRoot = Join-Path $env:TEMP (

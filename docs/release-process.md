@@ -33,6 +33,13 @@ PowerShell, Firebase, ChromeDriver, and Chrome process tree by job/PID
 ownership; unrelated processes and emulator sessions from other runs are not
 name-killed.
 
+Browser automation also starts Chrome with background timer throttling,
+renderer backgrounding, and occluded-window backgrounding disabled. This keeps
+Flutter Web frame scheduling and bounded test waits independent of whether the
+Chrome window has focus. Existing caller-supplied Chrome flags are preserved
+without duplicate options. App lifecycle behavior remains enabled, and
+recovery tests still simulate lifecycle transitions explicitly.
+
 ## One-time staging provisioning
 
 An owner with billing and project-creation permissions must complete these
