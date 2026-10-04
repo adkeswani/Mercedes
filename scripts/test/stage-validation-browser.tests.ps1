@@ -93,6 +93,7 @@ try {
 param([string]$ChildPidPath)
 $child = Start-Process powershell `
     -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' `
+    -WindowStyle Hidden `
     -PassThru
 Set-Content -LiteralPath $ChildPidPath -Value $child.Id
 Start-Sleep -Seconds 60
@@ -100,6 +101,7 @@ Start-Sleep -Seconds 60
 
     $unrelated = Start-Process powershell `
         -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 60' `
+        -WindowStyle Hidden `
         -PassThru
     $parent = Start-Process powershell `
         -ArgumentList @(
@@ -109,6 +111,7 @@ Start-Sleep -Seconds 60
             '-ChildPidPath',
             "`"$childPidPath`""
         ) `
+        -WindowStyle Hidden `
         -PassThru
     $job = [StageValidationProcessJob]::new()
     $job.Add($parent)
