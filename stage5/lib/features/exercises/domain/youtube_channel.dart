@@ -190,11 +190,16 @@ class YoutubeVideoMetadata {
   String get canonicalUrl => 'https://www.youtube.com/watch?v=$videoId';
 
   void validate() {
+    final hasOnlyOneThumbnailDimension =
+        (thumbnailWidth == null) != (thumbnailHeight == null);
     if (!RegExp(r'^[A-Za-z0-9_-]{11}$').hasMatch(videoId) ||
         title.trim().isEmpty ||
         _validatedYoutubeImageUrl(thumbnailUrl) != thumbnailUrl ||
-        (thumbnailWidth != null && thumbnailWidth! <= 0) ||
-        (thumbnailHeight != null && thumbnailHeight! <= 0) ||
+        hasOnlyOneThumbnailDimension ||
+        (thumbnailWidth != null &&
+            (thumbnailWidth! <= 0 || thumbnailWidth! > 4096)) ||
+        (thumbnailHeight != null &&
+            (thumbnailHeight! <= 0 || thumbnailHeight! > 4096)) ||
         !RegExp(r'^UC[A-Za-z0-9_-]{22}$').hasMatch(channelId) ||
         channelTitle.trim().isEmpty) {
       throw ArgumentError('Invalid YouTube video metadata');
@@ -203,7 +208,9 @@ class YoutubeVideoMetadata {
 }
 
 int? _positiveInt(Object? value) {
-  if (value is int && value > 0) return value;
+  if (value is int && value > 0) {
+    return value;
+  }
   return null;
 }
 

@@ -288,8 +288,10 @@ service cloud.firestore {
              || (data.youtubeMetadata is map
                  && data.youtubeMetadata.keys().hasOnly([
                       'videoId', 'title', 'thumbnailUrl', 'channelId',
-                      'channelTitle', 'canonicalUrl'
+                      'channelTitle', 'canonicalUrl', 'thumbnailWidth',
+                      'thumbnailHeight'
                     ])
+                 && hasValidYoutubeThumbnailDimensions(data.youtubeMetadata)
                  && data.youtubeMetadata.videoId is string
                  && data.youtubeMetadata.videoId.size() == 11
                  && data.youtubeMetadata.title is string
@@ -312,6 +314,22 @@ service cloud.firestore {
                  && data.videoUrl ==
                     'https://www.youtube.com/watch?v='
                     + data.youtubeMetadata.videoId);
+    }
+
+    function hasValidYoutubeThumbnailDimensions(metadata) {
+      return (!('thumbnailWidth' in metadata)
+              && !('thumbnailHeight' in metadata))
+             || (metadata.keys().hasAll([
+                   'thumbnailWidth', 'thumbnailHeight'
+                 ])
+                 && ((metadata.thumbnailWidth == null
+                      && metadata.thumbnailHeight == null)
+                     || (metadata.thumbnailWidth is int
+                         && metadata.thumbnailWidth > 0
+                         && metadata.thumbnailWidth <= 4096
+                         && metadata.thumbnailHeight is int
+                         && metadata.thumbnailHeight > 0
+                         && metadata.thumbnailHeight <= 4096)));
     }
 
     function publishesNextExerciseVersion(templateId) {

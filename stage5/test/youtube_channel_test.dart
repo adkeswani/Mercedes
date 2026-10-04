@@ -128,6 +128,39 @@ void main() {
     expect(video.thumbnailHeight, isNull);
   });
 
+  test('requires paired, positive, bounded thumbnail dimensions', () {
+    YoutubeVideoMetadata metadata({int? width, int? height}) {
+      return YoutubeVideoMetadata(
+        videoId: 'videoId0001',
+        title: 'Squat',
+        thumbnailUrl: 'https://i.ytimg.com/vi/videoId0001/hqdefault.jpg',
+        thumbnailWidth: width,
+        thumbnailHeight: height,
+        channelId: channelId,
+        channelTitle: 'Public Trainer',
+      );
+    }
+
+    expect(() => metadata().validate(), returnsNormally);
+    expect(() => metadata(width: 480, height: 360).validate(), returnsNormally);
+    for (final dimensions in [
+      (width: 480, height: null),
+      (width: null, height: 360),
+      (width: 0, height: 360),
+      (width: 480, height: -1),
+      (width: 4097, height: 360),
+      (width: 480, height: 4097),
+    ]) {
+      expect(
+        () => metadata(
+          width: dimensions.width,
+          height: dimensions.height,
+        ).validate(),
+        throwsArgumentError,
+      );
+    }
+  });
+
   test('searches and sorts a complete catalogue fixture', () {
     final videos = [
       _video(

@@ -206,7 +206,9 @@ void main() {
       expect(v2.youtubeMetadata!.thumbnailWidth, 480);
       expect(v2.youtubeMetadata!.thumbnailHeight, 360);
       expect(
-          v2.measurementConfiguration.primary, ExerciseMeasurementType.weight);
+        v2.measurementConfiguration.primary,
+        ExerciseMeasurementType.weight,
+      );
       expect(v2.gradingConfiguration!.gymColors, grading.gymColors);
       expect((await repository.getById(id))!.currentVersion, 2);
     });
@@ -237,6 +239,44 @@ void main() {
       expect(original.videoUrl, contains('videoId0001'));
       expect(removed!.youtubeMetadata, isNull);
       expect(removed.videoUrl, isNull);
+    });
+
+    test('rejects malformed thumbnail dimensions before atomic publish',
+        () async {
+      final id = await repository.create(
+        name: 'Squat',
+        description: 'Back squat',
+        instructions: 'Squat down',
+        userId: 'coach1',
+      );
+      const malformedMetadata = YoutubeVideoMetadata(
+        videoId: 'videoId0001',
+        title: 'Front squat tutorial',
+        thumbnailUrl: 'https://i.ytimg.com/vi/videoId0001/hqdefault.jpg',
+        thumbnailWidth: 480,
+        channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa',
+        channelTitle: 'Public Trainer',
+      );
+
+      await expectLater(
+        repository.update(
+          id: id,
+          name: 'Front Squat',
+          description: 'Front rack squat',
+          instructions: 'Keep elbows high',
+          videoUrl: malformedMetadata.canonicalUrl,
+          youtubeMetadata: malformedMetadata,
+          userId: 'coach1',
+        ),
+        throwsArgumentError,
+      );
+
+      final header =
+          await firestore.collection('exerciseTemplates').doc(id).get();
+      final version2 =
+          await header.reference.collection('exerciseVersions').doc('2').get();
+      expect(header.data()!['currentVersion'], 1);
+      expect(version2.exists, isFalse);
     });
 
     test('can resolve a historical version through the logical exercise',

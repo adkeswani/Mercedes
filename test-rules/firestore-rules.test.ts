@@ -482,6 +482,39 @@ describe('usernames', () => {
 // ─── Exercise Templates ───
 
 describe('exerciseTemplates', () => {
+  function exerciseVersion(
+    versionNumber: number,
+    overrides: Record<string, unknown> = {}
+  ) {
+    return {
+      versionNumber,
+      name: versionNumber == 1 ? 'Squat' : 'Front Squat',
+      description: 'Barbell squat',
+      instructions: 'Brace and squat',
+      videoUrl: 'https://www.youtube.com/watch?v=videoId0001',
+      youtubeMetadata: {
+        videoId: 'videoId0001',
+        title: 'Squat tutorial',
+        thumbnailUrl: 'https://i.ytimg.com/vi/videoId0001/hqdefault.jpg',
+        thumbnailWidth: 480,
+        thumbnailHeight: 360,
+        channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa',
+        channelTitle: 'Public Trainer',
+        canonicalUrl: 'https://www.youtube.com/watch?v=videoId0001',
+      },
+      mediaUrls: [],
+      exerciseType: 'strength',
+      measurementConfiguration: {
+        primary: 'weight',
+        secondary: ['repetitions'],
+      },
+      gradingConfiguration: null,
+      publishedAt: serverTimestamp(),
+      publishedBy: OWNER,
+      ...overrides,
+    };
+  }
+
   async function seedVersionedExercise() {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       const db = ctx.firestore();
@@ -658,6 +691,142 @@ describe('exerciseTemplates', () => {
       publishedBy: OWNER,
     });
     await assertFails(invalid.commit());
+  });
+
+  it('allows the owner UI save shape with thumbnail dimensions', async () => {
+    await seedVersionedExercise();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('exerciseTemplates').doc('e1');
+    const batch = db.batch();
+    batch.set(
+      header.collection('exerciseVersions').doc('2'),
+      exerciseVersion(2)
+    );
+    batch.update(header, {
+      ownerId: OWNER,
+      currentVersion: 2,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    });
+
+    await assertSucceeds(batch.commit());
+    const [savedHeader, originalVersion, editedVersion] = await Promise.all([
+      header.get(),
+      header.collection('exerciseVersions').doc('1').get(),
+      header.collection('exerciseVersions').doc('2').get(),
+    ]);
+    expect(savedHeader.data()?.currentVersion).toBe(2);
+    expect(originalVersion.data()?.name).toBe('Squat');
+    expect(editedVersion.data()?.youtubeMetadata).toMatchObject({
+      thumbnailWidth: 480,
+      thumbnailHeight: 360,
+    });
+  });
+
+  it('denies malformed, extra-field, and non-atomic version publishes',
+      async () => {
+    await seedVersionedExercise();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('exerciseTemplates').doc('e1');
+
+    const malformed = db.batch();
+    malformed.set(
+      header.collection('exerciseVersions').doc('2'),
+      exerciseVersion(2, {
+        youtubeMetadata: {
+          ...exerciseVersion(2).youtubeMetadata,
+          thumbnailWidth: -1,
+        },
+      })
+    );
+    malformed.update(header, {
+      currentVersion: 2,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    });
+    await assertFails(malformed.commit());
+
+    for (const youtubeMetadata of [
+      {
+        ...exerciseVersion(2).youtubeMetadata,
+        thumbnailHeight: null,
+      },
+      {
+        ...exerciseVersion(2).youtubeMetadata,
+        thumbnailWidth: 4097,
+      },
+    ]) {
+      const invalidDimensions = db.batch();
+      invalidDimensions.set(
+        header.collection('exerciseVersions').doc('2'),
+        exerciseVersion(2, { youtubeMetadata })
+      );
+      invalidDimensions.update(header, {
+        currentVersion: 2,
+        updatedAt: serverTimestamp(),
+        updatedBy: OWNER,
+      });
+      await assertFails(invalidDimensions.commit());
+    }
+
+    const extraField = db.batch();
+    extraField.set(
+      header.collection('exerciseVersions').doc('2'),
+      exerciseVersion(2, { unexpected: true })
+    );
+    extraField.update(header, {
+      currentVersion: 2,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    });
+    await assertFails(extraField.commit());
+
+    await assertFails(header.update({
+      currentVersion: 2,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    }));
+    await assertFails(
+      header.collection('exerciseVersions').doc('2').set(exerciseVersion(2))
+    );
+
+    const stale = db.batch();
+    stale.set(
+      header.collection('exerciseVersions').doc('3'),
+      exerciseVersion(3)
+    );
+    stale.update(header, {
+      currentVersion: 3,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+    });
+    await assertFails(stale.commit());
+  });
+
+  it('denies the valid edit transaction to non-owners and unauthenticated users',
+      async () => {
+    await seedVersionedExercise();
+    const contexts = [
+      [testEnv.authenticatedContext(STRANGER).firestore(), STRANGER],
+      [testEnv.authenticatedContext(ATHLETE).firestore(), ATHLETE],
+      [testEnv.unauthenticatedContext().firestore(), OWNER],
+    ];
+
+    for (const [db, actor] of contexts) {
+      const header = db.collection('exerciseTemplates').doc('e1');
+      const batch = db.batch();
+      batch.set(
+        header.collection('exerciseVersions').doc('2'),
+        exerciseVersion(2, { publishedBy: actor })
+      );
+      batch.update(header, {
+        ownerId: actor,
+        currentVersion: 2,
+        updatedAt: serverTimestamp(),
+        updatedBy: actor,
+      });
+      await assertFails(batch.commit());
+    }
   });
 
   it('denies creating without version 1 or with someone else as owner', async () => {
