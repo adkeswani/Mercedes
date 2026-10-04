@@ -106,7 +106,7 @@ class LibraryLoadError extends StatelessWidget {
   }
 }
 
-class LibraryOrganizer<T> extends ConsumerStatefulWidget {
+class LibraryOrganizer<T extends Object> extends ConsumerStatefulWidget {
   const LibraryOrganizer({
     required this.userId,
     required this.itemType,
@@ -149,7 +149,7 @@ class LibraryOrganizer<T> extends ConsumerStatefulWidget {
       _LibraryOrganizerState<T>();
 }
 
-class _LibraryOrganizerState<T> extends ConsumerState<LibraryOrganizer<T>> {
+class _LibraryOrganizerState<T extends Object> extends ConsumerState<LibraryOrganizer<T>> {
   final _searchController = TextEditingController();
   final Set<String> _selectedTags = {};
   final Map<String, bool> _collapsed = {};
@@ -393,64 +393,121 @@ class _LibraryOrganizerState<T> extends ConsumerState<LibraryOrganizer<T>> {
     final folderId = folder?.id;
     final collapsed = _isCollapsed(scopeId, folderId);
     final label = folder?.name ?? 'Unfiled';
+    // Items only move within their own shared/client partition: derive the
+    // client scope this group belongs to from the scope id so a drag can't
+    // reassign an item across scopes.
+    final expectedClientId =
+        scopeId.startsWith('client-') ? scopeId.substring('client-'.length) : null;
     return [
-      Semantics(
-        header: true,
-        button: true,
-        label: '${collapsed ? 'Expand' : 'Collapse'} $label, '
-            '${items.length} items',
-        onTap: () => _toggleCollapsed(scopeId, folderId),
-        explicitChildNodes: true,
-        child: ListTile(
-          dense: true,
-          leading: Icon(folder == null ? Icons.inbox_outlined : Icons.folder),
-          title: Text('$label (${items.length})'),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (folder != null)
-                PopupMenuButton<String>(
-                  tooltip: '$label folder actions',
-                  onSelected: (action) {
-                    if (action == 'rename') {
-                      _renameFolder(folder);
-                    } else if (action == 'delete') {
-                      _deleteFolder(folder);
-                    }
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'rename', child: Text('Rename')),
-                    PopupMenuItem(value: 'delete', child: Text('Delete')),
+      DragTarget<T>(
+        onWillAcceptWithDetails: (details) =>
+            widget.clientAthleteIdOf(details.data) == expectedClientId &&
+            widget.folderIdOf(details.data) != folderId,
+        onAcceptWithDetails: (details) =>
+            _moveToFolder(details.data, folderId),
+        builder: (context, candidateData, rejectedData) {
+          final isHovering = candidateData.isNotEmpty;
+          return Container(
+            color: isHovering
+                ? Theme.of(context)
+                    .colorScheme
+                    .primaryContainer
+                    .withValues(alpha: 0.4)
+                : null,
+            child: Semantics(
+              header: true,
+              button: true,
+              label: '${collapsed ? 'Expand' : 'Collapse'} $label, '
+                  '${items.length} items',
+              onTap: () => _toggleCollapsed(scopeId, folderId),
+              explicitChildNodes: true,
+              child: ListTile(
+                dense: true,
+                leading: Icon(
+                  folder == null ? Icons.inbox_outlined : Icons.folder,
+                ),
+                title: Text('$label (${items.length})'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (folder != null)
+                      PopupMenuButton<String>(
+                        tooltip: '$label folder actions',
+                        onSelected: (action) {
+                          if (action == 'rename') {
+                            _renameFolder(folder);
+                          } else if (action == 'delete') {
+                            _deleteFolder(folder);
+                          }
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: 'rename', child: Text('Rename')),
+                          PopupMenuItem(value: 'delete', child: Text('Delete')),
+                        ],
+                      ),
+                    Semantics(
+                      container: true,
+                      button: true,
+                      label: '${collapsed ? 'Expand' : 'Collapse'} $label',
+                      excludeSemantics: true,
+                      child: IconButton(
+                        tooltip: '${collapsed ? 'Expand' : 'Collapse'} $label',
+                        onPressed: () => _toggleCollapsed(scopeId, folderId),
+                        icon: Icon(
+                          collapsed ? Icons.expand_more : Icons.expand_less,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-              Semantics(
-                container: true,
-                button: true,
-                label: '${collapsed ? 'Expand' : 'Collapse'} $label',
-                excludeSemantics: true,
-                child: IconButton(
-                  tooltip: '${collapsed ? 'Expand' : 'Collapse'} $label',
-                  onPressed: () => _toggleCollapsed(scopeId, folderId),
-                  icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less),
-                ),
+                onTap: () => _toggleCollapsed(scopeId, folderId),
               ),
-            ],
-          ),
-          onTap: () => _toggleCollapsed(scopeId, folderId),
-        ),
+            ),
+          );
+        },
       ),
       if (!collapsed)
-        for (final item in items)
-          widget.tileBuilder(
-            context,
-            item,
-            IconButton(
-              tooltip: 'Organize ${widget.nameOf(item)}',
-              onPressed: () => _editOrganization(item),
-              icon: const Icon(Icons.label_outline),
-            ),
-          ),
+        for (final item in items) _buildDraggableTile(item),
     ];
+  }
+
+  Widget _buildDraggableTile(T item) {
+    final tile = widget.tileBuilder(
+      context,
+      item,
+      IconButton(
+        tooltip: 'Organize ${widget.nameOf(item)}',
+        onPressed: () => _editOrganization(item),
+        icon: const Icon(Icons.label_outline),
+      ),
+    );
+    return LongPressDraggable<T>(
+      data: item,
+      feedback: Material(
+        elevation: 4,
+        borderRadius: BorderRadius.circular(8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Text(widget.nameOf(item)),
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.4, child: tile),
+      child: tile,
+    );
+  }
+
+  Future<void> _moveToFolder(T item, String? folderId) {
+    return _runMutation(
+      () => widget.updateOrganization(
+        item,
+        tags: widget.tagsOf(item),
+        folderId: folderId,
+        clientAthleteId: widget.clientAthleteIdOf(item),
+      ),
+    );
   }
 
   Future<String?> _textDialog({

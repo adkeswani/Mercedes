@@ -130,6 +130,7 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
         description: _descriptionController.text.trim().isEmpty
             ? null
             : _descriptionController.text.trim(),
+        folderId: _folderId,
       );
       if (mounted) {
         context.pushReplacement('/programs/$id');
@@ -485,11 +486,13 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
       targetFolderId = value;
     }
 
-    await ref.read(programRepositoryProvider).setFolder(
-          id: widget.programId!,
-          folderId: targetFolderId,
-          userId: uid,
-        );
+    if (widget.isEditing) {
+      await ref.read(programRepositoryProvider).setFolder(
+            id: widget.programId!,
+            folderId: targetFolderId,
+            userId: uid,
+          );
+    }
     if (mounted) setState(() => _folderId = targetFolderId);
   }
 
@@ -762,6 +765,8 @@ class _ProgramBuilderScreenState extends ConsumerState<ProgramBuilderScreen> {
                 if (value != null) setState(() => _programType = value);
               },
             ),
+            const SizedBox(height: 16),
+            _buildFolderSelector(),
             const SizedBox(height: 24),
             FilledButton(
               onPressed: _isLoading ? null : _createAndEnter,

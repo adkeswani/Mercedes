@@ -5,10 +5,14 @@ import 'package:go_router/go_router.dart';
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/library/domain/library_metadata.dart';
+import 'package:stage5/features/library/presentation/library_providers.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/exercise_picker.dart';
 import 'package:stage5/features/workouts/presentation/workout_delete_command.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
+
+/// Sentinel value for the "create a new folder" option in the folder dropdown.
+const _kNewFolderSentinel = '__new_folder__';
 
 /// Builder screen for creating/editing a workout template.
 ///
@@ -35,6 +39,8 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
   bool _isLoading = false;
   bool _didLoad = false;
   WorkoutTemplate? _loadedWorkout;
+  String? _folderId;
+  List<String> _existingTags = const [];
 
   @override
   void dispose() {
@@ -61,7 +67,11 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
 
     _loadedWorkout = template;
     _nameController.text = template.name;
-    setState(() => _workoutType = template.workoutType);
+    setState(() {
+      _workoutType = template.workoutType;
+      _folderId = template.folderId;
+      _existingTags = template.tags;
+    });
 
     // If duplicating from another template, load its exercises
     final source = resolveLibraryEditorSource(
@@ -116,6 +126,7 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
         name: name,
         workoutType: _workoutType,
         userId: uid,
+        folderId: _folderId,
       );
       if (mounted) {
         // Replace the /workouts/new route with /workouts/:id
@@ -296,6 +307,8 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
               }
             },
           ),
+          const SizedBox(height: 12),
+          _buildFolderSelector(),
           const SizedBox(height: 24),
           // Exercise list
           Row(
@@ -372,6 +385,8 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
                 if (value != null) setState(() => _workoutType = value);
               },
             ),
+            const SizedBox(height: 16),
+            _buildFolderSelector(),
             const SizedBox(height: 24),
             FilledButton(
               onPressed: _isLoading ? null : _createAndEnter,
@@ -385,6 +400,79 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildFolderSelector() {
+    final folders =
+        ref.watch(libraryFoldersProvider(LibraryItemType.workout)).valueOrNull ??
+            const [];
+    final value = folders.any((f) => f.id == _folderId) ? _folderId : null;
+    return DropdownButtonFormField<String?>(
+      key: ValueKey('folder-picker-$value'),
+      initialValue: value,
+      decoration: const InputDecoration(labelText: 'Folder'),
+      items: [
+        const DropdownMenuItem(value: null, child: Text('None')),
+        for (final folder in folders)
+          DropdownMenuItem(value: folder.id, child: Text(folder.name)),
+        const DropdownMenuItem(
+          value: _kNewFolderSentinel,
+          child: Text('+ New folder…'),
+        ),
+      ],
+      onChanged: _onFolderSelected,
+    );
+  }
+
+  Future<void> _onFolderSelected(String? value) async {
+    final uid = ref.read(authStateProvider).value?.uid;
+    if (uid == null) return;
+
+    String? targetFolderId;
+    if (value == _kNewFolderSentinel) {
+      final name = await _promptFolderName();
+      if (name == null || name.trim().isEmpty) return;
+      targetFolderId = await ref
+          .read(libraryFolderRepositoryProvider(LibraryItemType.workout))
+          .create(name: name.trim(), userId: uid);
+    } else {
+      targetFolderId = value;
+    }
+
+    if (widget.isEditing) {
+      await ref.read(workoutTemplateRepositoryProvider).updateOrganization(
+            id: widget.workoutId!,
+            tags: _existingTags,
+            folderId: targetFolderId,
+            userId: uid,
+          );
+    }
+    if (mounted) setState(() => _folderId = targetFolderId);
+  }
+
+  Future<String?> _promptFolderName() {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('New folder'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Folder name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('Create'),
+          ),
+        ],
       ),
     );
   }

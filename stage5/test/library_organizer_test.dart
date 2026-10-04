@@ -181,6 +181,72 @@ void main() {
     expect(savedClient, 'athlete');
   });
 
+  testWidgets('drags an item onto a folder header to move it there',
+      (tester) async {
+    final otherFolder = LibraryFolder(
+      id: 'cardio',
+      ownerId: 'coach',
+      name: 'Cardio',
+      itemType: LibraryItemType.workout,
+      createdAt: now,
+      createdBy: 'coach',
+      updatedAt: now,
+      updatedBy: 'coach',
+    );
+    String? movedFolderId;
+    var moveCount = 0;
+    const item = _Item(id: 'unfiled', name: 'Mobility', tags: ['Recovery']);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          libraryCollapsePreferenceProvider.overrideWithValue(
+            MemoryLibraryCollapsePreference(),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: LibraryOrganizer<_Item>(
+              userId: 'coach',
+              itemType: LibraryItemType.workout,
+              items: const [item],
+              folders: [folder, otherFolder],
+              nameOf: (value) => value.name,
+              tagsOf: (value) => value.tags,
+              folderIdOf: (value) => value.folderId,
+              clientAthleteIdOf: (value) => value.clientAthleteId,
+              tileBuilder: (_, value, organizationButton) => ListTile(
+                title: Text(value.name),
+                trailing: organizationButton,
+              ),
+              updateOrganization: (
+                _, {
+                required tags,
+                required folderId,
+                required clientAthleteId,
+              }) async {
+                moveCount++;
+                movedFolderId = folderId;
+              },
+              createFolder: (_) async {},
+              renameFolder: (_, __) async {},
+              deleteFolder: (_) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await _longPressDrag(
+      tester,
+      from: tester.getCenter(find.text('Mobility')),
+      to: tester.getCenter(find.text('Cardio (0)')),
+    );
+
+    expect(moveCount, 1);
+    expect(movedFolderId, 'cardio');
+  });
+
   testWidgets('renders client items once under the client partition',
       (tester) async {
     await tester.pumpWidget(
@@ -287,4 +353,17 @@ class _Item {
   final List<String> tags;
   final String? folderId;
   final String? clientAthleteId;
+}
+
+Future<void> _longPressDrag(
+  WidgetTester tester, {
+  required Offset from,
+  required Offset to,
+}) async {
+  final gesture = await tester.startGesture(from);
+  await tester.pump(const Duration(milliseconds: 500));
+  await gesture.moveTo(to);
+  await tester.pump();
+  await gesture.up();
+  await tester.pumpAndSettle();
 }

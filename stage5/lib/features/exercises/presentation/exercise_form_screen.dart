@@ -7,6 +7,11 @@ import 'package:stage5/features/exercises/domain/exercise_template.dart';
 import 'package:stage5/features/exercises/domain/youtube_channel.dart';
 import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
 import 'package:stage5/features/exercises/presentation/youtube_library_panel.dart';
+import 'package:stage5/features/library/domain/library_metadata.dart';
+import 'package:stage5/features/library/presentation/library_providers.dart';
+
+/// Sentinel value for the "create a new folder" option in the folder dropdown.
+const _kNewFolderSentinel = '__new_folder__';
 
 /// Create or edit an exercise template.
 ///
@@ -33,6 +38,8 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
   bool _isLoading = false;
   bool _didLoadExisting = false;
   YoutubeVideoMetadata? _youtubeMetadata;
+  String? _folderId;
+  List<String> _existingTags = const [];
 
   @override
   void dispose() {
@@ -49,6 +56,8 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     _instructionsController.text = template.instructions;
     _videoUrlController.text = template.videoUrl ?? '';
     _youtubeMetadata = template.youtubeMetadata;
+    _folderId = template.folderId;
+    _existingTags = template.tags;
   }
 
   void _attachYoutubeVideo(PublicYoutubeVideo video) {
@@ -87,6 +96,12 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
           videoUrl: videoUrl.isEmpty ? null : videoUrl,
           youtubeMetadata: _youtubeMetadata,
         );
+        await repo.updateOrganization(
+          id: widget.exerciseId!,
+          tags: _existingTags,
+          folderId: _folderId,
+          userId: uid,
+        );
       } else {
         await repo.create(
           name: _nameController.text.trim(),
@@ -95,6 +110,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
           userId: uid,
           videoUrl: videoUrl.isEmpty ? null : videoUrl,
           youtubeMetadata: _youtubeMetadata,
+          folderId: _folderId,
         );
       }
 
@@ -169,6 +185,8 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
                   : null,
             ),
             const SizedBox(height: 16),
+            _buildFolderField(),
+            const SizedBox(height: 16),
             TextFormField(
               controller: _instructionsController,
               decoration: const InputDecoration(
@@ -207,6 +225,70 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildFolderField() {
+    final folders =
+        ref.watch(libraryFoldersProvider(LibraryItemType.exercise)).valueOrNull ??
+            const [];
+    final value = folders.any((folder) => folder.id == _folderId)
+        ? _folderId
+        : null;
+    return DropdownButtonFormField<String?>(
+      key: ValueKey('folder-picker-$value'),
+      initialValue: value,
+      decoration: const InputDecoration(labelText: 'Folder'),
+      items: [
+        const DropdownMenuItem(value: null, child: Text('None')),
+        for (final folder in folders)
+          DropdownMenuItem(value: folder.id, child: Text(folder.name)),
+        const DropdownMenuItem(
+          value: _kNewFolderSentinel,
+          child: Text('+ New folder…'),
+        ),
+      ],
+      onChanged: _onFolderSelected,
+    );
+  }
+
+  Future<void> _onFolderSelected(String? value) async {
+    if (value == _kNewFolderSentinel) {
+      final uid = ref.read(authStateProvider).value?.uid;
+      if (uid == null) return;
+      final name = await _promptFolderName();
+      if (name == null || name.trim().isEmpty) return;
+      final newFolderId = await ref
+          .read(libraryFolderRepositoryProvider(LibraryItemType.exercise))
+          .create(name: name.trim(), userId: uid);
+      if (mounted) setState(() => _folderId = newFolderId);
+      return;
+    }
+    setState(() => _folderId = value);
+  }
+
+  Future<String?> _promptFolderName() {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('New folder'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Folder name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('Create'),
+          ),
+        ],
       ),
     );
   }
