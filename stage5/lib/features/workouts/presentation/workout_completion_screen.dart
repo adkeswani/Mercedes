@@ -104,9 +104,12 @@ class _WorkoutCompletionScreenState
 
       WorkoutDraftRestoreResult? restore;
       if (isAthlete && instance.isScheduled) {
-        restore = await ref
-            .read(workoutCompletionDraftRepositoryProvider)
-            .load(instanceId: instance.id, athleteId: uid);
+        final currentClientId = ref.read(workoutDraftClientIdProvider);
+        restore = await ref.read(workoutCompletionDraftRepositoryProvider).load(
+              instanceId: instance.id,
+              athleteId: uid,
+              currentClientId: currentClientId,
+            );
       }
       if (!mounted || widget.instanceId != instance.id) {
         return;
@@ -196,6 +199,18 @@ class _WorkoutCompletionScreenState
         switch (result.status) {
           case WorkoutDraftSaveStatus.saved:
             _saveState = _DraftSaveState.saved;
+            final authoritative = result.authoritativeDraft;
+            if (authoritative != null &&
+                authoritative.clientId == draft.clientId &&
+                compareWorkoutDrafts(authoritative, draft) > 0) {
+              _restoring = true;
+              _revision = authoritative.revision;
+              _rpe = authoritative.rpe;
+              _durationMinutes = authoritative.durationMinutes;
+              _notesController.text = authoritative.athleteNotes ?? '';
+              _restoring = false;
+              _recoveryMessage = 'Restored saved workout progress.';
+            }
           case WorkoutDraftSaveStatus.offline:
             _saveState = _DraftSaveState.offline;
           case WorkoutDraftSaveStatus.conflict:

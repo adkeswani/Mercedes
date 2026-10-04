@@ -198,6 +198,7 @@ class WorkoutDraftRestoreResult {
 WorkoutDraftRestoreResult reconcileWorkoutDrafts({
   required WorkoutCompletionDraft? local,
   required WorkoutCompletionDraft? server,
+  required String currentClientId,
 }) {
   if (local == null && server == null) {
     return const WorkoutDraftRestoreResult(kind: WorkoutDraftRestoreKind.none);
@@ -219,11 +220,24 @@ WorkoutDraftRestoreResult reconcileWorkoutDrafts({
 
   final comparison = compareWorkoutDrafts(local, server);
   final selected = comparison > 0 ? local : server;
+  final isSameCurrentClient =
+      local.clientId == currentClientId && server.clientId == currentClientId;
   final differs = local.revision != server.revision ||
       local.clientId != server.clientId ||
       local.rpe != server.rpe ||
       local.durationMinutes != server.durationMinutes ||
       local.athleteNotes != server.athleteNotes;
+  if (isSameCurrentClient) {
+    return WorkoutDraftRestoreResult(
+      kind: comparison > 0
+          ? WorkoutDraftRestoreKind.local
+          : WorkoutDraftRestoreKind.server,
+      draft: selected,
+      message: comparison > 0
+          ? 'Restored progress saved on this device.'
+          : 'Restored saved workout progress.',
+    );
+  }
   return WorkoutDraftRestoreResult(
     kind: differs
         ? WorkoutDraftRestoreKind.conflict

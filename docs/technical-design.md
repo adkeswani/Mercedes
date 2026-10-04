@@ -357,12 +357,14 @@ client while separate tabs retain independent IDs; it is never derived from
 the athlete or authentication identity. Storage failures enter the existing
 retryable save-error state. Firestore is authoritative across devices. Reconciliation
 prefers the higher revision, then `serverUpdatedAt`, then `updatedAt`, then
-client ID as a deterministic final tie-breaker; any divergent local/server
-pair produces a visible conflict/restoration message. A Firestore transaction
-rejects stale/equal revisions from another client, and the UI ignores async
-save completions for an older instance or revision. Workout completion updates
-the immutable result and deletes the server draft in the same transaction;
-the local copy is cleared only after that transaction succeeds.
+client ID as a deterministic final tie-breaker. A newer revision from the
+current tab ID is adopted as normal continuation, including a late lifecycle
+save from the disposed root; divergent revisions from a different client ID
+produce a visible conflict/restoration message. A Firestore transaction rejects
+stale/equal revisions from another client, and the UI ignores async save
+completions for an older instance or revision. Workout completion updates the
+immutable result and deletes the server draft in the same transaction; the
+local copy is cleared only after that transaction succeeds.
 
 ### 2.7 Workout-instance discussions and activity reactions 🔒
 

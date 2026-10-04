@@ -31,7 +31,11 @@ class WorkoutCompletionDraftRepository {
   Future<WorkoutDraftRestoreResult> load({
     required String instanceId,
     required String athleteId,
+    required String currentClientId,
   }) async {
+    if (currentClientId.isEmpty) {
+      throw StateError('A workout draft client ID is required');
+    }
     WorkoutCompletionDraft? local;
     var invalidLocal = false;
     try {
@@ -83,7 +87,11 @@ class WorkoutCompletionDraftRepository {
       rethrow;
     }
 
-    final result = reconcileWorkoutDrafts(local: local, server: server);
+    final result = reconcileWorkoutDrafts(
+      local: local,
+      server: server,
+      currentClientId: currentClientId,
+    );
     final selected = result.draft;
     if (selected != null &&
         (local == null || compareWorkoutDrafts(selected, local) != 0)) {
@@ -108,6 +116,17 @@ class WorkoutCompletionDraftRepository {
           draft: synchronized.authoritativeDraft,
           message:
               'Another tab saved newer progress while this draft was restored.',
+        );
+      }
+      final authoritative = synchronized.authoritativeDraft;
+      if (synchronized.status == WorkoutDraftSaveStatus.saved &&
+          authoritative != null &&
+          authoritative.clientId == currentClientId &&
+          compareWorkoutDrafts(authoritative, local) > 0) {
+        return WorkoutDraftRestoreResult(
+          kind: WorkoutDraftRestoreKind.server,
+          draft: authoritative,
+          message: 'Restored saved workout progress.',
         );
       }
       return WorkoutDraftRestoreResult(
@@ -144,9 +163,13 @@ class WorkoutCompletionDraftRepository {
         if (serverSnapshot.exists && serverSnapshot.data() != null) {
           final server = WorkoutCompletionDraft.fromMap(serverSnapshot.data()!);
           _verifyIdentity(server, draft.instanceId, draft.athleteId);
-          if (server.revision > draft.revision ||
-              (server.revision == draft.revision &&
-                  server.clientId != draft.clientId)) {
+          if (server.revision > draft.revision) {
+            authoritative = server;
+            conflict = server.clientId != draft.clientId;
+            return;
+          }
+          if (server.revision == draft.revision &&
+              server.clientId != draft.clientId) {
             authoritative = server;
             conflict = true;
             return;
@@ -170,7 +193,10 @@ class WorkoutCompletionDraftRepository {
       if (authoritative != null) {
         await _localStore.write(authoritative!);
       }
-      return const WorkoutDraftSaveResult(WorkoutDraftSaveStatus.saved);
+      return WorkoutDraftSaveResult(
+        WorkoutDraftSaveStatus.saved,
+        authoritativeDraft: authoritative,
+      );
     } on FirebaseException {
       return const WorkoutDraftSaveResult(WorkoutDraftSaveStatus.offline);
     }

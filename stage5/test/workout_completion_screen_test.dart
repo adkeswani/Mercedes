@@ -187,7 +187,7 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   });
 
-  testWidgets('client ID storage failure shows retryable save failure',
+  testWidgets('client ID storage failure shows retryable load failure',
       (tester) async {
     container.dispose();
     container = ProviderContainer(
@@ -217,12 +217,10 @@ void main() {
 
     await pumpScreen(tester);
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'Unsaved notes');
-    await tester.pump(const Duration(milliseconds: 800));
-    await tester.pumpAndSettle();
 
-    expect(find.text('Save failed'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, 'Retry'), findsOneWidget);
+    expect(find.text('Could not load workout'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Retry'), findsOneWidget);
+    expect(find.textContaining('session storage unavailable'), findsOneWidget);
     expect(localStore.value, isNull);
   });
 
@@ -292,6 +290,65 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
+  });
+
+  testWidgets('newer same-tab lifecycle revision restores normally',
+      (tester) async {
+    final repository = WorkoutCompletionDraftRepository(
+      firestore: firestore,
+      localStore: localStore,
+    );
+    await repository.save(
+      _draftForTest(
+        revision: 2,
+        clientId: 'test-tab',
+        notes: 'Newest lifecycle notes',
+      ),
+    );
+    localStore.value = _draftForTest(
+      revision: 1,
+      clientId: 'test-tab',
+      notes: 'Older local snapshot',
+    );
+
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      'Newest lifecycle notes',
+    );
+    expect(find.text('Restored saved workout progress.'), findsOneWidget);
+    expect(find.textContaining('another'), findsNothing);
+  });
+
+  testWidgets('newer different-tab revision retains conflict disclosure',
+      (tester) async {
+    final repository = WorkoutCompletionDraftRepository(
+      firestore: firestore,
+      localStore: localStore,
+    );
+    await repository.save(
+      _draftForTest(
+        revision: 2,
+        clientId: 'other-tab',
+        notes: 'Other tab notes',
+      ),
+    );
+    localStore.value = _draftForTest(
+      revision: 1,
+      clientId: 'test-tab',
+      notes: 'Current tab notes',
+    );
+
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      'Other tab notes',
+    );
+    expect(find.textContaining('another device or tab'), findsOneWidget);
   });
 
   testWidgets('renders a completed workout as immutable details',
@@ -365,6 +422,24 @@ void main() {
     );
     expect(localStore.value, isNull);
   });
+}
+
+WorkoutCompletionDraft _draftForTest({
+  required int revision,
+  required String clientId,
+  required String notes,
+}) {
+  return WorkoutCompletionDraft(
+    instanceId: 'instance-1',
+    athleteId: 'athlete-1',
+    rpe: 6,
+    durationMinutes: 45,
+    athleteNotes: notes,
+    revision: revision,
+    clientId: clientId,
+    updatedAt: DateTime.utc(2026, 10, 4, 12, revision),
+    sourceRoute: '/athlete/workouts/instance-1',
+  );
 }
 
 Future<void> _seedWorkout(FakeFirebaseFirestore firestore) async {

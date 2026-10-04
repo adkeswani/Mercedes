@@ -262,11 +262,13 @@ identity is invalid rather than silently coerced.
 
 Local and server copies may diverge while offline or across tabs. Selection is
 deterministic (revision first, then server time and stable tie-breakers) and
-divergence is disclosed to the athlete. A stale tab may not overwrite an equal
-or newer revision. Successful completion atomically removes the server draft
-while creating the immutable completion state; device state is cleared only
-after success. No trainer access to private in-progress completion notes is
-implied by trainer access to scheduled or completed workout details.
+different-client divergence is disclosed to the athlete. A newer revision from
+the same current tab ID is adopted as a continuation rather than mislabeled as
+a cross-tab conflict. A stale tab may not overwrite an equal or newer revision.
+Successful completion atomically removes the server draft while creating the
+immutable completion state; device state is cleared only after success. No
+trainer access to private in-progress completion notes is implied by trainer
+access to scheduled or completed workout details.
 
 ## 4. Subscription and Propagation Rules
 

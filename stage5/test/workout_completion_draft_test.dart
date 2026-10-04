@@ -71,7 +71,11 @@ void main() {
   });
 
   test('restores local-only progress for offline startup', () {
-    final result = reconcileWorkoutDrafts(local: draft(), server: null);
+    final result = reconcileWorkoutDrafts(
+      local: draft(),
+      server: null,
+      currentClientId: 'client-a',
+    );
 
     expect(result.kind, WorkoutDraftRestoreKind.local);
     expect(result.draft?.revision, 1);
@@ -82,6 +86,7 @@ void main() {
     final result = reconcileWorkoutDrafts(
       local: draft(revision: 3),
       server: draft(revision: 4, clientId: 'client-b'),
+      currentClientId: 'client-a',
     );
 
     expect(result.kind, WorkoutDraftRestoreKind.conflict);
@@ -92,6 +97,7 @@ void main() {
     final result = reconcileWorkoutDrafts(
       local: draft(revision: 5),
       server: draft(revision: 4, clientId: 'client-b'),
+      currentClientId: 'client-a',
     );
 
     expect(result.kind, WorkoutDraftRestoreKind.conflict);
@@ -112,8 +118,24 @@ void main() {
 
     expect(compareWorkoutDrafts(local, server), lessThan(0));
     expect(
-      reconcileWorkoutDrafts(local: local, server: server).draft?.clientId,
+      reconcileWorkoutDrafts(
+        local: local,
+        server: server,
+        currentClientId: 'client-z',
+      ).draft?.clientId,
       'client-a',
     );
+  });
+
+  test('newer server revision from the current tab is not a conflict', () {
+    final result = reconcileWorkoutDrafts(
+      local: draft(revision: 3, clientId: 'client-a'),
+      server: draft(revision: 4, clientId: 'client-a'),
+      currentClientId: 'client-a',
+    );
+
+    expect(result.kind, WorkoutDraftRestoreKind.server);
+    expect(result.draft?.revision, 4);
+    expect(result.message, isNot(contains('another')));
   });
 }

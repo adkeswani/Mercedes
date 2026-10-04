@@ -63,6 +63,7 @@ void main() {
     var restored = await repository.load(
       instanceId: 'instance-1',
       athleteId: 'athlete-1',
+      currentClientId: 'client-a',
     );
     expect(restored.kind, WorkoutDraftRestoreKind.conflict);
     expect(restored.draft?.revision, 2);
@@ -71,6 +72,7 @@ void main() {
     restored = await repository.load(
       instanceId: 'instance-1',
       athleteId: 'athlete-1',
+      currentClientId: 'client-a',
     );
     expect(restored.kind, WorkoutDraftRestoreKind.local);
     expect(restored.draft?.revision, 3);
@@ -91,6 +93,7 @@ void main() {
     final restored = await repository.load(
       instanceId: 'instance-1',
       athleteId: 'athlete-1',
+      currentClientId: 'client-a',
     );
 
     expect(restored.kind, WorkoutDraftRestoreKind.server);
@@ -109,7 +112,7 @@ void main() {
     expect(result.authoritativeDraft?.rpe, 8);
 
     final staleAsyncResult = await repository.save(
-      draft(revision: 3, clientId: 'new-tab', rpe: 2),
+      draft(revision: 3, clientId: 'old-tab', rpe: 2),
     );
     expect(staleAsyncResult.status, WorkoutDraftSaveStatus.conflict);
     expect(staleAsyncResult.authoritativeDraft?.rpe, 8);
@@ -128,6 +131,7 @@ void main() {
     final restored = await recreatedRepository.load(
       instanceId: 'instance-1',
       athleteId: 'athlete-1',
+      currentClientId: stableClientId,
     );
 
     expect(restored.kind, WorkoutDraftRestoreKind.server);
@@ -154,6 +158,75 @@ void main() {
     expect(localStore.value?.rpe, 8);
   });
 
+  test('adopts a newer same-client server revision without conflict', () async {
+    await repository.save(draft(revision: 3, clientId: 'client-a', rpe: 8));
+    localStore.value = draft(revision: 2, clientId: 'client-a', rpe: 6);
+
+    final restored = await repository.load(
+      instanceId: 'instance-1',
+      athleteId: 'athlete-1',
+      currentClientId: 'client-a',
+    );
+
+    expect(restored.kind, WorkoutDraftRestoreKind.server);
+    expect(restored.draft?.revision, 3);
+    expect(restored.draft?.rpe, 8);
+    expect(restored.message, isNot(contains('another')));
+    expect(localStore.value?.revision, 3);
+  });
+
+  test('reports a newer different-client server revision as conflict',
+      () async {
+    await repository.save(draft(revision: 3, clientId: 'other-tab', rpe: 8));
+    localStore.value = draft(revision: 2, clientId: 'current-tab', rpe: 6);
+
+    final restored = await repository.load(
+      instanceId: 'instance-1',
+      athleteId: 'athlete-1',
+      currentClientId: 'current-tab',
+    );
+
+    expect(restored.kind, WorkoutDraftRestoreKind.conflict);
+    expect(restored.draft?.clientId, 'other-tab');
+    expect(restored.draft?.revision, 3);
+  });
+
+  test('syncs a newer same-client local revision as pending progress',
+      () async {
+    await repository.save(draft(revision: 2, clientId: 'client-a', rpe: 6));
+    localStore.value = draft(revision: 3, clientId: 'client-a', rpe: 8);
+
+    final restored = await repository.load(
+      instanceId: 'instance-1',
+      athleteId: 'athlete-1',
+      currentClientId: 'client-a',
+    );
+
+    expect(restored.kind, WorkoutDraftRestoreKind.local);
+    expect(restored.draft?.revision, 3);
+    expect(restored.draft?.rpe, 8);
+    final server = await firestore
+        .collection('workoutInstances')
+        .doc('instance-1')
+        .collection('completionDrafts')
+        .doc('current')
+        .get();
+    expect(server.data()?['revision'], 3);
+  });
+
+  test('stale same-client save adopts a late lifecycle revision', () async {
+    await repository.save(draft(revision: 4, clientId: 'client-a', rpe: 8));
+
+    final result = await repository.save(
+      draft(revision: 3, clientId: 'client-a', rpe: 6),
+    );
+
+    expect(result.status, WorkoutDraftSaveStatus.saved);
+    expect(result.authoritativeDraft?.revision, 4);
+    expect(result.authoritativeDraft?.rpe, 8);
+    expect(localStore.value?.revision, 4);
+  });
+
   test('rejects ownership mismatch and completed instances', () async {
     expect(
       () => repository.save(draft(athleteId: 'other-athlete')),
@@ -171,6 +244,7 @@ void main() {
     final result = await repository.load(
       instanceId: 'instance-1',
       athleteId: 'athlete-1',
+      currentClientId: 'client-a',
     );
 
     expect(result.kind, WorkoutDraftRestoreKind.invalidLocal);
