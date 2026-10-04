@@ -1,6 +1,7 @@
 import 'dart:async';
 
 typedef BrowserTestRouteReader = String Function();
+typedef BrowserTestDelay = Future<void> Function(Duration duration);
 
 class BrowserTestWaitContext {
   BrowserTestWaitContext({
@@ -16,7 +17,7 @@ class BrowserTestWaitContext {
   final BrowserTestRouteReader currentRoute;
 
   static const functionalPumpTimeout = Duration(seconds: 2);
-  static const startupFirstFramePumpTimeout = Duration(seconds: 15);
+  static const startupPollInterval = Duration(milliseconds: 100);
 
   Future<T> runStep<T>(
     String condition,
@@ -78,15 +79,15 @@ class BrowserTestWaitContext {
     _writeProgress('PASS', condition, stopwatch.elapsed);
   }
 
-  Future<void> attachRootAndWaitForCondition({
+  Future<void> attachRootAndWaitForLiveCondition({
     required String attachStep,
     required void Function() attachRoot,
     required String condition,
     required bool Function() isSatisfied,
-    required Future<void> Function() pump,
     Object? Function()? takeFrameworkException,
     Duration startupTimeout = const Duration(seconds: 30),
-    Duration firstFramePumpTimeout = startupFirstFramePumpTimeout,
+    Duration pollInterval = startupPollInterval,
+    BrowserTestDelay delay = Future<void>.delayed,
     String Function()? details,
   }) async {
     final stopwatch = Stopwatch()..start();
@@ -110,19 +111,9 @@ class BrowserTestWaitContext {
         if (remaining <= Duration.zero) {
           break;
         }
-        final currentPumpTimeout = remaining < firstFramePumpTimeout
-            ? remaining
-            : firstFramePumpTimeout;
-        await pump().timeout(
-          currentPumpTimeout,
-          onTimeout: () => throw TimeoutException(
-            _timeoutMessage(
-              '$condition (Flutter pump stalled)',
-              currentPumpTimeout,
-              stopwatch.elapsed,
-            ),
-          ),
-        );
+        final currentDelay =
+            remaining < pollInterval ? remaining : pollInterval;
+        await delay(currentDelay);
         _throwFrameworkException(
           step: condition,
           takeFrameworkException: takeFrameworkException,

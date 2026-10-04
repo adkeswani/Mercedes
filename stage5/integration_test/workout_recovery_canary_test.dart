@@ -34,7 +34,7 @@ void main() {
         app.initializeMercedesApp,
         timeout: const Duration(seconds: 30),
       );
-      await waits.attachRootAndWaitForCondition(
+      await waits.attachRootAndWaitForLiveCondition(
         attachStep: 'attach initial application root',
         attachRoot: () {
           tester.binding.attachRootWidget(
@@ -47,7 +47,6 @@ void main() {
         condition: 'local emulator login button',
         isSatisfied: () =>
             find.byKey(browserSmokeLoginButtonKey).evaluate().isNotEmpty,
-        pump: () => tester.pump(const Duration(milliseconds: 100)),
         takeFrameworkException: tester.takeException,
         details: () => 'Visible text: ${_visibleText()}',
       );

@@ -1,15 +1,14 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../integration_test/support/browser_test_wait.dart';
 
 void main() {
-  test('startup and functional pumps have distinct bounded defaults', () {
+  test('startup observation and functional pumps have bounded defaults', () {
     expect(
-      BrowserTestWaitContext.startupFirstFramePumpTimeout,
-      const Duration(seconds: 15),
+      BrowserTestWaitContext.startupPollInterval,
+      const Duration(milliseconds: 100),
     );
     expect(
       BrowserTestWaitContext.functionalPumpTimeout,
@@ -109,10 +108,12 @@ void main() {
     );
   });
 
-  test('startup separates synchronous root attachment from first-frame polls',
+  test('startup separates root attachment from live-engine observation',
       () async {
     var attached = false;
-    var pumpCalls = 0;
+    var polls = 0;
+    var ready = false;
+    var legacyPumpInvoked = false;
     final waits = BrowserTestWaitContext(
       identity: 'athlete',
       testFile: 'integration_test/recovery_test.dart',
@@ -120,64 +121,33 @@ void main() {
       currentRoute: () => '/login',
     );
 
-    await waits.attachRootAndWaitForCondition(
+    Future<void> neverCompletingPump() {
+      legacyPumpInvoked = true;
+      return Completer<void>().future;
+    }
+
+    await waits.attachRootAndWaitForLiveCondition(
       attachStep: 'attach initial application root',
       attachRoot: () {
         attached = true;
       },
       condition: 'local emulator login button',
-      isSatisfied: () => pumpCalls == 3,
-      pump: () async {
-        pumpCalls++;
+      isSatisfied: () => ready,
+      delay: (_) async {
+        polls++;
+        ready = polls == 3;
       },
       startupTimeout: const Duration(milliseconds: 100),
-      firstFramePumpTimeout: const Duration(milliseconds: 5),
     );
 
+    expect(neverCompletingPump, isA<Future<void> Function()>());
     expect(attached, isTrue);
-    expect(pumpCalls, 3);
+    expect(polls, 3);
+    expect(legacyPumpInvoked, isFalse);
   });
 
-  test('non-cancellable startup pump reports the named sub-deadline', () async {
-    var attachCalls = 0;
-    final waits = BrowserTestWaitContext(
-      identity: 'athlete',
-      testFile: 'integration_test/recovery_test.dart',
-      artifactPath: 'artifacts',
-      currentRoute: () => '/login',
-    );
-
-    await expectLater(
-      waits.attachRootAndWaitForCondition(
-        attachStep: 'attach initial application root',
-        attachRoot: () {
-          attachCalls++;
-        },
-        condition: 'local emulator login button',
-        isSatisfied: () => false,
-        pump: () => Completer<void>().future,
-        startupTimeout: const Duration(milliseconds: 100),
-        firstFramePumpTimeout: const Duration(milliseconds: 10),
-      ),
-      throwsA(
-        isA<TimeoutException>()
-            .having(
-              (error) => error.message,
-              'message',
-              contains('local emulator login button'),
-            )
-            .having(
-              (error) => error.message,
-              'message',
-              contains('Flutter pump stalled'),
-            ),
-      ),
-    );
-    expect(attachCalls, 1);
-  });
-
-  test('startup surfaces framework errors before polling', () async {
-    var pumpCalls = 0;
+  test('startup surfaces framework errors before live observation', () async {
+    var delayCalls = 0;
     final waits = BrowserTestWaitContext(
       identity: 'athlete',
       testFile: 'integration_test/recovery_test.dart',
@@ -186,13 +156,13 @@ void main() {
     );
 
     await expectLater(
-      waits.attachRootAndWaitForCondition(
+      waits.attachRootAndWaitForLiveCondition(
         attachStep: 'attach initial application root',
         attachRoot: () {},
         condition: 'local emulator login button',
         isSatisfied: () => false,
-        pump: () async {
-          pumpCalls++;
+        delay: (_) async {
+          delayCalls++;
         },
         takeFrameworkException: () => StateError('router build failed'),
       ),
@@ -207,12 +177,11 @@ void main() {
         ),
       ),
     );
-    expect(pumpCalls, 0);
+    expect(delayCalls, 0);
   });
 
-  test('startup prefers a captured framework error over pump timeout',
-      () async {
-    var pumpStarted = false;
+  test('startup captures framework errors during live observation', () async {
+    var delayed = false;
     final waits = BrowserTestWaitContext(
       identity: 'athlete',
       testFile: 'integration_test/recovery_test.dart',
@@ -221,19 +190,17 @@ void main() {
     );
 
     await expectLater(
-      waits.attachRootAndWaitForCondition(
+      waits.attachRootAndWaitForLiveCondition(
         attachStep: 'attach initial application root',
         attachRoot: () {},
         condition: 'local emulator login button',
         isSatisfied: () => false,
-        pump: () {
-          pumpStarted = true;
-          return Completer<void>().future;
+        delay: (_) async {
+          delayed = true;
         },
         takeFrameworkException: () =>
-            pumpStarted ? StateError('Firebase provider build failed') : null,
+            delayed ? StateError('Firebase provider build failed') : null,
         startupTimeout: const Duration(milliseconds: 100),
-        firstFramePumpTimeout: const Duration(milliseconds: 10),
       ),
       throwsA(
         isA<StateError>().having(
@@ -248,37 +215,22 @@ void main() {
     );
   });
 
-  test('startup pump can outlive the later functional pump bound', () async {
-    var startupReady = false;
+  test('later functional polling still guards a non-cancellable pump',
+      () async {
     final waits = BrowserTestWaitContext(
       identity: 'athlete',
       testFile: 'integration_test/recovery_test.dart',
       artifactPath: 'artifacts',
-      currentRoute: () => '/login',
-    );
-
-    Future<void> delayedPump(void Function() onComplete) async {
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      onComplete();
-    }
-
-    await waits.attachRootAndWaitForCondition(
-      attachStep: 'attach initial application root',
-      attachRoot: () {},
-      condition: 'local emulator login button',
-      isSatisfied: () => startupReady,
-      pump: () => delayedPump(() => startupReady = true),
-      startupTimeout: const Duration(milliseconds: 100),
-      firstFramePumpTimeout: const Duration(milliseconds: 50),
+      currentRoute: () => '/athlete/today',
     );
 
     await expectLater(
       waits.waitForCondition(
         condition: 'later functional surface',
         isSatisfied: () => false,
-        pump: () => delayedPump(() {}),
+        pump: () => Completer<void>().future,
         timeout: const Duration(milliseconds: 100),
-        pumpTimeout: const Duration(milliseconds: 5),
+        pumpTimeout: const Duration(milliseconds: 10),
       ),
       throwsA(
         isA<TimeoutException>().having(
@@ -288,37 +240,5 @@ void main() {
         ),
       ),
     );
-  });
-
-  testWidgets('binding root attachment completes before first-frame polling',
-      (tester) async {
-    var attachReturned = false;
-    final waits = BrowserTestWaitContext(
-      identity: 'athlete',
-      testFile: 'integration_test/recovery_test.dart',
-      artifactPath: 'artifacts',
-      currentRoute: () => '<first frame pending>',
-    );
-
-    await waits.attachRootAndWaitForCondition(
-      attachStep: 'attach initial application root',
-      attachRoot: () {
-        tester.binding.attachRootWidget(
-          tester.binding.wrapWithDefaultView(
-            const MaterialApp(home: Text('Login ready')),
-          ),
-        );
-        tester.binding.scheduleFrame();
-        attachReturned = true;
-      },
-      condition: 'local emulator login button',
-      isSatisfied: () => find.text('Login ready').evaluate().isNotEmpty,
-      pump: () => tester.pump(const Duration(milliseconds: 1)),
-      takeFrameworkException: tester.takeException,
-      startupTimeout: const Duration(seconds: 1),
-    );
-
-    expect(attachReturned, isTrue);
-    expect(find.text('Login ready'), findsOneWidget);
   });
 }
