@@ -197,12 +197,16 @@ void main() {
           .collection('exerciseVersions')
           .doc('2')
           .get();
-      expect(
-        rawV2.data()!['youtubeMetadata']['canonicalUrl'],
-        'https://www.youtube.com/watch?v=videoId0001',
-      );
-      expect(rawV2.data()!['youtubeMetadata']['thumbnailWidth'], 480);
-      expect(rawV2.data()!['youtubeMetadata']['thumbnailHeight'], 360);
+      expect(rawV2.data()!['youtubeMetadata'], {
+        'videoId': 'videoId0001',
+        'title': 'Front squat tutorial',
+        'thumbnailUrl': 'https://i.ytimg.com/vi/videoId0001/hqdefault.jpg',
+        'thumbnailWidth': 480,
+        'thumbnailHeight': 360,
+        'channelId': 'UCaaaaaaaaaaaaaaaaaaaaaa',
+        'channelTitle': 'Public Trainer',
+        'canonicalUrl': 'https://www.youtube.com/watch?v=videoId0001',
+      });
       expect(v2.youtubeMetadata!.thumbnailWidth, 480);
       expect(v2.youtubeMetadata!.thumbnailHeight, 360);
       expect(

@@ -482,7 +482,20 @@ describe('usernames', () => {
 // ─── Exercise Templates ───
 
 describe('exerciseTemplates', () => {
-  function exerciseVersion(
+  function canonicalAppYoutubeMetadata() {
+    return {
+      videoId: 'videoId0001',
+      title: 'Squat tutorial',
+      thumbnailUrl: 'https://i.ytimg.com/vi/videoId0001/hqdefault.jpg',
+      thumbnailWidth: 480,
+      thumbnailHeight: 360,
+      channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa',
+      channelTitle: 'Public Trainer',
+      canonicalUrl: 'https://www.youtube.com/watch?v=videoId0001',
+    };
+  }
+
+  function canonicalAppExerciseVersion(
     versionNumber: number,
     overrides: Record<string, unknown> = {}
   ) {
@@ -492,16 +505,7 @@ describe('exerciseTemplates', () => {
       description: 'Barbell squat',
       instructions: 'Brace and squat',
       videoUrl: 'https://www.youtube.com/watch?v=videoId0001',
-      youtubeMetadata: {
-        videoId: 'videoId0001',
-        title: 'Squat tutorial',
-        thumbnailUrl: 'https://i.ytimg.com/vi/videoId0001/hqdefault.jpg',
-        thumbnailWidth: 480,
-        thumbnailHeight: 360,
-        channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa',
-        channelTitle: 'Public Trainer',
-        canonicalUrl: 'https://www.youtube.com/watch?v=videoId0001',
-      },
+      youtubeMetadata: canonicalAppYoutubeMetadata(),
       mediaUrls: [],
       exerciseType: 'strength',
       measurementConfiguration: {
@@ -693,14 +697,15 @@ describe('exerciseTemplates', () => {
     await assertFails(invalid.commit());
   });
 
-  it('allows the owner UI save shape with thumbnail dimensions', async () => {
+  it('regression: owning trainer atomically saves canonical app exercise payload',
+      async () => {
     await seedVersionedExercise();
     const db = testEnv.authenticatedContext(OWNER).firestore();
     const header = db.collection('exerciseTemplates').doc('e1');
     const batch = db.batch();
     batch.set(
       header.collection('exerciseVersions').doc('2'),
-      exerciseVersion(2)
+      canonicalAppExerciseVersion(2)
     );
     batch.update(header, {
       ownerId: OWNER,
@@ -717,10 +722,8 @@ describe('exerciseTemplates', () => {
     ]);
     expect(savedHeader.data()?.currentVersion).toBe(2);
     expect(originalVersion.data()?.name).toBe('Squat');
-    expect(editedVersion.data()?.youtubeMetadata).toMatchObject({
-      thumbnailWidth: 480,
-      thumbnailHeight: 360,
-    });
+    expect(editedVersion.data()?.youtubeMetadata)
+      .toEqual(canonicalAppYoutubeMetadata());
   });
 
   it('denies malformed, extra-field, and non-atomic version publishes',
@@ -732,9 +735,9 @@ describe('exerciseTemplates', () => {
     const malformed = db.batch();
     malformed.set(
       header.collection('exerciseVersions').doc('2'),
-      exerciseVersion(2, {
+      canonicalAppExerciseVersion(2, {
         youtubeMetadata: {
-          ...exerciseVersion(2).youtubeMetadata,
+          ...canonicalAppYoutubeMetadata(),
           thumbnailWidth: -1,
         },
       })
@@ -748,18 +751,18 @@ describe('exerciseTemplates', () => {
 
     for (const youtubeMetadata of [
       {
-        ...exerciseVersion(2).youtubeMetadata,
+        ...canonicalAppYoutubeMetadata(),
         thumbnailHeight: null,
       },
       {
-        ...exerciseVersion(2).youtubeMetadata,
+        ...canonicalAppYoutubeMetadata(),
         thumbnailWidth: 4097,
       },
     ]) {
       const invalidDimensions = db.batch();
       invalidDimensions.set(
         header.collection('exerciseVersions').doc('2'),
-        exerciseVersion(2, { youtubeMetadata })
+        canonicalAppExerciseVersion(2, { youtubeMetadata })
       );
       invalidDimensions.update(header, {
         currentVersion: 2,
@@ -772,7 +775,7 @@ describe('exerciseTemplates', () => {
     const extraField = db.batch();
     extraField.set(
       header.collection('exerciseVersions').doc('2'),
-      exerciseVersion(2, { unexpected: true })
+      canonicalAppExerciseVersion(2, { unexpected: true })
     );
     extraField.update(header, {
       currentVersion: 2,
@@ -787,13 +790,14 @@ describe('exerciseTemplates', () => {
       updatedBy: OWNER,
     }));
     await assertFails(
-      header.collection('exerciseVersions').doc('2').set(exerciseVersion(2))
+      header.collection('exerciseVersions').doc('2')
+        .set(canonicalAppExerciseVersion(2))
     );
 
     const stale = db.batch();
     stale.set(
       header.collection('exerciseVersions').doc('3'),
-      exerciseVersion(3)
+      canonicalAppExerciseVersion(3)
     );
     stale.update(header, {
       currentVersion: 3,
@@ -817,7 +821,7 @@ describe('exerciseTemplates', () => {
       const batch = db.batch();
       batch.set(
         header.collection('exerciseVersions').doc('2'),
-        exerciseVersion(2, { publishedBy: actor })
+        canonicalAppExerciseVersion(2, { publishedBy: actor })
       );
       batch.update(header, {
         ownerId: actor,
