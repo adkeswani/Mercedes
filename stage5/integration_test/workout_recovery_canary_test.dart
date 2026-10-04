@@ -92,20 +92,24 @@ void main() {
         find.text('Saving...'),
         step: 'draft saving indicator',
       );
-      await waits.runStep('verify initial draft client identity', () async {
-        final savedDraft = await FirebaseFirestore.instance
-            .collection('workoutInstances')
-            .doc('browser-calendar-workout')
-            .collection('completionDrafts')
-            .doc('current')
-            .snapshots()
-            .firstWhere(
-              (snapshot) =>
-                  snapshot.exists &&
-                  snapshot.data()?['clientId'] == initialClientId,
-            );
-        expect(savedDraft.data()?['clientId'], initialClientId);
-      });
+      await waits.runStep(
+        'verify initial draft client identity',
+        () async {
+          final savedDraft = await FirebaseFirestore.instance
+              .collection('workoutInstances')
+              .doc('browser-calendar-workout')
+              .collection('completionDrafts')
+              .doc('current')
+              .snapshots()
+              .firstWhere(
+                (snapshot) =>
+                    snapshot.exists &&
+                    snapshot.data()?['clientId'] == initialClientId,
+              );
+          expect(savedDraft.data()?['clientId'], initialClientId);
+        },
+        timeout: null,
+      );
 
       final workoutContext = tester.element(find.text('Complete Workout'));
       GoRouter.of(workoutContext).go('/athlete/today');

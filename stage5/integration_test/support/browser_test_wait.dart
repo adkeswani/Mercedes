@@ -18,17 +18,19 @@ class BrowserTestWaitContext {
   Future<T> runStep<T>(
     String condition,
     Future<T> Function() operation, {
-    Duration timeout = const Duration(seconds: 20),
+    Duration? timeout = const Duration(seconds: 20),
   }) async {
     final stopwatch = Stopwatch()..start();
     _writeProgress('START', condition, stopwatch.elapsed);
     try {
-      final result = await operation().timeout(
-        timeout,
-        onTimeout: () => throw TimeoutException(
-          _timeoutMessage(condition, timeout, stopwatch.elapsed),
-        ),
-      );
+      final result = timeout == null
+          ? await operation()
+          : await operation().timeout(
+              timeout,
+              onTimeout: () => throw TimeoutException(
+                _timeoutMessage(condition, timeout, stopwatch.elapsed),
+              ),
+            );
       _writeProgress('PASS', condition, stopwatch.elapsed);
       return result;
     } catch (error) {

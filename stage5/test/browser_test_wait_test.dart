@@ -50,6 +50,23 @@ void main() {
     );
   });
 
+  test('runStep can rely on the scenario deadline', () async {
+    final waits = BrowserTestWaitContext(
+      identity: 'athlete',
+      testFile: 'integration_test/recovery_test.dart',
+      artifactPath: 'artifacts',
+      currentRoute: () => '/athlete/today',
+    );
+
+    final result = await waits.runStep(
+      'server draft identity',
+      () async => 'client-1',
+      timeout: null,
+    );
+
+    expect(result, 'client-1');
+  });
+
   test('waitForCondition stops polling when the condition succeeds', () async {
     var polls = 0;
     final waits = BrowserTestWaitContext(
