@@ -31,6 +31,12 @@ display-only source metadata are published in the next immutable exercise
 version. This flow is intentionally independent of Firebase/Google identity
 and cannot access private or unlisted videos.
 
+Stage 5 workout completion now has a durable canonical deep link plus
+local/server draft recovery for RPE, duration, and notes. Mobile browser
+eviction cannot be prevented; returning to the same workout with the newest
+valid saved progress is the guarantee. Recovery uses origin-scoped
+`localStorage` and athlete-only Firestore documents, not cookies.
+
 These foundations do not make the workflows below complete.
 
 ## Prioritized remaining work
@@ -56,7 +62,8 @@ These foundations do not make the workflows below complete.
 | **Later** | **Marketplace and access lifecycle** | Discovery/search strategy; duration, consent, waiver, expiry, and notification semantics | Users can discover programs; duration-based access and pre-expiry notices are enforced; removal is auditable; completed history remains available according to policy. |
 | **Later** | **Payments and entitlements** | Payment/account-linking integration; marketplace lifecycle | Paid Program Owner entitlement gates assignable-program creation without restricting athlete-personal programs. Billing state changes and failures are explicit and retryable. |
 | **Later** | **Groups and broader community** | Group membership/ACL model; notification and export support | Group plans expose appropriate shared progress and group comments without leaking private athlete data. Program forums, replies, unread indicators, and community export follow the same boundaries. |
-| **Later** | **Offline and richer media** | Conflict policy; storage/moderation decision | Preserve workout drafts offline and reconcile safely. Revisit app-hosted photo/video only when storage, retention, moderation, and cost policies are defined. |
+| **Complete** | **In-progress workout recovery** | Canonical route; athlete-only draft rules | Preserve editable completion fields locally and in Firestore, reconcile tabs/devices without stale overwrites, disclose restoration/conflicts, and atomically remove drafts on completion. |
+| **Later** | **Richer offline inputs and media** | Actual-entry/timer UX; storage/moderation decision | Extend the versioned stable-slot draft when per-exercise actuals and timers ship. Revisit app-hosted photo/video only when storage, retention, moderation, and cost policies are defined. |
 | **Deferred** | **Separate staging Firebase project** | Owner provisioning and credentials | Optional release infrastructure, not a product-feature blocker. Local emulator validation, production parity checks, and ordered deployment remain required while staging is unprovisioned. |
 
 ## Sequencing rules

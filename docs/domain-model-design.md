@@ -204,6 +204,8 @@ Required concepts:
 - Lifecycle status.
 - Link/unlink timestamps and reason.
 - Audit fields.
+- One private, ephemeral completion draft keyed as `completionDrafts/current`,
+  versioned independently from the immutable completed record.
 
 #### Subscribed mode
 
@@ -250,6 +252,21 @@ Required concepts:
 
 The materialized prescription allows the workout to become an independent,
 stable historical record.
+
+The completion draft belongs exclusively to the workout athlete and parent
+instance. It contains schema/instance/athlete identity, currently editable RPE,
+duration and notes, a recovery position, an extensible map keyed by stable
+exercise-slot IDs, monotonic revision, client/session ID, client and server
+timestamps, and canonical source route. Unsupported schema or mismatched
+identity is invalid rather than silently coerced.
+
+Local and server copies may diverge while offline or across tabs. Selection is
+deterministic (revision first, then server time and stable tie-breakers) and
+divergence is disclosed to the athlete. A stale tab may not overwrite an equal
+or newer revision. Successful completion atomically removes the server draft
+while creating the immutable completion state; device state is cleared only
+after success. No trainer access to private in-progress completion notes is
+implied by trainer access to scheduled or completed workout details.
 
 ## 4. Subscription and Propagation Rules
 

@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/exercises/presentation/exercise_note_widget.dart';
+import 'package:stage5/features/workouts/data/workout_completion_draft_repository.dart';
+import 'package:stage5/features/workouts/domain/workout_completion_draft.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
@@ -14,7 +18,7 @@ import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 /// The athlete enters RPE (1-10), duration, optional notes,
 /// and per-exercise actuals before marking the workout as completed.
 class WorkoutCompletionScreen extends ConsumerStatefulWidget {
-  const WorkoutCompletionScreen({super.key, required this.instanceId});
+  const WorkoutCompletionScreen({required this.instanceId, super.key});
 
   final String instanceId;
 
@@ -24,53 +28,203 @@ class WorkoutCompletionScreen extends ConsumerStatefulWidget {
 }
 
 class _WorkoutCompletionScreenState
-    extends ConsumerState<WorkoutCompletionScreen> {
+    extends ConsumerState<WorkoutCompletionScreen> with WidgetsBindingObserver {
   final _notesController = TextEditingController();
   int _rpe = 5;
   int _durationMinutes = 45;
   bool _isLoading = false;
   WorkoutInstance? _instance;
-  bool _didLoad = false;
   bool _isAthlete = false;
   List<ExerciseSlot> _exercises = [];
+  _WorkoutLoadState _loadState = _WorkoutLoadState.loading;
+  _DraftSaveState _saveState = _DraftSaveState.saved;
+  Timer? _saveDebounce;
+  int _revision = 0;
+  bool _restoring = true;
+  String? _recoveryMessage;
+  String? _loadMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _notesController.addListener(_scheduleSave);
+    _loadInstance();
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _saveDebounce?.cancel();
+    _notesController.removeListener(_scheduleSave);
     _notesController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadInstance() async {
-    if (_didLoad) return;
-    _didLoad = true;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _saveDebounce?.cancel();
+      unawaited(_saveDraft());
+    }
+  }
 
-    final repo = ref.read(workoutInstanceRepositoryProvider);
-    final instance = await repo.getById(widget.instanceId);
-    if (instance != null && mounted) {
-      // Load exercises from the workout template
+  Future<void> _loadInstance() async {
+    try {
+      final repo = ref.read(workoutInstanceRepositoryProvider);
+      final instance = await repo.getById(widget.instanceId);
+      if (instance == null) {
+        if (mounted) {
+          setState(() => _loadState = _WorkoutLoadState.notFound);
+        }
+        return;
+      }
+      final uid = ref.read(authStateProvider).value?.uid;
+      if (uid == null) {
+        throw StateError('A signed-in user is required');
+      }
+      final isAthlete = uid == instance.athleteId;
+      if (!isAthlete && !instance.isCompleted) {
+        if (mounted) {
+          setState(() {
+            _instance = instance;
+            _loadState = _WorkoutLoadState.unauthorized;
+          });
+        }
+        return;
+      }
+
       final workoutRepo = ref.read(workoutTemplateRepositoryProvider);
       final workoutVersion = await workoutRepo.getVersion(
         instance.workoutTemplateId,
         instance.workoutTemplateVersion,
       );
 
-      final uid = ref.read(authStateProvider).value?.uid;
-      final isAthlete = uid == instance.athleteId;
-
+      WorkoutDraftRestoreResult? restore;
+      if (isAthlete && instance.isScheduled) {
+        restore = await ref
+            .read(workoutCompletionDraftRepositoryProvider)
+            .load(instanceId: instance.id, athleteId: uid);
+      }
+      if (!mounted || widget.instanceId != instance.id) {
+        return;
+      }
       setState(() {
         _instance = instance;
         _exercises = workoutVersion?.exerciseSlots ?? [];
         _isAthlete = isAthlete;
-        if (instance.isCompleted) {
+        final draft = restore?.draft;
+        if (draft != null) {
+          _rpe = draft.rpe;
+          _durationMinutes = draft.durationMinutes;
+          _notesController.text = draft.athleteNotes ?? '';
+          _revision = draft.revision;
+          _recoveryMessage = restore?.message;
+        } else if (instance.isCompleted) {
           _rpe = instance.rpe ?? 5;
           _durationMinutes = instance.durationMinutes ?? 45;
           _notesController.text = instance.athleteNotes ?? '';
+        } else if (restore?.message != null) {
+          _recoveryMessage = restore!.message;
+        }
+        if (restore?.deviceOnly == true) {
+          _saveState = _DraftSaveState.offline;
+        }
+        _loadState = _WorkoutLoadState.ready;
+        _restoring = false;
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _loadState = _WorkoutLoadState.error;
+          _loadMessage = error.toString();
+          _restoring = false;
+        });
+      }
+    }
+  }
+
+  void _scheduleSave() {
+    if (_restoring ||
+        !_isAthlete ||
+        _instance?.isScheduled != true ||
+        _isLoading) {
+      return;
+    }
+    _saveDebounce?.cancel();
+    setState(() => _saveState = _DraftSaveState.saving);
+    _saveDebounce = Timer(const Duration(milliseconds: 700), _saveDraft);
+  }
+
+  Future<void> _saveDraft() async {
+    final instance = _instance;
+    final athleteId = ref.read(authStateProvider).value?.uid;
+    if (instance == null ||
+        athleteId == null ||
+        !instance.isScheduled ||
+        !_isAthlete ||
+        _isLoading) {
+      return;
+    }
+    final revision = ++_revision;
+    final route = '/athlete/workouts/${instance.id}';
+    final draft = WorkoutCompletionDraft(
+      instanceId: instance.id,
+      athleteId: athleteId,
+      rpe: _rpe,
+      durationMinutes: _durationMinutes,
+      athleteNotes: _notesController.text.trim().isEmpty
+          ? null
+          : _notesController.text.trim(),
+      revision: revision,
+      clientId: ref.read(workoutDraftClientIdProvider),
+      updatedAt: DateTime.now().toUtc(),
+      sourceRoute: route,
+    );
+    try {
+      final result =
+          await ref.read(workoutCompletionDraftRepositoryProvider).save(draft);
+      if (!mounted ||
+          widget.instanceId != instance.id ||
+          revision != _revision ||
+          _isLoading) {
+        return;
+      }
+      setState(() {
+        switch (result.status) {
+          case WorkoutDraftSaveStatus.saved:
+            _saveState = _DraftSaveState.saved;
+          case WorkoutDraftSaveStatus.offline:
+            _saveState = _DraftSaveState.offline;
+          case WorkoutDraftSaveStatus.conflict:
+            _saveState = _DraftSaveState.conflict;
+            final authoritative = result.authoritativeDraft;
+            if (authoritative != null) {
+              _restoring = true;
+              _revision = authoritative.revision;
+              _rpe = authoritative.rpe;
+              _durationMinutes = authoritative.durationMinutes;
+              _notesController.text = authoritative.athleteNotes ?? '';
+              _restoring = false;
+              _recoveryMessage =
+                  'Another tab saved newer progress. Its draft was restored.';
+            }
         }
       });
+    } catch (_) {
+      if (mounted &&
+          widget.instanceId == instance.id &&
+          revision == _revision &&
+          !_isLoading) {
+        setState(() => _saveState = _DraftSaveState.failed);
+      }
     }
   }
 
   Future<void> _complete() async {
+    _saveDebounce?.cancel();
     setState(() => _isLoading = true);
     try {
       final repo = ref.read(workoutInstanceRepositoryProvider);
@@ -88,12 +242,16 @@ class _WorkoutCompletionScreenState
             ? null
             : _notesController.text.trim(),
       );
+      await ref
+          .read(workoutCompletionDraftRepositoryProvider)
+          .clearLocalAfterCompletion(
+            instanceId: widget.instanceId,
+            athleteId: athleteId,
+          );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Workout completed! 💪'),
-          ),
+          const SnackBar(content: Text('Workout completed! 💪')),
         );
         context.pop();
       }
@@ -104,19 +262,16 @@ class _WorkoutCompletionScreenState
         );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_didLoad) _loadInstance();
-
-    if (_instance == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Complete Workout')),
-        body: const Center(child: CircularProgressIndicator()),
-      );
+    if (_loadState != _WorkoutLoadState.ready) {
+      return _buildLoadState();
     }
 
     final instance = _instance!;
@@ -219,6 +374,23 @@ class _WorkoutCompletionScreenState
 
           // RPE slider
           if (_isAthlete && !instance.isCompleted) ...[
+            if (_recoveryMessage != null) ...[
+              MaterialBanner(
+                content: Text(_recoveryMessage!),
+                actions: [
+                  TextButton(
+                    onPressed: () => setState(() => _recoveryMessage = null),
+                    child: const Text('Dismiss'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+            _DraftSaveStatus(
+              state: _saveState,
+              onRetry: _saveState == _DraftSaveState.failed ? _saveDraft : null,
+            ),
+            const SizedBox(height: 16),
             Text(
               'Rate of Perceived Exertion (RPE)',
               style: Theme.of(context).textTheme.titleMedium,
@@ -243,6 +415,7 @@ class _WorkoutCompletionScreenState
                     label: '$_rpe',
                     onChanged: (value) {
                       setState(() => _rpe = value.round());
+                      _scheduleSave();
                     },
                   ),
                 ),
@@ -269,7 +442,10 @@ class _WorkoutCompletionScreenState
                 IconButton(
                   icon: const Icon(Icons.remove_circle_outline),
                   onPressed: _durationMinutes > 5
-                      ? () => setState(() => _durationMinutes -= 5)
+                      ? () {
+                          setState(() => _durationMinutes -= 5);
+                          _scheduleSave();
+                        }
                       : null,
                 ),
                 Text(
@@ -278,7 +454,10 @@ class _WorkoutCompletionScreenState
                 ),
                 IconButton(
                   icon: const Icon(Icons.add_circle_outline),
-                  onPressed: () => setState(() => _durationMinutes += 5),
+                  onPressed: () {
+                    setState(() => _durationMinutes += 5);
+                    _scheduleSave();
+                  },
                 ),
               ],
             ),
@@ -329,8 +508,10 @@ class _WorkoutCompletionScreenState
                   children: [
                     Row(
                       children: [
-                        Text('RPE: ',
-                            style: Theme.of(context).textTheme.bodyMedium),
+                        Text(
+                          'RPE: ',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
                         Text(
                           '${instance.rpe ?? '-'}',
                           style:
@@ -376,21 +557,141 @@ class _WorkoutCompletionScreenState
     );
   }
 
+  Widget _buildLoadState() {
+    final (icon, title, detail) = switch (_loadState) {
+      _WorkoutLoadState.loading => (
+          null,
+          'Loading workout',
+          'Restoring your workout and saved progress...',
+        ),
+      _WorkoutLoadState.notFound => (
+          Icons.search_off,
+          'Workout not found',
+          'This workout may have been removed or the link is invalid.',
+        ),
+      _WorkoutLoadState.unauthorized => (
+          Icons.lock_outline,
+          'Workout unavailable',
+          'Only the assigned athlete can open this in-progress workout.',
+        ),
+      _WorkoutLoadState.error => (
+          Icons.error_outline,
+          'Could not load workout',
+          _loadMessage ?? 'Check your connection and try again.',
+        ),
+      _WorkoutLoadState.ready => (null, '', ''),
+    };
+    return Scaffold(
+      appBar: AppBar(title: const Text('Workout')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_loadState == _WorkoutLoadState.loading)
+                const CircularProgressIndicator()
+              else
+                Icon(icon, size: 48),
+              const SizedBox(height: 16),
+              Text(title, style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              Text(detail, textAlign: TextAlign.center),
+              if (_loadState == _WorkoutLoadState.error) ...[
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () {
+                    setState(() => _loadState = _WorkoutLoadState.loading);
+                    _loadInstance();
+                  },
+                  child: const Text('Retry'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   String _prescriptionSummary(ExerciseSlot exercise) {
     final parts = <String>[];
     parts.add(exercise.mode.name);
-    if (exercise.sets != null) parts.add('${exercise.sets} sets');
-    if (exercise.reps != null) parts.add('${exercise.reps} reps');
+    if (exercise.sets != null) {
+      parts.add('${exercise.sets} sets');
+    }
+    if (exercise.reps != null) {
+      parts.add('${exercise.reps} reps');
+    }
     if (exercise.durationSeconds != null) {
       parts.add('${exercise.durationSeconds}s');
     }
-    if (exercise.weight != null) parts.add(exercise.weight!);
+    if (exercise.weight != null) {
+      parts.add(exercise.weight!);
+    }
     return parts.join(' · ');
   }
 
   Color _rpeColor(int rpe) {
-    if (rpe <= 3) return Colors.green;
-    if (rpe <= 6) return Colors.orange;
+    if (rpe <= 3) {
+      return Colors.green;
+    }
+    if (rpe <= 6) {
+      return Colors.orange;
+    }
     return Colors.red;
+  }
+}
+
+enum _WorkoutLoadState { loading, ready, notFound, unauthorized, error }
+
+enum _DraftSaveState { saving, saved, offline, failed, conflict }
+
+class _DraftSaveStatus extends StatelessWidget {
+  const _DraftSaveStatus({required this.state, this.onRetry});
+
+  final _DraftSaveState state;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, label, color) = switch (state) {
+      _DraftSaveState.saving => (
+          Icons.sync,
+          'Saving...',
+          Theme.of(context).colorScheme.primary,
+        ),
+      _DraftSaveState.saved => (
+          Icons.cloud_done_outlined,
+          'Saved',
+          Colors.green,
+        ),
+      _DraftSaveState.offline => (
+          Icons.cloud_off_outlined,
+          'Offline — saved on this device',
+          Colors.orange,
+        ),
+      _DraftSaveState.failed => (
+          Icons.error_outline,
+          'Save failed',
+          Theme.of(context).colorScheme.error,
+        ),
+      _DraftSaveState.conflict => (
+          Icons.merge_type,
+          'Newer progress restored',
+          Colors.orange,
+        ),
+    };
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 8),
+        Text(label, style: TextStyle(color: color)),
+        if (onRetry != null) ...[
+          const Spacer(),
+          TextButton(onPressed: onRetry, child: const Text('Retry')),
+        ],
+      ],
+    );
   }
 }

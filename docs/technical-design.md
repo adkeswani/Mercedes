@@ -318,7 +318,47 @@ workoutInstances/{instanceId}
   athleteNotes: string?
   createdAt: timestamp
   updatedAt: timestamp
+
+  completionDrafts/current {
+    schemaVersion: 1
+    instanceId: string
+    athleteId: string
+    rpe: int
+    durationMinutes: int
+    athleteNotes: string?
+    currentStep: int
+    slotInputs: map                    # keyed by stable workout slot ID
+    revision: int                     # strictly increases on server updates
+    clientId: string                  # browser-tab/session identity
+    updatedAt: timestamp              # client observation time
+    serverUpdatedAt: timestamp        # must equal request.time
+    sourceRoute: string               # /athlete/workouts/{instanceId}
+  }
 ```
+
+The canonical completion deep link is `/athlete/workouts/:instanceId`.
+`/workouts/complete/:instanceId` remains a redirect for compatibility.
+GoRouter retains the full path and query while authentication, profile
+creation, or onboarding is unresolved. Direct refresh therefore returns to the
+same instance and resolves to an explicit not-found, unauthorized, completed,
+or retryable-error state rather than an indefinite loading indicator.
+
+Completion drafts are private athlete work product. Only the instance athlete
+may read or mutate `current`, and mutation requires the parent to remain
+scheduled. Rules validate the exact top-level schema, identity, types, bounded
+notes/maps, canonical route, server timestamp, and strictly increasing
+revision. Trainers cannot read in-progress notes. Repository methods repeat
+ownership/status checks and throw `StateError` on mismatch.
+
+The browser writes the typed draft to `localStorage` immediately and debounces
+Firestore writes. Firestore is authoritative across devices. Reconciliation
+prefers the higher revision, then `serverUpdatedAt`, then `updatedAt`, then
+client ID as a deterministic final tie-breaker; any divergent local/server
+pair produces a visible conflict/restoration message. A Firestore transaction
+rejects stale/equal revisions from another client, and the UI ignores async
+save completions for an older instance or revision. Workout completion updates
+the immutable result and deletes the server draft in the same transaction;
+the local copy is cleared only after that transaction succeeds.
 
 ### 2.7 Workout-instance discussions and activity reactions 🔒
 
@@ -839,7 +879,7 @@ This collection acts as a migration log. It's checked by admin tooling, not by t
 |---|---|---|---|
 | **Firestore offline persistence** | Built-in (enabled by default on mobile) | All recently read documents | Automatic on reconnect; Firestore SDK reconciles local cache with server |
 | **Riverpod in-memory cache** | `StateProvider` / `AsyncNotifierProvider` | User profile, current program, exercise templates, workout template for active session | Disposed when provider is no longer listened to; manually invalidated on write |
-| **Workout session (in-progress)** | Local state held in a Riverpod provider | Timer state, current set/rep, partial actuals | Persisted to local storage on background/kill; restored on reopen |
+| **Workout session (in-progress)** | Typed browser `localStorage` draft plus athlete-only Firestore draft | RPE, duration, notes, recovery position, extensible stable-slot inputs | Local-first restore; revision/server-time reconciliation; atomically removed on completion |
 | **Dashboard aggregates** | Riverpod + optional local storage | Weekly load totals, type breakdowns | Refreshed on pull-to-refresh or when a new workout instance is completed |
 | **Exercise template library** | Riverpod with stale-while-revalidate | Full exercise list for the builder UI | Background refresh; re-fetch on builder screen open |
 
@@ -847,7 +887,16 @@ This collection acts as a migration log. It's checked by admin tooling, not by t
 
 - **Firestore listeners (snapshots)** are the primary real-time sync mechanism for collections that change in response to other users (messages, comments, enrollment changes).
 - **One-shot reads with Riverpod caching** for data that changes rarely (exercise templates, user profile, program metadata).
-- **No custom SQLite or Hive cache** in MVP — Firestore offline persistence + Riverpod covers the use cases. Revisit if offline-first workout logging needs a local queue.
+- **No custom SQLite or Hive cache** in MVP. Workout recovery uses bounded,
+  origin-scoped `localStorage` because the repository has no IndexedDB
+  abstraction today; no cookies are used. Clearing site data, private browsing,
+  or changing browser/profile can remove that local fallback.
+- Mobile operating systems can evict browser tabs/processes and the app cannot
+  prevent it. Recovery is the guarantee. Lifecycle/page-hide persistence is
+  best effort only; correctness comes from debounced local/server saves.
+- The Flutter service worker caches application assets only. It does not own or
+  reconcile workout drafts, and a first offline load still requires previously
+  cached assets and a valid local draft.
 
 ---
 

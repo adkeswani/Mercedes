@@ -1,5 +1,3 @@
-import 'package:stage5/core/web_workspace/web_workspace_mode.dart';
-
 class PendingWebWorkspaceRoute {
   PendingWebWorkspaceRoute([String? initialLocation]) {
     if (initialLocation != null) {
@@ -10,9 +8,14 @@ class PendingWebWorkspaceRoute {
   String? _location;
 
   void remember(String location) {
-    if (WebWorkspaceMode.fromLocation(Uri.parse(location).path) != null) {
-      _location = location;
+    final path = Uri.parse(location).path;
+    if (path == '/login' ||
+        path == '/loading' ||
+        path == '/onboarding' ||
+        path == '/error') {
+      return;
     }
+    _location = location;
   }
 
   String? take() {

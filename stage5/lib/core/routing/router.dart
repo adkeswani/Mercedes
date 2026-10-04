@@ -35,8 +35,9 @@ import 'package:stage5/features/workouts/presentation/workout_list_screen.dart';
 /// - needsOnboarding → /onboarding
 /// - ready → the responsive authenticated entry point
 /// - error → /error
-final pendingWebWorkspaceRouteProvider =
-    Provider<PendingWebWorkspaceRoute>((ref) {
+final pendingWebWorkspaceRouteProvider = Provider<PendingWebWorkspaceRoute>((
+  ref,
+) {
   return PendingWebWorkspaceRoute(readInitialWebWorkspaceLocation());
 });
 
@@ -53,13 +54,18 @@ final routerProvider = Provider<GoRouter>((ref) {
           pendingWorkspaceRoute.remember(state.uri.toString());
           return loc == '/login' ? null : '/login';
         case AppEntryState.waitingForProfile:
+          pendingWorkspaceRoute.remember(state.uri.toString());
           return loc == '/loading' ? null : '/loading';
         case AppEntryState.needsOnboarding:
+          pendingWorkspaceRoute.remember(state.uri.toString());
           return loc == '/onboarding' ? null : '/onboarding';
         case AppEntryState.ready:
           final pendingLocation = pendingWorkspaceRoute.take();
           if (pendingLocation != null &&
-              WebWorkspaceMode.fromLocation(loc) == null) {
+              (loc == '/login' ||
+                  loc == '/onboarding' ||
+                  loc == '/loading' ||
+                  loc == '/')) {
             return pendingLocation;
           }
           if (loc == '/login' || loc == '/onboarding' || loc == '/loading') {
@@ -168,6 +174,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/workouts/complete/:instanceId',
+        redirect: (context, state) =>
+            '/athlete/workouts/${state.pathParameters['instanceId']}',
+      ),
+      GoRoute(
+        path: '/athlete/workouts/:instanceId',
         builder: (context, state) => WorkoutCompletionScreen(
           instanceId: state.pathParameters['instanceId']!,
         ),

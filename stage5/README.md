@@ -12,6 +12,23 @@ Implemented in this slice:
 - Route-driven web context under `/athlete/...` and `/trainer/...`. Direct links
   select the corresponding workspace, while the root route restores the last
   browser selection from `localStorage` and otherwise defaults to Athlete.
+- Resilient workout completion at the canonical
+  `/athlete/workouts/:instanceId` route. The legacy
+  `/workouts/complete/:instanceId` URL redirects without changing instance
+  identity. Full paths and queries survive sign-out, profile loading, and
+  onboarding redirects, so a refresh or cold start returns to the workout
+  rather than home.
+- In-progress RPE, duration, and completion notes autosave after a debounce to
+  both `localStorage` and the athlete-only
+  `workoutInstances/{instanceId}/completionDrafts/current` document. The UI
+  reports Saving, Saved, Offline (saved on this device), conflict recovery, and
+  retryable failure states.
+- Draft revisions are transactionally monotonic. Stale tabs cannot replace a
+  newer server revision; startup reconciles valid local/server drafts by
+  revision, server timestamp, and a deterministic client-ID tie-breaker, and
+  tells the athlete when progress or a conflict was restored. Completion
+  atomically writes the immutable result and deletes the server draft, then
+  clears the local copy only after success.
 - Athlete navigation for Today, My calendar, My programs, Workout history,
   Progress, and Messages. Today reuses the current training experience. My
   calendar now uses the athlete-owned date-range query directly instead of
@@ -136,6 +153,11 @@ Compatibility behavior:
   rules require every result to match both the parent result index and pinned
   workout slot. Legacy synthesized slot IDs and Stage 4 list writes remain
   readable and migratable.
+- Workout draft schema version 1 is intentionally extensible through stable
+  slot IDs, but Stage 5 persists only fields currently editable in completion:
+  RPE, duration, notes, recovery position, and an empty slot-input map until
+  per-slot actual-entry controls ship. Invalid schema or identity data is
+  rejected and the unsafe local copy is removed with a visible warning.
 - Existing exercise and workout documents without `ownerId` derive ownership
   from `createdBy`; owner mutations backfill `ownerId`.
 - Owner library queries remain keyed by `createdBy` so existing Stage 4
@@ -180,6 +202,21 @@ instances, unlinked content, past workouts, and terminal workouts are skipped.
 The Functions manifest adds only the repository test command and does not add,
 remove, pin, or update any package, so the license notices and tooling
 version/lock inventories are intentionally unchanged.
+
+## Workout recovery limits
+
+Browser-local recovery uses origin-scoped `localStorage`; no cookies are used.
+It is a small typed fallback rather than an unlimited offline database, and a
+user who clears site data, changes browser/profile, or uses private browsing
+can lose the device copy. Firestore is authoritative across devices once
+reachable. The app performs a best-effort lifecycle flush when the page is
+hidden or backgrounded, but correctness does not depend on unload events.
+
+The Flutter service worker may cache application assets, but it does not own,
+merge, or guarantee workout drafts. A mobile operating system may evict a tab
+or process at any time and the app cannot prevent that eviction. Recovery from
+the local/server draft is the guarantee. A first-time offline visit that has
+neither cached app assets nor a local draft cannot be recovered.
 
 ## Browser login smoke test
 

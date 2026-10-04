@@ -1,3 +1,4 @@
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +14,11 @@ import 'package:stage5/features/auth/presentation/home_screen.dart';
 import 'package:stage5/features/auth/presentation/web_workspace_shell.dart';
 import 'package:stage5/features/trainer_dashboard/domain/trainer_activity_event.dart';
 import 'package:stage5/features/trainer_dashboard/presentation/trainer_dashboard_providers.dart';
+import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
+import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
+
+final _testAppEntryStateProvider =
+    StateProvider<AppEntryState>((ref) => AppEntryState.signedOut);
 
 void main() {
   group('WebWorkspaceModeController', () {
@@ -70,6 +76,92 @@ void main() {
       pendingRoute.remember('/login');
 
       expect(pendingRoute.take(), isNull);
+    });
+
+    test('retains canonical workout path and query through authentication', () {
+      final pendingRoute = PendingWebWorkspaceRoute();
+
+      pendingRoute.remember(
+        '/athlete/workouts/instance-1?resume=notification',
+      );
+      pendingRoute.remember('/loading');
+
+      expect(
+        pendingRoute.take(),
+        '/athlete/workouts/instance-1?resume=notification',
+      );
+    });
+
+    testWidgets('router restores the complete workout URL after auth resolves',
+        (
+      tester,
+    ) async {
+      final pendingRoute = PendingWebWorkspaceRoute(
+        '/athlete/workouts/instance-1?resume=notification',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          appEntryStateProvider.overrideWith(
+            (ref) => ref.watch(_testAppEntryStateProvider),
+          ),
+          pendingWebWorkspaceRouteProvider.overrideWithValue(pendingRoute),
+          workoutInstanceRepositoryProvider.overrideWithValue(
+            WorkoutInstanceRepository(firestore: FakeFirebaseFirestore()),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MercedesApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      var router = container.read(routerProvider);
+      router.go('/athlete/workouts/instance-1?resume=notification');
+      await tester.pumpAndSettle();
+      expect(router.routeInformationProvider.value.uri.path, '/login');
+
+      container.read(_testAppEntryStateProvider.notifier).state =
+          AppEntryState.ready;
+      await tester.pumpAndSettle();
+      router = container.read(routerProvider);
+
+      expect(
+        router.routeInformationProvider.value.uri.toString(),
+        '/athlete/workouts/instance-1?resume=notification',
+      );
+    });
+
+    testWidgets(
+        'legacy completion URL redirects to the canonical athlete route',
+        (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          appEntryStateProvider.overrideWithValue(AppEntryState.ready),
+          workoutInstanceRepositoryProvider.overrideWithValue(
+            WorkoutInstanceRepository(firestore: FakeFirebaseFirestore()),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final router = container.read(routerProvider);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MercedesApp(),
+        ),
+      );
+      router.go('/workouts/complete/instance-1');
+      await tester.pumpAndSettle();
+
+      expect(
+        router.routeInformationProvider.value.uri.path,
+        '/athlete/workouts/instance-1',
+      );
     });
   });
 

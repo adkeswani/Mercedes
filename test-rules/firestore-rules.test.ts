@@ -2607,6 +2607,146 @@ describe('workoutInstances', () => {
     });
   }
 
+  function validCompletionDraft(overrides = {}) {
+    return {
+      schemaVersion: 1,
+      instanceId: INSTANCE_ID,
+      athleteId: ATHLETE,
+      rpe: 7,
+      durationMinutes: 50,
+      athleteNotes: 'Private in-progress notes',
+      currentStep: 0,
+      slotInputs: {},
+      revision: 1,
+      clientId: 'browser-tab-a',
+      updatedAt: new Date(),
+      serverUpdatedAt: serverTimestamp(),
+      sourceRoute: `/athlete/workouts/${INSTANCE_ID}`,
+      ...overrides,
+    };
+  }
+
+  describe('completion drafts', () => {
+    it('allows only the assigned athlete to create and read a valid draft',
+        async () => {
+      await seedInstance();
+      const athleteDb = testEnv.authenticatedContext(ATHLETE).firestore();
+      const draft = athleteDb.collection('workoutInstances').doc(INSTANCE_ID)
+        .collection('completionDrafts').doc('current');
+      await assertSucceeds(draft.set(validCompletionDraft()));
+      await assertSucceeds(draft.get());
+
+      for (const userId of [OWNER, STRANGER]) {
+        const db = testEnv.authenticatedContext(userId).firestore();
+        const otherDraft = db.collection('workoutInstances').doc(INSTANCE_ID)
+          .collection('completionDrafts').doc('current');
+        await assertFails(otherDraft.get());
+        await assertFails(otherDraft.set(validCompletionDraft({
+          clientId: userId,
+        })));
+      }
+    });
+
+    it('requires monotonic revisions and immutable identity', async () => {
+      await seedInstance();
+      const db = testEnv.authenticatedContext(ATHLETE).firestore();
+      const draft = db.collection('workoutInstances').doc(INSTANCE_ID)
+        .collection('completionDrafts').doc('current');
+      await draft.set(validCompletionDraft({ revision: 2 }));
+      await assertFails(draft.update({
+        revision: 2,
+        rpe: 8,
+        serverUpdatedAt: serverTimestamp(),
+      }));
+      await assertFails(draft.update({
+        revision: 3,
+        athleteId: STRANGER,
+        serverUpdatedAt: serverTimestamp(),
+      }));
+      await assertSucceeds(draft.update({
+        revision: 3,
+        rpe: 8,
+        updatedAt: new Date(),
+        serverUpdatedAt: serverTimestamp(),
+      }));
+    });
+
+    it('rejects invalid fields, types, size, route, and document ID',
+        async () => {
+      await seedInstance();
+      const db = testEnv.authenticatedContext(ATHLETE).firestore();
+      const drafts = db.collection('workoutInstances').doc(INSTANCE_ID)
+        .collection('completionDrafts');
+      await assertFails(drafts.doc('current').set(
+        validCompletionDraft({ schemaVersion: 2 })
+      ));
+      await assertFails(drafts.doc('current').set(
+        validCompletionDraft({ rpe: 11 })
+      ));
+      await assertFails(drafts.doc('current').set(
+        validCompletionDraft({ athleteNotes: 'x'.repeat(4001) })
+      ));
+      await assertFails(drafts.doc('current').set(
+        validCompletionDraft({ sourceRoute: '/forged' })
+      ));
+      await assertFails(drafts.doc('current').set(
+        validCompletionDraft({ unexpected: true })
+      ));
+      await assertFails(drafts.doc('other').set(validCompletionDraft()));
+    });
+
+    it('rejects draft writes for completed instances', async () => {
+      await seedInstance();
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().collection('workoutInstances').doc(INSTANCE_ID)
+          .update({ status: 'completed' });
+      });
+      const db = testEnv.authenticatedContext(ATHLETE).firestore();
+      await assertFails(
+        db.collection('workoutInstances').doc(INSTANCE_ID)
+          .collection('completionDrafts').doc('current')
+          .set(validCompletionDraft())
+      );
+    });
+
+    it('requires completion and draft cleanup in the same atomic write',
+        async () => {
+      await seedInstance();
+      const db = testEnv.authenticatedContext(ATHLETE).firestore();
+      const instance = db.collection('workoutInstances').doc(INSTANCE_ID);
+      const draft = instance.collection('completionDrafts').doc('current');
+      await draft.set(validCompletionDraft());
+
+      await assertFails(instance.update({
+        status: 'completed',
+        rpe: 7,
+        durationMinutes: 50,
+      }));
+
+      const batch = db.batch();
+      batch.delete(draft);
+      batch.update(instance, {
+        status: 'completed',
+        rpe: 7,
+        durationMinutes: 50,
+      });
+      await assertSucceeds(batch.commit());
+      expect((await draft.get()).exists).toBe(false);
+    });
+
+    it('allows completion when no draft was ever created', async () => {
+      await seedInstance();
+      const db = testEnv.authenticatedContext(ATHLETE).firestore();
+      const instance = db.collection('workoutInstances').doc(INSTANCE_ID);
+
+      await assertSucceeds(instance.update({
+        status: 'completed',
+        rpe: 5,
+        durationMinutes: 45,
+      }));
+    });
+  });
+
     // ─── Stage 5 Trainer Dashboard ───
 
     describe('Stage 5 trainer dashboard activity', () => {

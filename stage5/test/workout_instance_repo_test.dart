@@ -292,6 +292,33 @@ void main() {
         expect(result.data()!['exerciseId'], 'ex1');
       });
 
+      test('atomically deletes the in-progress completion draft', () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+        final draft = fakeFirestore
+            .collection('workoutInstances')
+            .doc(id)
+            .collection('completionDrafts')
+            .doc('current');
+        await draft.set({
+          'schemaVersion': 1,
+          'instanceId': id,
+          'athleteId': 'athlete1',
+          'revision': 2,
+        });
+
+        await repo.completeWorkout(
+          instanceId: id,
+          athleteId: 'athlete1',
+          rpe: 7,
+          durationMinutes: 55,
+          actuals: [],
+        );
+
+        expect((await draft.get()).exists, isFalse);
+      });
+
       test('completed instance is retrievable', () async {
         await createProgram('prog1');
         await enrollAthlete('prog1', 'athlete1');

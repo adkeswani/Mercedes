@@ -7,7 +7,7 @@ String? readInitialWebWorkspaceLocation() {
   }
 
   final path = html.window.location.pathname ?? '';
-  if (path.startsWith('/athlete/') || path.startsWith('/trainer/')) {
+  if (path.isNotEmpty && path != '/') {
     return '$path${html.window.location.search ?? ''}';
   }
   return null;

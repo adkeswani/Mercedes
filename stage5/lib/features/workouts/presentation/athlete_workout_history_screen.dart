@@ -121,7 +121,7 @@ class _WorkoutHistoryCard extends ConsumerWidget {
               trailing:
                   instance.isCompleted ? const Icon(Icons.chevron_right) : null,
               onTap: instance.isCompleted
-                  ? () => context.push('/workouts/complete/${instance.id}')
+                  ? () => context.push('/athlete/workouts/${instance.id}')
                   : null,
             ),
           ),

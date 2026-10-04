@@ -147,7 +147,7 @@ class _InstanceTile extends ConsumerWidget {
       ),
       trailing: canOpen ? const Icon(Icons.chevron_right) : null,
       onTap: canOpen
-          ? () => context.push('/workouts/complete/${instance.id}')
+          ? () => context.push('/athlete/workouts/${instance.id}')
           : null,
     );
   }

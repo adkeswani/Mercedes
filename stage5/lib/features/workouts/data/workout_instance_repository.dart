@@ -1761,6 +1761,9 @@ class WorkoutInstanceRepository {
       if (data['status'] != requiredStatus.name) {
         throw StateError('Instance $instanceId must be ${requiredStatus.name}');
       }
+      final draftRef =
+          instanceRef.collection('completionDrafts').doc('current');
+      final draftSnapshot = await transaction.get(draftRef);
 
       final previousSlotIds =
           (data['actualSlotIds'] as List<dynamic>? ?? const [])
@@ -1773,6 +1776,9 @@ class WorkoutInstanceRepository {
           instanceRef.collection('slotResults').doc(entry.key),
           entry.value as Map<String, dynamic>,
         );
+      }
+      if (draftSnapshot.exists) {
+        transaction.delete(draftRef);
       }
       transaction.update(instanceRef, {
         ...parentFields,

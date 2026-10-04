@@ -596,7 +596,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                               onSelected: (value) async {
                                 Navigator.of(sheetContext).pop();
                                 if (value == 'open') {
-                                  context.push('/workouts/complete/${i.id}');
+                                  context.push('/athlete/workouts/${i.id}');
                                 } else if (value == 'reschedule') {
                                   await _reschedule(context, i);
                                 } else if (value == 'cancel') {
@@ -628,7 +628,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                               icon: const Icon(Icons.chevron_right),
                               onPressed: () {
                                 Navigator.of(sheetContext).pop();
-                                context.push('/workouts/complete/${i.id}');
+                                context.push('/athlete/workouts/${i.id}');
                               },
                             ),
                     ),

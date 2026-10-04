@@ -705,6 +705,45 @@ service cloud.firestore {
                  || data.notes is string);
     }
 
+    function isValidCompletionDraft(instanceId, data) {
+      let instance = workoutInstanceData(instanceId);
+      return isSignedIn()
+             && instance.athleteId == request.auth.uid
+             && data.keys().hasOnly([
+                 'schemaVersion', 'instanceId', 'athleteId', 'rpe',
+                 'durationMinutes', 'athleteNotes', 'currentStep',
+                 'slotInputs', 'revision', 'clientId', 'updatedAt',
+                 'serverUpdatedAt', 'sourceRoute'
+               ])
+             && data.schemaVersion == 1
+             && data.instanceId == instanceId
+             && data.athleteId == request.auth.uid
+             && data.rpe is int
+             && data.rpe >= 1
+             && data.rpe <= 10
+             && data.durationMinutes is int
+             && data.durationMinutes >= 0
+             && data.durationMinutes <= 1440
+             && (!('athleteNotes' in data)
+                || data.athleteNotes == null
+                || (data.athleteNotes is string
+                    && data.athleteNotes.size() <= 4000))
+             && data.currentStep is int
+             && data.currentStep >= 0
+             && data.slotInputs is map
+             && data.slotInputs.size() <= 100
+             && data.revision is int
+             && data.revision >= 1
+             && data.clientId is string
+             && data.clientId.size() > 0
+             && data.clientId.size() <= 128
+             && data.updatedAt is timestamp
+             && data.serverUpdatedAt == request.time
+             && data.sourceRoute is string
+             && data.sourceRoute
+                 == '/athlete/workouts/' + instanceId;
+    }
+
     function isProgramAssignable(programId) {
       return get(/databases/$(database)/documents/programs/$(programId)).data.type
              == 'assignable';
@@ -951,11 +990,17 @@ service cloud.firestore {
                   ]);
     }
 
-    function isAthleteCompletionUpdate() {
+    function isAthleteCompletionUpdate(instanceId) {
       let changed =
         request.resource.data.diff(resource.data).affectedKeys();
       return request.resource.data.status == 'completed'
              && resource.data.status == 'scheduled'
+             && (!exists(
+                   /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current
+                 )
+                 || !existsAfter(
+                      /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current
+                    ))
              && changed.hasOnly([
                   'status', 'completedAt', 'rpe', 'durationMinutes',
                   'loadPoints', 'loadStrategyId', 'athleteNotes',
@@ -2036,7 +2081,7 @@ service cloud.firestore {
                                request.resource.data
                              ))
                       && ((resource.data.athleteId == request.auth.uid
-                           && (isAthleteCompletionUpdate()
+                           && (isAthleteCompletionUpdate(instanceId)
                                || isProgramOwnerBackfill()
                                || isProgramInstanceBackfill()
                                || isProgramInstanceModeSync()
@@ -2049,6 +2094,42 @@ service cloud.firestore {
                       && resource.data.status == 'scheduled'
                       && isCurrentOrFutureWorkout(resource.data)
                       && canDeleteWorkout(resource.data);
+
+      match /completionDrafts/{draftId} {
+        allow read: if draftId == 'current'
+                    && isSignedIn()
+                    && workoutInstanceData(instanceId).athleteId
+                       == request.auth.uid;
+        allow create: if draftId == 'current'
+                      && isValidCompletionDraft(
+                           instanceId,
+                           request.resource.data
+                         )
+                      && workoutInstanceData(instanceId).status == 'scheduled';
+        allow update: if draftId == 'current'
+                      && isValidCompletionDraft(
+                           instanceId,
+                           request.resource.data
+                         )
+                      && request.resource.data.instanceId
+                         == resource.data.instanceId
+                      && request.resource.data.athleteId
+                         == resource.data.athleteId
+                      && request.resource.data.revision
+                         > resource.data.revision
+                      && workoutInstanceData(instanceId).status == 'scheduled';
+        allow delete: if draftId == 'current'
+                      && isSignedIn()
+                      && resource.data.athleteId == request.auth.uid
+                      && resource.data.instanceId == instanceId
+                      && ((workoutInstanceData(instanceId).status
+                             == 'scheduled')
+                          || (workoutInstanceData(instanceId).status
+                                == 'scheduled'
+                              && getAfter(
+                                   /databases/$(database)/documents/workoutInstances/$(instanceId)
+                                 ).data.status == 'completed'));
+      }
 
       match /slotResults/{slotId} {
         allow read: if isSignedIn()

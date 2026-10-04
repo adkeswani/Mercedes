@@ -313,12 +313,12 @@ class _TodaysWorkoutTile extends ConsumerWidget {
         trailing: instance.isScheduled
             ? FilledButton(
                 onPressed: () =>
-                    context.push('/workouts/complete/${instance.id}'),
+                    context.push('/athlete/workouts/${instance.id}'),
                 child: const Text('Complete'),
               )
             : const Icon(Icons.chevron_right),
         onTap: canOpen
-            ? () => context.push('/workouts/complete/${instance.id}')
+            ? () => context.push('/athlete/workouts/${instance.id}')
             : null,
       ),
     );
