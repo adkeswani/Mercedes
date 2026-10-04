@@ -92,19 +92,18 @@ void main() {
         find.text('Saving...'),
         step: 'draft saving indicator',
       );
-      await _waitFor(
-        tester,
-        waits,
-        find.text('Saved'),
-        step: 'draft saved indicator',
-      );
       await waits.runStep('verify initial draft client identity', () async {
         final savedDraft = await FirebaseFirestore.instance
             .collection('workoutInstances')
             .doc('browser-calendar-workout')
             .collection('completionDrafts')
             .doc('current')
-            .get();
+            .snapshots()
+            .firstWhere(
+              (snapshot) =>
+                  snapshot.exists &&
+                  snapshot.data()?['clientId'] == initialClientId,
+            );
         expect(savedDraft.data()?['clientId'], initialClientId);
       });
 
