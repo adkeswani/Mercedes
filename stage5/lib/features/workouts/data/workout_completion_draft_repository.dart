@@ -199,6 +199,18 @@ class WorkoutCompletionDraftRepository {
           draft: draft,
           server: server,
         );
+        assert(() {
+          // ignore: avoid_print
+          print(
+            'WORKOUT_DRAFT_SAVE_ATTEMPT'
+            '|draftRevision=${draft.revision}'
+            '|serverRevision=${server?.revision ?? 0}'
+            '|sameClient=${server == null || server.clientId == draft.clientId}'
+            '|shouldWrite=${decision.shouldWrite}'
+            '|status=${decision.result.status.name}',
+          );
+          return true;
+        }());
         if (!decision.shouldWrite) {
           return decision.result;
         }
