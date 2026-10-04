@@ -141,6 +141,12 @@ const FULL_REFRESH_MS = 25 * 24 * 60 * 60 * 1000;
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const GLOBAL_DAILY_BUDGET = 8000;
 const USER_DAILY_BUDGET = 200;
+// Loose per-UID backstop against a runaway/abusive client hammering the
+// callable. This predates the shared Firestore catalogue cache, when every
+// invocation meant a live YouTube API hit; most invocations are now served
+// from the cache for free, so the unit-based budgets above are the real
+// quota guardrail and this count no longer approximates actual quota usage.
+const CALLABLE_RATE_LIMIT_PER_HOUR = 300;
 
 export async function cleanupExpiredYoutubeCatalogues(
   store: YoutubeCatalogueCleanupStore,
@@ -200,6 +206,19 @@ export function assertYoutubeBudget(
     throw new YoutubePublicError(
       "resource-exhausted",
       "Your daily YouTube catalogue budget is exhausted.",
+    );
+  }
+}
+
+export function assertYoutubeCallableRateLimit(count: number): void {
+  if (!Number.isSafeInteger(count) || count < 0) {
+    throw new YoutubePublicError("internal", "Invalid rate limit count.");
+  }
+  if (count >= CALLABLE_RATE_LIMIT_PER_HOUR) {
+    throw new YoutubePublicError(
+      "resource-exhausted",
+      `Public YouTube browsing is limited to ` +
+        `${CALLABLE_RATE_LIMIT_PER_HOUR} requests per hour.`,
     );
   }
 }
@@ -1003,4 +1022,5 @@ export const youtubeCataloguePolicy = {
   retentionMs: RETENTION_MS,
   globalDailyBudget: GLOBAL_DAILY_BUDGET,
   userDailyBudget: USER_DAILY_BUDGET,
+  callableRateLimitPerHour: CALLABLE_RATE_LIMIT_PER_HOUR,
 };

@@ -6,6 +6,7 @@ import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
 import {propagateProgramVersion} from "./subscription_propagation";
 import {
+  assertYoutubeCallableRateLimit,
   handleYoutubePublicRequest,
   cleanupExpiredYoutubeCatalogues,
   YoutubeCatalogueService,
@@ -47,12 +48,12 @@ async function consumeYoutubeRateLimit(uid: string): Promise<void> {
     const count = activeWindow && typeof data?.count === "number" ?
       data.count :
       0;
-    if (count >= 30) {
-      throw new YoutubePublicError(
-        "resource-exhausted",
-        "Public YouTube browsing is limited to 30 requests per hour.",
-      );
-    }
+    // This call-count limiter predates the shared Firestore catalogue cache
+    // (every callable invocation used to mean a live YouTube API hit). Most
+    // invocations are now served from the cache for free, so the real quota
+    // protection is the unit-based budget in youtube_public.ts; this stays
+    // only as a loose backstop against a runaway/abusive client.
+    assertYoutubeCallableRateLimit(count);
     transaction.set(reference, {
       windowStart: activeWindow ?
         data?.windowStart :

@@ -4,6 +4,7 @@ const test = require("node:test");
 const {
   YoutubeCatalogueService,
   assertYoutubeBudget,
+  assertYoutubeCallableRateLimit,
   cleanupExpiredYoutubeCatalogues,
   YoutubePublicError,
   youtubeCataloguePolicy,
@@ -508,6 +509,36 @@ test("enforces shared and per-user daily quota budgets", () => {
     {
       code: "resource-exhausted",
       message: "Your daily YouTube catalogue budget is exhausted.",
+    },
+  );
+});
+
+test("allows a realistic multi-channel exercise-creation session under the callable rate limit", () => {
+  // Creating ~10 exercises each browsing a distinct channel (resolve + load
+  // + a couple of searches/pagination) is comfortably under the raised
+  // per-hour callable limit, even though it would have tripped the old
+  // pre-cache limit of 30.
+  const callsForTenExercises = 10 * 8;
+  assert.ok(callsForTenExercises < youtubeCataloguePolicy.callableRateLimitPerHour);
+  assert.doesNotThrow(
+    () => assertYoutubeCallableRateLimit(callsForTenExercises),
+  );
+});
+
+test("still fails closed once the callable rate limit is reached", () => {
+  assert.doesNotThrow(
+    () => assertYoutubeCallableRateLimit(
+      youtubeCataloguePolicy.callableRateLimitPerHour - 1,
+    ),
+  );
+  assert.throws(
+    () => assertYoutubeCallableRateLimit(
+      youtubeCataloguePolicy.callableRateLimitPerHour,
+    ),
+    {
+      code: "resource-exhausted",
+      message: "Public YouTube browsing is limited to " +
+        `${youtubeCataloguePolicy.callableRateLimitPerHour} requests per hour.`,
     },
   );
 });

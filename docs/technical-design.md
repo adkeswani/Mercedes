@@ -135,8 +135,10 @@ deleted/private videos and revalidates retained metadata.
 The callable is a 2nd-generation Node.js 22 function in `us-central1`. Its
 `YOUTUBE_API_KEY` is a function-bound Firebase secret; missing configuration
 fails closed with a sanitized precondition error. Firebase Authentication is
-checked before service initialization, Firestore enforces 30 requests per UID per hour, upstream
-actions/identifiers are allowlisted and bounded, and instances are capped.
+checked before service initialization, Firestore enforces 300 requests per UID per hour as a loose
+backstop against runaway/abusive clients (most invocations are served from the shared cache below
+rather than hitting YouTube, so this no longer approximates real quota usage the way it did before
+the cache existed), upstream actions/identifiers are allowlisted and bounded, and instances are capped.
 Server-owned counters reserve 2,000 units from the default 10,000-unit daily
 project allocation, then cap use at 8,000 units globally and 200 units per UID
 in the Pacific-Time YouTube quota day. Callable-protocol CORS is enabled, but

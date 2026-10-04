@@ -265,10 +265,14 @@ uses two units per 50 uploads. Sources reviewed 2026-10-03:
 <https://developers.google.com/youtube/v3/docs/playlistItems/list>.
 
 Firestore counters cap YouTube calls at 8,000 units globally and 200 units per
-UID per quota day, leaving operational headroom under 10,000. The callable
-also permits 30 requests per authenticated UID per hour, validates query/sort/
-page sizes, times upstream requests out after 8 seconds, and caps instances at
-10. Shared channel generations eliminate duplicate per-user indexing. Cloud
+UID per quota day, leaving operational headroom under 10,000; these budgets
+are the real quota guardrail and are only charged on a cache miss. The
+callable also permits 300 requests per authenticated UID per hour as a loose
+backstop against an abusive/runaway client — most invocations are served from
+the shared cache rather than hitting YouTube, so this call count no longer
+tracks real quota usage the way it did before the cache existed. It also
+validates query/sort/page sizes, times upstream requests out after 8 seconds,
+and caps instances at 10. Shared channel generations eliminate duplicate per-user indexing. Cloud
 Functions, Scheduler, Firestore operations, Secret Manager, and network usage
 can incur charges under the configured billing plan.
 
