@@ -107,6 +107,48 @@ void main() {
 
     expect(session.getOrCreateClientId, throwsA(isA<StateError>()));
   });
+
+  test('cached store survives root recreation when persistence disappears', () {
+    var persisted = '19a00000000000-00112233445566778899aabbccddeeff';
+    var reads = 0;
+    final store = CachedWorkoutDraftClientIdStore(
+      readPersisted: () {
+        reads++;
+        return persisted;
+      },
+      writePersisted: (clientId) => persisted = clientId,
+    );
+
+    expect(store.read(), persisted);
+    persisted = '';
+
+    expect(store.read(), '19a00000000000-00112233445566778899aabbccddeeff');
+    expect(reads, 1);
+  });
+
+  test('cached store exposes write failures without caching the value', () {
+    var shouldFail = true;
+    var persisted = 'original';
+    var reads = 0;
+    final store = CachedWorkoutDraftClientIdStore(
+      readPersisted: () {
+        reads++;
+        return persisted;
+      },
+      writePersisted: (clientId) {
+        if (shouldFail) {
+          throw StateError('session storage unavailable');
+        }
+        persisted = clientId;
+      },
+    );
+
+    expect(() => store.write('replacement'), throwsStateError);
+    shouldFail = false;
+    persisted = 'reloaded';
+    expect(store.read(), 'reloaded');
+    expect(reads, 1);
+  });
 }
 
 class _MemoryClientIdStore implements WorkoutDraftClientIdStore {

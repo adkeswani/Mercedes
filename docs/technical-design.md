@@ -351,11 +351,12 @@ revision. Trainers cannot read in-progress notes. Repository methods repeat
 ownership/status checks and throw `StateError` on mismatch.
 
 The browser writes the typed draft to `localStorage` immediately and debounces
-Firestore writes. Its generated 128-bit client ID is stored separately in
-tab-scoped `sessionStorage`, so app-root recreation or reload remains the same
-client while separate tabs retain independent IDs; it is never derived from
-the athlete or authentication identity. Storage failures enter the existing
-retryable save-error state. Firestore is authoritative across devices. Reconciliation
+Firestore writes. Its generated 128-bit client ID is held by a tab-isolate
+singleton backed by `sessionStorage`: the isolate cache survives app-root
+recreation, `sessionStorage` restores it after a reload, and separate tabs
+retain independent IDs. It is never derived from the athlete or authentication
+identity. Storage failures enter the existing retryable save-error state.
+Firestore is authoritative across devices. Reconciliation
 prefers the higher revision, then `serverUpdatedAt`, then `updatedAt`, then
 client ID as a deterministic final tie-breaker. A newer revision from the
 current tab ID is adopted as normal continuation, including a late lifecycle
