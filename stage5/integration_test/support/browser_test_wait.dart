@@ -75,6 +75,64 @@ class BrowserTestWaitContext {
     _writeProgress('PASS', condition, stopwatch.elapsed);
   }
 
+  Future<void> mountAndWaitForCondition({
+    required String mountStep,
+    required Future<void> Function() mount,
+    required String condition,
+    required bool Function() isSatisfied,
+    required Future<void> Function() pump,
+    Duration startupTimeout = const Duration(seconds: 30),
+    Duration pumpTimeout = const Duration(seconds: 2),
+    String Function()? details,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    var activeStep = mountStep;
+    _writeProgress('START', mountStep, stopwatch.elapsed);
+    try {
+      await mount().timeout(
+        startupTimeout,
+        onTimeout: () => throw TimeoutException(
+          _timeoutMessage(mountStep, startupTimeout, stopwatch.elapsed),
+        ),
+      );
+      _writeProgress('PASS', mountStep, stopwatch.elapsed);
+      activeStep = condition;
+      _writeProgress('START', condition, stopwatch.elapsed);
+      while (!isSatisfied() && stopwatch.elapsed < startupTimeout) {
+        final remaining = startupTimeout - stopwatch.elapsed;
+        if (remaining <= Duration.zero) {
+          break;
+        }
+        final currentPumpTimeout =
+            remaining < pumpTimeout ? remaining : pumpTimeout;
+        await pump().timeout(
+          currentPumpTimeout,
+          onTimeout: () => throw TimeoutException(
+            _timeoutMessage(
+              '$condition (Flutter pump stalled)',
+              currentPumpTimeout,
+              stopwatch.elapsed,
+            ),
+          ),
+        );
+      }
+      if (!isSatisfied()) {
+        final suffix = details == null ? '' : ' Details: ${details()}';
+        throw TimeoutException(
+          '${_timeoutMessage(
+            condition,
+            startupTimeout,
+            stopwatch.elapsed,
+          )}$suffix',
+        );
+      }
+      _writeProgress('PASS', condition, stopwatch.elapsed);
+    } catch (error) {
+      _writeProgress('FAIL', activeStep, stopwatch.elapsed, error: error);
+      rethrow;
+    }
+  }
+
   String _timeoutMessage(
     String condition,
     Duration timeout,

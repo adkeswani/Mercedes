@@ -34,18 +34,16 @@ void main() {
         app.initializeMercedesApp,
         timeout: const Duration(seconds: 30),
       );
-      await waits.runStep(
-        'pump initial application',
-        () => tester.pumpWidget(
+      await waits.mountAndWaitForCondition(
+        mountStep: 'pump initial application',
+        mount: () => tester.pumpWidget(
           const ProviderScope(child: MercedesApp()),
         ),
-      );
-
-      await _waitFor(
-        tester,
-        waits,
-        find.byKey(browserSmokeLoginButtonKey),
-        step: 'local emulator login button',
+        condition: 'local emulator login button',
+        isSatisfied: () =>
+            find.byKey(browserSmokeLoginButtonKey).evaluate().isNotEmpty,
+        pump: () => tester.pump(const Duration(milliseconds: 100)),
+        details: () => 'Visible text: ${_visibleText()}',
       );
       await waits.runStep(
         'submit local emulator login',

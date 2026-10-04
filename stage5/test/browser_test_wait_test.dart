@@ -96,4 +96,99 @@ void main() {
       ),
     );
   });
+
+  test('startup mount uses the startup budget, not the pump sub-deadline',
+      () async {
+    var mounted = false;
+    var pumpCalls = 0;
+    final waits = BrowserTestWaitContext(
+      identity: 'athlete',
+      testFile: 'integration_test/recovery_test.dart',
+      artifactPath: 'artifacts',
+      currentRoute: () => '/login',
+    );
+
+    await waits.mountAndWaitForCondition(
+      mountStep: 'pump initial application',
+      mount: () async {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        mounted = true;
+      },
+      condition: 'local emulator login button',
+      isSatisfied: () => mounted,
+      pump: () async {
+        pumpCalls++;
+      },
+      startupTimeout: const Duration(milliseconds: 100),
+      pumpTimeout: const Duration(milliseconds: 5),
+    );
+
+    expect(mounted, isTrue);
+    expect(pumpCalls, 0);
+  });
+
+  test('startup polling reports the named pump sub-deadline', () async {
+    final waits = BrowserTestWaitContext(
+      identity: 'athlete',
+      testFile: 'integration_test/recovery_test.dart',
+      artifactPath: 'artifacts',
+      currentRoute: () => '/login',
+    );
+
+    await expectLater(
+      waits.mountAndWaitForCondition(
+        mountStep: 'pump initial application',
+        mount: () async {},
+        condition: 'local emulator login button',
+        isSatisfied: () => false,
+        pump: () => Completer<void>().future,
+        startupTimeout: const Duration(milliseconds: 100),
+        pumpTimeout: const Duration(milliseconds: 10),
+      ),
+      throwsA(
+        isA<TimeoutException>()
+            .having(
+              (error) => error.message,
+              'message',
+              contains('local emulator login button'),
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              contains('Flutter pump stalled'),
+            ),
+      ),
+    );
+  });
+
+  test('startup mount timeout retains the mount step name', () async {
+    final waits = BrowserTestWaitContext(
+      identity: 'athlete',
+      testFile: 'integration_test/recovery_test.dart',
+      artifactPath: 'artifacts',
+      currentRoute: () => '<application not mounted>',
+    );
+
+    await expectLater(
+      waits.mountAndWaitForCondition(
+        mountStep: 'pump initial application',
+        mount: () => Completer<void>().future,
+        condition: 'local emulator login button',
+        isSatisfied: () => false,
+        pump: () async {},
+        startupTimeout: const Duration(milliseconds: 10),
+        pumpTimeout: const Duration(milliseconds: 2),
+      ),
+      throwsA(
+        isA<TimeoutException>().having(
+          (error) => error.message,
+          'message',
+          allOf(
+            contains('pump initial application'),
+            contains('<application not mounted>'),
+          ),
+        ),
+      ),
+    );
+  });
 }
