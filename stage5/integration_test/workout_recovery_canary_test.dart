@@ -7,6 +7,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:stage5/app.dart';
 import 'package:stage5/core/browser_smoke_config.dart';
+import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
 import 'package:stage5/main.dart' as app;
 
 import 'support/browser_test_wait.dart';
@@ -69,6 +70,9 @@ void main() {
         find.text('Complete Workout'),
         step: 'canonical workout route',
       );
+      final initialClientId = ProviderScope.containerOf(
+        tester.element(find.byType(MercedesApp)),
+      ).read(workoutDraftClientIdProvider);
 
       tester.widget<Slider>(find.byType(Slider)).onChanged!(8);
       await waits.runStep(
@@ -94,6 +98,15 @@ void main() {
         find.text('Saved'),
         step: 'draft saved indicator',
       );
+      await waits.runStep('verify initial draft client identity', () async {
+        final savedDraft = await FirebaseFirestore.instance
+            .collection('workoutInstances')
+            .doc('browser-calendar-workout')
+            .collection('completionDrafts')
+            .doc('current')
+            .get();
+        expect(savedDraft.data()?['clientId'], initialClientId);
+      });
 
       await waits.runStep(
         'dispose application root',
@@ -104,6 +117,14 @@ void main() {
         () => tester.pumpWidget(
           const ProviderScope(child: MercedesApp()),
         ),
+      );
+      final recreatedClientId = ProviderScope.containerOf(
+        tester.element(find.byType(MercedesApp)),
+      ).read(workoutDraftClientIdProvider);
+      expect(
+        recreatedClientId,
+        initialClientId,
+        reason: 'Root recreation must retain the current tab client ID.',
       );
       await _waitFor(
         tester,
