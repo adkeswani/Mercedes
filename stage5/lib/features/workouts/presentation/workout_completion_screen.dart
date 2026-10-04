@@ -29,6 +29,9 @@ class WorkoutCompletionScreen extends ConsumerStatefulWidget {
 
 class _WorkoutCompletionScreenState
     extends ConsumerState<WorkoutCompletionScreen> with WidgetsBindingObserver {
+  static int _nextDebugInstance = 0;
+
+  final int _debugInstance = _nextDebugInstance++;
   final _notesController = TextEditingController();
   int _rpe = 5;
   int _durationMinutes = 45;
@@ -47,6 +50,7 @@ class _WorkoutCompletionScreenState
   @override
   void initState() {
     super.initState();
+    _debugTrace('init');
     WidgetsBinding.instance.addObserver(this);
     _notesController.addListener(_scheduleSave);
     _loadInstance();
@@ -54,6 +58,7 @@ class _WorkoutCompletionScreenState
 
   @override
   void dispose() {
+    _debugTrace('dispose');
     WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
     _notesController.removeListener(_scheduleSave);
@@ -114,6 +119,11 @@ class _WorkoutCompletionScreenState
       if (!mounted || widget.instanceId != instance.id) {
         return;
       }
+      _debugTrace(
+        'load'
+        '|kind=${restore?.kind.name ?? 'none'}'
+        '|revision=${restore?.draft?.revision ?? 0}',
+      );
       setState(() {
         _instance = instance;
         _exercises = workoutVersion?.exerciseSlots ?? [];
@@ -173,6 +183,7 @@ class _WorkoutCompletionScreenState
     }
     final revision = ++_revision;
     final route = '/athlete/workouts/${instance.id}';
+    _debugTrace('save-start|revision=$revision');
     try {
       final draft = WorkoutCompletionDraft(
         instanceId: instance.id,
@@ -189,6 +200,12 @@ class _WorkoutCompletionScreenState
       );
       final result =
           await ref.read(workoutCompletionDraftRepositoryProvider).save(draft);
+      _debugTrace(
+        'save-result'
+        '|revision=$revision'
+        '|status=${result.status.name}'
+        '|mounted=$mounted',
+      );
       if (!mounted ||
           widget.instanceId != instance.id ||
           revision != _revision ||
@@ -236,6 +253,14 @@ class _WorkoutCompletionScreenState
         setState(() => _saveState = _DraftSaveState.failed);
       }
     }
+  }
+
+  void _debugTrace(String event) {
+    assert(() {
+      // ignore: avoid_print
+      print('WORKOUT_COMPLETION_SCREEN|instance=$_debugInstance|event=$event');
+      return true;
+    }());
   }
 
   Future<void> _complete() async {
