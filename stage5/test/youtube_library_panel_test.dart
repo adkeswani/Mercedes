@@ -7,6 +7,7 @@ import 'package:stage5/features/exercises/data/youtube_channel_preference.dart';
 import 'package:stage5/features/exercises/data/youtube_public_api.dart';
 import 'package:stage5/features/exercises/domain/youtube_channel.dart';
 import 'package:stage5/features/exercises/presentation/youtube_library_panel.dart';
+import 'package:stage5/features/exercises/presentation/youtube_video_presentation.dart';
 
 void main() {
   test('release canary bridge actions use the attachment command', () {
@@ -145,6 +146,140 @@ void main() {
     await tester.tap(find.byKey(youtubeLoadChannelKey));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('youtube-library-error')), findsOneWidget);
+  });
+
+  testWidgets('attached preview stays visible through every catalogue state', (
+    tester,
+  ) async {
+    final completer = Completer<PublicYoutubeChannel>();
+    final api = _FakeApi(resolve: (_) => completer.future);
+    await _pumpPanel(tester, api: api, attachedVideo: _first.metadata);
+
+    expect(find.byKey(youtubeAttachedPreviewKey), findsOneWidget);
+    await tester.enterText(
+      find.byKey(youtubeChannelFieldKey),
+      '@public.trainer',
+    );
+    await tester.tap(find.byKey(youtubeLoadChannelKey));
+    await tester.pump();
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byKey(youtubeAttachedPreviewKey), findsOneWidget);
+
+    completer.complete(_channel);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('youtube-library-empty')), findsOneWidget);
+    expect(find.byKey(youtubeAttachedPreviewKey), findsOneWidget);
+
+    api.videos = [_first, _second];
+    await tester.tap(find.byKey(youtubeLoadChannelKey));
+    await tester.pumpAndSettle();
+    expect(find.text(_second.title), findsOneWidget);
+    expect(find.byKey(youtubeAttachedPreviewKey), findsOneWidget);
+
+    await tester.enterText(find.byKey(youtubeSearchFieldKey), 'missing');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('youtube-library-empty')), findsOneWidget);
+    expect(find.byKey(youtubeAttachedPreviewKey), findsOneWidget);
+
+    api.failure = StateError('Public YouTube channel was not found');
+    await tester.tap(find.byKey(youtubeLoadChannelKey));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('youtube-library-error')), findsOneWidget);
+    expect(find.byKey(youtubeAttachedPreviewKey), findsOneWidget);
+  });
+
+  testWidgets('attached preview uses the read-only video frame constraints', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: YoutubeVideoPlayer(
+            videoId: 'videoId0001',
+            embedBuilder: (_) => const ColoredBox(color: Colors.black),
+          ),
+        ),
+      ),
+    );
+    expect(find.byType(YoutubeVideoFrame), findsOneWidget);
+    final readOnlySize = tester.getSize(
+      find.byKey(youtubeVideoFrameSurfaceKey),
+    );
+
+    await _pumpPanel(
+      tester,
+      api: _FakeApi(),
+      attachedVideo: _first.metadata,
+      size: const Size(1000, 1000),
+    );
+    expect(find.byKey(youtubeAttachedPreviewKey), findsOneWidget);
+    expect(
+      tester.widget(find.byKey(youtubeAttachedPreviewKey)),
+      isA<YoutubeVideoFrame>(),
+    );
+    final editorSize = tester.getSize(
+      find.byKey(youtubeVideoFrameSurfaceKey),
+    );
+
+    expect(readOnlySize, const Size(youtubeVideoMaxWidth, 360));
+    expect(editorSize, readOnlySize);
+  });
+
+  testWidgets('attached preview remains bounded in compact layout', (
+    tester,
+  ) async {
+    await _pumpPanel(
+      tester,
+      api: _FakeApi(),
+      attachedVideo: _first.metadata,
+      size: const Size(360, 800),
+    );
+
+    final size = tester.getSize(find.byKey(youtubeVideoFrameSurfaceKey));
+    expect(size.width, lessThanOrEqualTo(336));
+    expect(size.aspectRatio, closeTo(youtubeVideoAspectRatio, 0.01));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('remove and replacement update the detached preview', (
+    tester,
+  ) async {
+    await _pumpAttachedHarness(tester, api: _FakeApi(videos: [_second]));
+
+    expect(find.text(_first.title), findsOneWidget);
+    await tester.enterText(
+      find.byKey(youtubeChannelFieldKey),
+      '@public.trainer',
+    );
+    await tester.tap(find.byKey(youtubeLoadChannelKey));
+    await tester.pumpAndSettle();
+    expect(find.text('Replace'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('youtube-attach-videoId0002')));
+    await tester.pump();
+    expect(
+      find.bySemanticsLabel('Attached YouTube video ${_second.title}'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(youtubeRemoveVideoKey));
+    await tester.pump();
+    expect(find.byKey(youtubeAttachedPreviewKey), findsNothing);
+    expect(find.text('Attach'), findsOneWidget);
+  });
+
+  testWidgets('does not render a preview without attached metadata', (
+    tester,
+  ) async {
+    await _pumpPanel(tester, api: _FakeApi());
+
+    expect(find.byKey(youtubeAttachedPreviewKey), findsNothing);
+    expect(find.byType(YoutubeThumbnail), findsNothing);
   });
 
   testWidgets('pages and applies server-side view-count sorting', (
@@ -329,9 +464,7 @@ void main() {
       ),
     );
     await tester.pump();
-    final image = tester.widget<Image>(
-      find.byType(Image),
-    );
+    final image = tester.widget<Image>(find.byType(Image));
     final fallback = image.errorBuilder!(
       tester.element(find.byType(Image)),
       StateError('network failed'),
@@ -533,6 +666,50 @@ class _MemoryPreference implements YoutubeChannelPreference {
   Future<void> write(String value) async {
     this.value = value;
   }
+}
+
+class _AttachedPanelHarness extends StatefulWidget {
+  const _AttachedPanelHarness({required this.api});
+
+  final YoutubePublicApi api;
+
+  @override
+  State<_AttachedPanelHarness> createState() => _AttachedPanelHarnessState();
+}
+
+class _AttachedPanelHarnessState extends State<_AttachedPanelHarness> {
+  YoutubeVideoMetadata? _attachedVideo = _first.metadata;
+
+  @override
+  Widget build(BuildContext context) {
+    return YoutubeLibraryPanel(
+      api: widget.api,
+      preference: _MemoryPreference(),
+      attachedVideo: _attachedVideo,
+      onAttach: (video) => setState(() => _attachedVideo = video.metadata),
+      onRemove: () => setState(() => _attachedVideo = null),
+    );
+  }
+}
+
+Future<void> _pumpAttachedHarness(
+  WidgetTester tester, {
+  required YoutubePublicApi api,
+}) async {
+  tester.view.physicalSize = const Size(900, 1000);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(
+    ProviderScope(
+      child: MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(child: _AttachedPanelHarness(api: api)),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
 }
 
 Future<void> _pumpPanel(

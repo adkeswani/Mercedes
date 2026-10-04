@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/exercises/domain/exercise_template.dart';
 import 'package:stage5/features/exercises/domain/youtube_url.dart';
 import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
-import 'package:stage5/features/exercises/presentation/youtube_embed.dart';
+import 'package:stage5/features/exercises/presentation/youtube_video_presentation.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Read-only detail view for an exercise template.
 ///
@@ -18,9 +17,9 @@ import 'package:stage5/features/exercises/presentation/youtube_embed.dart';
 /// exercise's creator.
 class ExerciseDetailScreen extends ConsumerWidget {
   const ExerciseDetailScreen({
-    super.key,
     required this.exerciseId,
     this.versionNumber,
+    super.key,
   });
 
   final String exerciseId;
@@ -32,9 +31,7 @@ class ExerciseDetailScreen extends ConsumerWidget {
     final currentUid = ref.watch(authStateProvider).value?.uid;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Exercise'),
-      ),
+      appBar: AppBar(title: const Text('Exercise')),
       body: FutureBuilder<ExerciseTemplate?>(
         future: versionNumber == null
             ? repo.getById(exerciseId)
@@ -116,7 +113,9 @@ class _ExerciseVideo extends StatelessWidget {
 
   Future<void> _openExternally() async {
     final uri = Uri.tryParse(url);
-    if (uri == null) return;
+    if (uri == null) {
+      return;
+    }
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
@@ -124,15 +123,7 @@ class _ExerciseVideo extends StatelessWidget {
   Widget build(BuildContext context) {
     final videoId = extractYoutubeId(url);
     if (videoId != null) {
-      return Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: buildYoutubeEmbed(videoId),
-          ),
-        ),
-      );
+      return YoutubeVideoPlayer(videoId: videoId);
     }
 
     // Unsupported URL — offer to open it externally.
@@ -140,11 +131,7 @@ class _ExerciseVideo extends StatelessWidget {
       child: ListTile(
         leading: const Icon(Icons.open_in_new),
         title: const Text('Open video link'),
-        subtitle: Text(
-          url,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        subtitle: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
         onTap: _openExternally,
       ),
     );

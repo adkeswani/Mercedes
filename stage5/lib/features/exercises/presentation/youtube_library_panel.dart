@@ -9,6 +9,7 @@ import 'package:stage5/features/exercises/data/youtube_channel_preference.dart';
 import 'package:stage5/features/exercises/data/youtube_public_api.dart';
 import 'package:stage5/features/exercises/domain/youtube_channel.dart';
 import 'package:stage5/features/exercises/presentation/youtube_public_providers.dart';
+import 'package:stage5/features/exercises/presentation/youtube_video_presentation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const youtubeChannelFieldKey = Key('youtube-channel-field');
@@ -312,9 +313,8 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
 
   Future<void> _openVideo(YoutubeVideoMetadata metadata) async {
     final uri = Uri.parse(metadata.canonicalUrl);
-    final opened =
-        await (widget.openUrl?.call(uri) ??
-            launchUrl(uri, mode: LaunchMode.externalApplication));
+    final opened = await (widget.openUrl?.call(uri) ??
+        launchUrl(uri, mode: LaunchMode.externalApplication));
     if (!opened && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open this YouTube video.')),
@@ -340,159 +340,167 @@ class _YoutubeLibraryPanelState extends ConsumerState<YoutubeLibraryPanel> {
   @override
   Widget build(BuildContext context) {
     final visible = _videos;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'YouTube public channel',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Browse public uploads without connecting a Google account. '
-              'Private and unlisted videos require future YouTube OAuth.',
-            ),
-            const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _MediaTarget(
+          metadata: widget.attachedVideo,
+          onAttach: widget.onAttach,
+          onRemove: widget.onRemove,
+          onOpen: _openVideo,
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: TextField(
-                    key: youtubeChannelFieldKey,
-                    controller: _channelController,
-                    decoration: const InputDecoration(
-                      labelText: 'Public channel',
-                      hintText:
-                          '@handle, channel URL, custom URL, or channel ID',
-                    ),
-                    onSubmitted: _loading ? null : (_) => _loadChannel(),
-                  ),
+                Text(
+                  'YouTube public channel',
+                  style: Theme.of(context).textTheme.titleLarge,
                 ),
-                const SizedBox(width: 8),
-                Semantics(
-                  label: 'Load public YouTube channel',
-                  button: true,
-                  onTap: _loading ? null : _loadChannel,
-                  child: ExcludeSemantics(
-                    child: FilledButton(
-                      key: youtubeLoadChannelKey,
-                      onPressed: _loading ? null : _loadChannel,
-                      child: const Text('Load channel'),
-                    ),
-                  ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Browse public uploads without connecting a Google account. '
+                  'Private and unlisted videos require future YouTube OAuth.',
                 ),
-              ],
-            ),
-            if (_loading) ...[
-              const SizedBox(height: 12),
-              const LinearProgressIndicator(),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                key: const Key('youtube-library-error'),
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-            if (_channel != null) ...[
-              const SizedBox(height: 16),
-              _ChannelIdentity(channel: _channel!),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 320,
-                    child: TextField(
-                      key: youtubeSearchFieldKey,
-                      controller: _searchController,
-                      decoration: const InputDecoration(
-                        labelText: 'Search complete catalogue',
-                        prefixIcon: Icon(Icons.search),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        key: youtubeChannelFieldKey,
+                        controller: _channelController,
+                        decoration: const InputDecoration(
+                          labelText: 'Public channel',
+                          hintText:
+                              '@handle, channel URL, custom URL, or channel ID',
+                        ),
+                        onSubmitted: _loading ? null : (_) => _loadChannel(),
                       ),
-                      onChanged: (_) => _scheduleCatalogueReload(),
                     ),
-                  ),
-                  for (final option in YoutubeVideoSort.values)
+                    const SizedBox(width: 8),
                     Semantics(
-                      label: '${_sortLabel(option)} loaded sort',
+                      label: 'Load public YouTube channel',
                       button: true,
-                      selected: _sort == option,
-                      onTap: () {
-                        setState(() => _sort = option);
-                        _reloadCatalogue();
-                      },
+                      onTap: _loading ? null : _loadChannel,
                       child: ExcludeSemantics(
-                        child: ChoiceChip(
-                          label: Text(_sortLabel(option)),
-                          selected: _sort == option,
-                          onSelected: (_) {
-                            setState(() => _sort = option);
-                            _reloadCatalogue();
-                          },
+                        child: FilledButton(
+                          key: youtubeLoadChannelKey,
+                          onPressed: _loading ? null : _loadChannel,
+                          child: const Text('Load channel'),
                         ),
                       ),
                     ),
+                  ],
+                ),
+                if (_loading) ...[
+                  const SizedBox(height: 12),
+                  const LinearProgressIndicator(),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
                   Text(
-                    _catalogueComplete
-                        ? '$_videoCount videos indexed'
-                        : 'Indexing $_indexedCount videos...',
-                    key: const Key('youtube-catalogue-progress'),
+                    _error!,
+                    key: const Key('youtube-library-error'),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              _CatalogueFreshness(
-                status: _catalogueStatus,
-                stale: _stale,
-                complete: _catalogueComplete,
-                lastRefreshedAt: _lastRefreshedAt,
-              ),
-              const SizedBox(height: 12),
-              _MediaTarget(
-                metadata: widget.attachedVideo,
-                onAttach: widget.onAttach,
-                onRemove: widget.onRemove,
-                onOpen: _openVideo,
-              ),
-              const SizedBox(height: 12),
-              if (visible.isEmpty)
-                const Text(
-                  'No public videos match the loaded catalogue.',
-                  key: Key('youtube-library-empty'),
-                )
-              else
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final desktop = constraints.maxWidth >= 700;
-                    return Column(
-                      children: [
-                        for (final video in visible)
-                          _VideoCard(
-                            video: video,
-                            draggable: desktop,
-                            onAttach: () => widget.onAttach(video),
-                            replacing: widget.attachedVideo != null,
+                if (_channel != null) ...[
+                  const SizedBox(height: 16),
+                  _ChannelIdentity(channel: _channel!),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 320,
+                        child: TextField(
+                          key: youtubeSearchFieldKey,
+                          controller: _searchController,
+                          decoration: const InputDecoration(
+                            labelText: 'Search complete catalogue',
+                            prefixIcon: Icon(Icons.search),
                           ),
-                      ],
-                    );
-                  },
-                ),
-              if (_nextPageToken != null)
-                OutlinedButton(
-                  onPressed: _loadingMore ? null : _loadMore,
-                  child: Text(_loadingMore ? 'Loading...' : 'Load next page'),
-                ),
-            ],
-          ],
+                          onChanged: (_) => _scheduleCatalogueReload(),
+                        ),
+                      ),
+                      for (final option in YoutubeVideoSort.values)
+                        Semantics(
+                          label: '${_sortLabel(option)} loaded sort',
+                          button: true,
+                          selected: _sort == option,
+                          onTap: () {
+                            setState(() => _sort = option);
+                            _reloadCatalogue();
+                          },
+                          child: ExcludeSemantics(
+                            child: ChoiceChip(
+                              label: Text(_sortLabel(option)),
+                              selected: _sort == option,
+                              onSelected: (_) {
+                                setState(() => _sort = option);
+                                _reloadCatalogue();
+                              },
+                            ),
+                          ),
+                        ),
+                      Text(
+                        _catalogueComplete
+                            ? '$_videoCount videos indexed'
+                            : 'Indexing $_indexedCount videos...',
+                        key: const Key('youtube-catalogue-progress'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _CatalogueFreshness(
+                    status: _catalogueStatus,
+                    stale: _stale,
+                    complete: _catalogueComplete,
+                    lastRefreshedAt: _lastRefreshedAt,
+                  ),
+                  if (visible.isEmpty)
+                    const Text(
+                      'No public videos match the loaded catalogue.',
+                      key: Key('youtube-library-empty'),
+                    )
+                  else
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final desktop = constraints.maxWidth >= 700;
+                        return Column(
+                          children: [
+                            for (final video in visible)
+                              _VideoCard(
+                                video: video,
+                                draggable: desktop,
+                                onAttach: () => widget.onAttach(video),
+                                replacing: widget.attachedVideo != null,
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  if (_nextPageToken != null)
+                    OutlinedButton(
+                      onPressed: _loadingMore ? null : _loadMore,
+                      child: Text(
+                        _loadingMore ? 'Loading...' : 'Load next page',
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -527,8 +535,8 @@ class _CatalogueFreshness extends StatelessWidget {
     final message = !complete
         ? 'Indexing is in progress. Results may be incomplete.'
         : stale || status == YoutubeCatalogueStatus.error
-        ? 'Showing stale cached results. $refreshed'
-        : 'Catalogue is fresh. $refreshed';
+            ? 'Showing stale cached results. $refreshed'
+            : 'Catalogue is fresh. $refreshed';
     return Text(
       message,
       key: const Key('youtube-catalogue-freshness'),
@@ -552,9 +560,8 @@ class _ChannelIdentity extends StatelessWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: CircleAvatar(
-        foregroundImage: avatar == null || avatar.isEmpty
-            ? null
-            : NetworkImage(avatar),
+        foregroundImage:
+            avatar == null || avatar.isEmpty ? null : NetworkImage(avatar),
         child: const Icon(Icons.video_library_outlined),
       ),
       title: Text(channel.title),
@@ -604,8 +611,8 @@ class _MediaTarget extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      AspectRatio(
-                        aspectRatio: 16 / 9,
+                      YoutubeVideoFrame(
+                        key: youtubeAttachedPreviewKey,
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
@@ -613,6 +620,7 @@ class _MediaTarget extends StatelessWidget {
                               url: metadata!.thumbnailUrl,
                               semanticLabel:
                                   '${metadata!.title} YouTube thumbnail',
+                              fallbackKey: youtubeThumbnailFallbackKey,
                             ),
                             const Center(
                               child: Icon(
@@ -670,50 +678,6 @@ class _MediaTarget extends StatelessWidget {
   }
 }
 
-class YoutubeThumbnail extends StatelessWidget {
-  const YoutubeThumbnail({
-    required this.url,
-    required this.semanticLabel,
-    this.fallbackKey = youtubeThumbnailFallbackKey,
-    super.key,
-  });
-
-  final String url;
-  final String semanticLabel;
-  final Key fallbackKey;
-
-  @override
-  Widget build(BuildContext context) {
-    final fallback = ColoredBox(
-      key: fallbackKey,
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: const Center(child: Icon(Icons.video_library_outlined, size: 48)),
-    );
-    if (url.isEmpty) {
-      return Semantics(image: true, label: semanticLabel, child: fallback);
-    }
-    return Semantics(
-      image: true,
-      label: semanticLabel,
-      child: Image.network(
-        url,
-        fit: BoxFit.cover,
-        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-          if (wasSynchronouslyLoaded || frame != null) return child;
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              fallback,
-              const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-            ],
-          );
-        },
-        errorBuilder: (_, __, ___) => fallback,
-      ),
-    );
-  }
-}
-
 class _VideoCard extends StatelessWidget {
   const _VideoCard({
     required this.video,
@@ -739,7 +703,7 @@ class _VideoCard extends StatelessWidget {
           key: Key('youtube-thumbnail-${video.id}'),
           width: 96,
           child: AspectRatio(
-            aspectRatio: 16 / 9,
+            aspectRatio: youtubeVideoAspectRatio,
             child: ClipRect(
               child: YoutubeThumbnail(
                 url: video.thumbnailUrl,
