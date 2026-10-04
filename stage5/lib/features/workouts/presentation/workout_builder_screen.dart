@@ -7,6 +7,7 @@ import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/library/domain/library_metadata.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/exercise_picker.dart';
+import 'package:stage5/features/workouts/presentation/workout_delete_command.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
 /// Builder screen for creating/editing a workout template.
@@ -33,6 +34,7 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
   WorkoutType _workoutType = WorkoutType.fullBody;
   bool _isLoading = false;
   bool _didLoad = false;
+  WorkoutTemplate? _loadedWorkout;
 
   @override
   void dispose() {
@@ -57,6 +59,7 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
     final template = await repo.getById(widget.workoutId!);
     if (template == null || !mounted) return;
 
+    _loadedWorkout = template;
     _nameController.text = template.name;
     setState(() => _workoutType = template.workoutType);
 
@@ -186,48 +189,16 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
   }
 
   Future<void> _deleteWorkout() async {
-    final repo = ref.read(workoutTemplateRepositoryProvider);
-    final referenced = await repo.isWorkoutReferenced(widget.workoutId!);
-    if (referenced) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Cannot delete — this workout is used in a program',
-            ),
-          ),
-        );
-      }
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
+    final result = await confirmAndDeleteWorkout(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete workout template?'),
-        content: const Text('This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      ref: ref,
+      workoutId: widget.workoutId!,
+      workoutName: _loadedWorkout?.name ?? _nameController.text,
     );
-    if (confirmed != true) return;
-
-    final uid = ref.read(authStateProvider).value?.uid;
-    if (uid == null) return;
-
-    await ref.read(workoutTemplateRepositoryProvider).softDelete(
-          widget.workoutId!,
-          uid,
-        );
-    if (mounted) context.pop();
+    if (result.deleted && mounted) {
+      ref.invalidate(workoutTemplatesProvider);
+      context.go('/workouts');
+    }
   }
 
   void _addExercise() async {
@@ -269,6 +240,8 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
     }
 
     final blocks = ref.watch(workoutDraftProvider);
+    final deletePending = widget.workoutId != null &&
+        ref.watch(workoutDeleteControllerProvider).contains(widget.workoutId);
 
     // New template — show creation form
     if (!widget.isEditing) {
@@ -282,7 +255,7 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: 'Delete workout',
-            onPressed: _isLoading ? null : _deleteWorkout,
+            onPressed: _isLoading || deletePending ? null : _deleteWorkout,
           ),
           TextButton(
             onPressed: _isLoading ? null : _publish,

@@ -10,14 +10,22 @@ import 'package:stage5/features/library/presentation/library_organizer.dart';
 import 'package:stage5/features/library/presentation/library_providers.dart';
 import 'package:stage5/features/relationships/presentation/trainer_client_relationship_providers.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
+import 'package:stage5/features/workouts/presentation/workout_delete_command.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
 /// Displays the user's workout template library.
-class WorkoutListScreen extends ConsumerWidget {
+class WorkoutListScreen extends ConsumerStatefulWidget {
   const WorkoutListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<WorkoutListScreen> createState() => _WorkoutListScreenState();
+}
+
+class _WorkoutListScreenState extends ConsumerState<WorkoutListScreen> {
+  final Set<String> _removedWorkoutIds = {};
+
+  @override
+  Widget build(BuildContext context) {
     final workoutsAsync = ref.watch(workoutTemplatesProvider);
     final foldersAsync = ref.watch(
       libraryFoldersProvider(LibraryItemType.workout),
@@ -30,6 +38,9 @@ class WorkoutListScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Workout Templates')),
       body: workoutsAsync.when(
         data: (workouts) {
+          final visibleWorkouts = workouts
+              .where((workout) => !_removedWorkoutIds.contains(workout.id))
+              .toList();
           if (workouts.isEmpty) {
             if (browserAutomationEnabled) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -64,7 +75,7 @@ class WorkoutListScreen extends ConsumerWidget {
               return LibraryOrganizer<WorkoutTemplate>(
                 userId: userId,
                 itemType: LibraryItemType.workout,
-                items: workouts,
+                items: visibleWorkouts,
                 folders: folders,
                 emptyMessage: 'No workout templates yet. Tap + to create one.',
                 nameOf: (item) => item.name,
@@ -77,6 +88,10 @@ class WorkoutListScreen extends ConsumerWidget {
                     _WorkoutTile(
                   workout: item,
                   organizationButton: organizationButton,
+                  onDismissed: () {
+                    setState(() => _removedWorkoutIds.add(item.id));
+                    ref.invalidate(workoutTemplatesProvider);
+                  },
                 ),
                 updateOrganization: (
                   item, {
@@ -143,63 +158,43 @@ class WorkoutListScreen extends ConsumerWidget {
 }
 
 class _WorkoutTile extends ConsumerWidget {
-  const _WorkoutTile({required this.workout, required this.organizationButton});
+  const _WorkoutTile({
+    required this.workout,
+    required this.organizationButton,
+    required this.onDismissed,
+  });
 
   final WorkoutTemplate workout;
   final Widget organizationButton;
+  final VoidCallback onDismissed;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final versionLabel =
         workout.hasPublishedVersion ? 'v${workout.currentVersion}' : 'Draft';
+    final deletePending =
+        ref.watch(workoutDeleteControllerProvider).contains(workout.id);
 
     return Dismissible(
-      key: Key(workout.id),
-      direction: DismissDirection.endToStart,
+      key: ValueKey<String>('workout-${workout.id}'),
+      direction:
+          deletePending ? DismissDirection.none : DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 16),
         color: Theme.of(context).colorScheme.error,
         child: Icon(Icons.delete, color: Theme.of(context).colorScheme.onError),
       ),
-      confirmDismiss: (direction) async {
-        final repo = ref.read(workoutTemplateRepositoryProvider);
-        final referenced = await repo.isWorkoutReferenced(workout.id);
-        if (referenced) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Cannot delete — this workout is used in a program',
-                ),
-              ),
-            );
-          }
-          return false;
-        }
-        return await showDialog<bool>(
+      confirmDismiss: (_) async {
+        final result = await confirmAndDeleteWorkout(
           context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Delete workout template?'),
-            content: Text('Are you sure you want to delete "${workout.name}"?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Delete'),
-              ),
-            ],
-          ),
+          ref: ref,
+          workoutId: workout.id,
+          workoutName: workout.name,
         );
+        return result.deleted;
       },
-      onDismissed: (_) {
-        final uid = ref.read(authStateProvider).value?.uid;
-        if (uid == null) return;
-        ref.read(workoutTemplateRepositoryProvider).softDelete(workout.id, uid);
-      },
+      onDismissed: (_) => onDismissed(),
       child: ListTile(
         title: Text(workout.name),
         subtitle: Column(
@@ -236,7 +231,9 @@ class _WorkoutTile extends ConsumerWidget {
 
   Future<void> _duplicateWorkout(BuildContext context, WidgetRef ref) async {
     final uid = ref.read(authStateProvider).value?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      return;
+    }
 
     final repo = ref.read(workoutTemplateRepositoryProvider);
     try {
