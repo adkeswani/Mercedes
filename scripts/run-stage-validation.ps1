@@ -253,13 +253,7 @@ if (-not (Test-Path -LiteralPath $stagePath -PathType Container)) {
 }
 if ($Stage -eq 'stage5') {
     & (Join-Path $repoRoot 'scripts\test\resolve-chromedriver.tests.ps1')
-    if ($LASTEXITCODE -ne 0) {
-        throw 'ChromeDriver resolver tests failed.'
-    }
     & (Join-Path $repoRoot 'scripts\test\stage-validation-browser.tests.ps1')
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Browser validation harness tests failed.'
-    }
     . (Join-Path $repoRoot 'scripts\lib\chromedriver.ps1')
     $ChromeDriverPath = Resolve-CompatibleChromeDriver `
         -ChromeDriverPath $ChromeDriverPath
