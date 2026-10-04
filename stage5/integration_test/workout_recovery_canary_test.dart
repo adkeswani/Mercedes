@@ -34,15 +34,21 @@ void main() {
         app.initializeMercedesApp,
         timeout: const Duration(seconds: 30),
       );
-      await waits.mountAndWaitForCondition(
-        mountStep: 'pump initial application',
-        mount: () => tester.pumpWidget(
-          const ProviderScope(child: MercedesApp()),
-        ),
+      await waits.attachRootAndWaitForCondition(
+        attachStep: 'attach initial application root',
+        attachRoot: () {
+          tester.binding.attachRootWidget(
+            tester.binding.wrapWithDefaultView(
+              const ProviderScope(child: MercedesApp()),
+            ),
+          );
+          tester.binding.scheduleFrame();
+        },
         condition: 'local emulator login button',
         isSatisfied: () =>
             find.byKey(browserSmokeLoginButtonKey).evaluate().isNotEmpty,
         pump: () => tester.pump(const Duration(milliseconds: 100)),
+        takeFrameworkException: tester.takeException,
         details: () => 'Visible text: ${_visibleText()}',
       );
       await waits.runStep(
@@ -94,14 +100,26 @@ void main() {
       );
 
       await waits.runStep(
-        'dispose application root',
-        () => tester.pumpWidget(const SizedBox.shrink()),
+        'navigate away from workout',
+        () async {
+          GoRouter.of(
+            tester.element(find.byType(Navigator).first),
+          ).go('/athlete/today');
+        },
+      );
+      await _waitFor(
+        tester,
+        waits,
+        find.text('Today'),
+        step: 'athlete workspace after workout disposal',
       );
       await waits.runStep(
-        'recreate application root from browser URL',
-        () => tester.pumpWidget(
-          const ProviderScope(child: MercedesApp()),
-        ),
+        'reopen canonical workout route',
+        () async {
+          GoRouter.of(
+            tester.element(find.byType(Navigator).first),
+          ).go('/athlete/workouts/browser-calendar-workout');
+        },
       );
       await _waitFor(
         tester,

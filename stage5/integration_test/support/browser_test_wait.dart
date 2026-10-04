@@ -75,30 +75,34 @@ class BrowserTestWaitContext {
     _writeProgress('PASS', condition, stopwatch.elapsed);
   }
 
-  Future<void> mountAndWaitForCondition({
-    required String mountStep,
-    required Future<void> Function() mount,
+  Future<void> attachRootAndWaitForCondition({
+    required String attachStep,
+    required void Function() attachRoot,
     required String condition,
     required bool Function() isSatisfied,
     required Future<void> Function() pump,
+    Object? Function()? takeFrameworkException,
     Duration startupTimeout = const Duration(seconds: 30),
     Duration pumpTimeout = const Duration(seconds: 2),
     String Function()? details,
   }) async {
     final stopwatch = Stopwatch()..start();
-    var activeStep = mountStep;
-    _writeProgress('START', mountStep, stopwatch.elapsed);
+    var activeStep = attachStep;
+    _writeProgress('START', attachStep, stopwatch.elapsed);
     try {
-      await mount().timeout(
-        startupTimeout,
-        onTimeout: () => throw TimeoutException(
-          _timeoutMessage(mountStep, startupTimeout, stopwatch.elapsed),
-        ),
+      attachRoot();
+      _throwFrameworkException(
+        step: attachStep,
+        takeFrameworkException: takeFrameworkException,
       );
-      _writeProgress('PASS', mountStep, stopwatch.elapsed);
+      _writeProgress('PASS', attachStep, stopwatch.elapsed);
       activeStep = condition;
       _writeProgress('START', condition, stopwatch.elapsed);
       while (!isSatisfied() && stopwatch.elapsed < startupTimeout) {
+        _throwFrameworkException(
+          step: condition,
+          takeFrameworkException: takeFrameworkException,
+        );
         final remaining = startupTimeout - stopwatch.elapsed;
         if (remaining <= Duration.zero) {
           break;
@@ -115,6 +119,10 @@ class BrowserTestWaitContext {
             ),
           ),
         );
+        _throwFrameworkException(
+          step: condition,
+          takeFrameworkException: takeFrameworkException,
+        );
       }
       if (!isSatisfied()) {
         final suffix = details == null ? '' : ' Details: ${details()}';
@@ -128,8 +136,31 @@ class BrowserTestWaitContext {
       }
       _writeProgress('PASS', condition, stopwatch.elapsed);
     } catch (error) {
+      final frameworkError = takeFrameworkException?.call();
+      if (frameworkError != null) {
+        final reported = StateError(
+          'Flutter framework error during $activeStep: $frameworkError',
+        );
+        _writeProgress(
+          'FAIL',
+          activeStep,
+          stopwatch.elapsed,
+          error: reported,
+        );
+        throw reported;
+      }
       _writeProgress('FAIL', activeStep, stopwatch.elapsed, error: error);
       rethrow;
+    }
+  }
+
+  void _throwFrameworkException({
+    required String step,
+    required Object? Function()? takeFrameworkException,
+  }) {
+    final error = takeFrameworkException?.call();
+    if (error != null) {
+      throw StateError('Flutter framework error during $step: $error');
     }
   }
 

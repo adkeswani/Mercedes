@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../integration_test/support/browser_test_wait.dart';
@@ -97,9 +98,9 @@ void main() {
     );
   });
 
-  test('startup mount uses the startup budget, not the pump sub-deadline',
+  test('startup separates synchronous root attachment from first-frame polls',
       () async {
-    var mounted = false;
+    var attached = false;
     var pumpCalls = 0;
     final waits = BrowserTestWaitContext(
       identity: 'athlete',
@@ -108,14 +109,13 @@ void main() {
       currentRoute: () => '/login',
     );
 
-    await waits.mountAndWaitForCondition(
-      mountStep: 'pump initial application',
-      mount: () async {
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        mounted = true;
+    await waits.attachRootAndWaitForCondition(
+      attachStep: 'attach initial application root',
+      attachRoot: () {
+        attached = true;
       },
       condition: 'local emulator login button',
-      isSatisfied: () => mounted,
+      isSatisfied: () => pumpCalls == 3,
       pump: () async {
         pumpCalls++;
       },
@@ -123,11 +123,12 @@ void main() {
       pumpTimeout: const Duration(milliseconds: 5),
     );
 
-    expect(mounted, isTrue);
-    expect(pumpCalls, 0);
+    expect(attached, isTrue);
+    expect(pumpCalls, 3);
   });
 
-  test('startup polling reports the named pump sub-deadline', () async {
+  test('non-cancellable startup pump reports the named sub-deadline', () async {
+    var attachCalls = 0;
     final waits = BrowserTestWaitContext(
       identity: 'athlete',
       testFile: 'integration_test/recovery_test.dart',
@@ -136,9 +137,11 @@ void main() {
     );
 
     await expectLater(
-      waits.mountAndWaitForCondition(
-        mountStep: 'pump initial application',
-        mount: () async {},
+      waits.attachRootAndWaitForCondition(
+        attachStep: 'attach initial application root',
+        attachRoot: () {
+          attachCalls++;
+        },
         condition: 'local emulator login button',
         isSatisfied: () => false,
         pump: () => Completer<void>().future,
@@ -159,9 +162,11 @@ void main() {
             ),
       ),
     );
+    expect(attachCalls, 1);
   });
 
-  test('startup mount timeout retains the mount step name', () async {
+  test('startup surfaces framework errors before polling', () async {
+    var pumpCalls = 0;
     final waits = BrowserTestWaitContext(
       identity: 'athlete',
       testFile: 'integration_test/recovery_test.dart',
@@ -170,25 +175,97 @@ void main() {
     );
 
     await expectLater(
-      waits.mountAndWaitForCondition(
-        mountStep: 'pump initial application',
-        mount: () => Completer<void>().future,
+      waits.attachRootAndWaitForCondition(
+        attachStep: 'attach initial application root',
+        attachRoot: () {},
         condition: 'local emulator login button',
         isSatisfied: () => false,
-        pump: () async {},
-        startupTimeout: const Duration(milliseconds: 10),
-        pumpTimeout: const Duration(milliseconds: 2),
+        pump: () async {
+          pumpCalls++;
+        },
+        takeFrameworkException: () => StateError('router build failed'),
       ),
       throwsA(
-        isA<TimeoutException>().having(
+        isA<StateError>().having(
           (error) => error.message,
           'message',
           allOf(
-            contains('pump initial application'),
-            contains('<application not mounted>'),
+            contains('attach initial application root'),
+            contains('router build failed'),
           ),
         ),
       ),
     );
+    expect(pumpCalls, 0);
+  });
+
+  test('startup prefers a captured framework error over pump timeout',
+      () async {
+    var pumpStarted = false;
+    final waits = BrowserTestWaitContext(
+      identity: 'athlete',
+      testFile: 'integration_test/recovery_test.dart',
+      artifactPath: 'artifacts',
+      currentRoute: () => '<application not mounted>',
+    );
+
+    await expectLater(
+      waits.attachRootAndWaitForCondition(
+        attachStep: 'attach initial application root',
+        attachRoot: () {},
+        condition: 'local emulator login button',
+        isSatisfied: () => false,
+        pump: () {
+          pumpStarted = true;
+          return Completer<void>().future;
+        },
+        takeFrameworkException: () =>
+            pumpStarted ? StateError('Firebase provider build failed') : null,
+        startupTimeout: const Duration(milliseconds: 100),
+        pumpTimeout: const Duration(milliseconds: 10),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          allOf(
+            contains('local emulator login button'),
+            contains('Firebase provider build failed'),
+          ),
+        ),
+      ),
+    );
+  });
+
+  testWidgets('binding root attachment completes before first-frame polling',
+      (tester) async {
+    var attachReturned = false;
+    final waits = BrowserTestWaitContext(
+      identity: 'athlete',
+      testFile: 'integration_test/recovery_test.dart',
+      artifactPath: 'artifacts',
+      currentRoute: () => '<first frame pending>',
+    );
+
+    await waits.attachRootAndWaitForCondition(
+      attachStep: 'attach initial application root',
+      attachRoot: () {
+        tester.binding.attachRootWidget(
+          tester.binding.wrapWithDefaultView(
+            const MaterialApp(home: Text('Login ready')),
+          ),
+        );
+        tester.binding.scheduleFrame();
+        attachReturned = true;
+      },
+      condition: 'local emulator login button',
+      isSatisfied: () => find.text('Login ready').evaluate().isNotEmpty,
+      pump: () => tester.pump(const Duration(milliseconds: 1)),
+      takeFrameworkException: tester.takeException,
+      startupTimeout: const Duration(seconds: 1),
+    );
+
+    expect(attachReturned, isTrue);
+    expect(find.text('Login ready'), findsOneWidget);
   });
 }
