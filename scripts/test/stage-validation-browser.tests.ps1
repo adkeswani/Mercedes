@@ -19,6 +19,15 @@ function Assert-True {
     $script:passed++
 }
 
+$browserSmokeSource = Get-Content -Raw -LiteralPath (
+    Join-Path $repoRoot 'stage5\tool\run-browser-login-smoke.ps1'
+)
+Assert-True `
+    -Condition $browserSmokeSource.Contains(
+        'materializationKey = @{ nullValue = $null }'
+    ) `
+    -Message 'Browser fixture omitted the canonical materialization key.'
+
 $functionalOutput = @'
 BROWSER_TEST_STEP_START|identity=athlete|file=integration_test%2Frecovery.dart|condition=draft%20saved|route=%2Fathlete%2Fworkouts%2Fone|elapsedMs=0|artifact=C%3A%5Cartifacts
 '@

@@ -43,6 +43,13 @@
   clean only logs, temporary process output, Firebase caches, generated plugin
   registrant noise, and failed transient attempts. PNGs remain gitignored and
   must not be committed.
+- Before launching any browser test, pause and request an explicit user
+  acknowledgment that they are ready to foreground the test window. Do not
+  start the browser process until that acknowledgment is received.
+- After launch, tell the user when to switch to Chrome. The user should keep
+  the test window visible, foregrounded, and untouched until the run finishes;
+  they should not minimize it, cover it, switch virtual desktops, lock the
+  machine, or allow the display to sleep.
 
 ## Ownership and authorization
 

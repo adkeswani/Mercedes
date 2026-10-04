@@ -435,6 +435,7 @@ $workspaceSeedBody = @{
                     linkedAt = @{ timestampValue = $seedTimestamp }
                     unlinkedAt = @{ nullValue = $null }
                     unlinkReason = @{ nullValue = $null }
+                    materializationKey = @{ nullValue = $null }
                     propagationState = @{ stringValue = 'complete' }
                     propagationTargetVersion = @{ integerValue = '1' }
                     propagationAttempt = @{ integerValue = '0' }
