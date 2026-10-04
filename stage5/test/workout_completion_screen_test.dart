@@ -11,6 +11,7 @@ import 'package:stage5/features/workouts/data/workout_draft_local_store_contract
 import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
 import 'package:stage5/features/workouts/data/workout_template_repository.dart';
 import 'package:stage5/features/workouts/domain/workout_completion_draft.dart';
+import 'package:stage5/features/workouts/domain/workout_draft_client_id.dart';
 import 'package:stage5/features/workouts/presentation/workout_completion_screen.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
@@ -122,6 +123,64 @@ void main() {
       find.textContaining('Restored saved workout progress'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('lifecycle save uses a web-safe generated client ID',
+      (tester) async {
+    container.dispose();
+    final bounds = <int>[];
+    container = ProviderContainer(
+      overrides: [
+        authStateProvider.overrideWith(
+          (ref) => Stream.value(_FakeUser('athlete-1')),
+        ),
+        workoutInstanceRepositoryProvider.overrideWithValue(
+          WorkoutInstanceRepository(firestore: firestore),
+        ),
+        workoutTemplateRepositoryProvider.overrideWithValue(
+          WorkoutTemplateRepository(firestore: firestore),
+        ),
+        workoutDraftLocalStoreProvider.overrideWithValue(localStore),
+        workoutCompletionDraftRepositoryProvider.overrideWithValue(
+          WorkoutCompletionDraftRepository(
+            firestore: firestore,
+            localStore: localStore,
+          ),
+        ),
+        workoutDraftClientIdGeneratorProvider.overrideWithValue(
+          WorkoutDraftClientIdGenerator(
+            clock: () => DateTime.utc(2026, 10, 4, 21, 10),
+            randomInt: (max) {
+              bounds.add(max);
+              return bounds.length - 1;
+            },
+          ),
+        ),
+      ],
+    );
+    await container.read(authStateProvider.future);
+
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Lifecycle save');
+    await tester.pump();
+    expect(find.text('Saving...'), findsOneWidget);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Saved'), findsOneWidget);
+    expect(localStore.value?.athleteNotes, 'Lifecycle save');
+    expect(
+      localStore.value?.clientId,
+      endsWith('-000102030405060708090a0b0c0d0e0f'),
+    );
+    expect(bounds, everyElement(256));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   });
 
   testWidgets('renders a completed workout as immutable details',

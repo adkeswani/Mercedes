@@ -170,20 +170,20 @@ class _WorkoutCompletionScreenState
     }
     final revision = ++_revision;
     final route = '/athlete/workouts/${instance.id}';
-    final draft = WorkoutCompletionDraft(
-      instanceId: instance.id,
-      athleteId: athleteId,
-      rpe: _rpe,
-      durationMinutes: _durationMinutes,
-      athleteNotes: _notesController.text.trim().isEmpty
-          ? null
-          : _notesController.text.trim(),
-      revision: revision,
-      clientId: ref.read(workoutDraftClientIdProvider),
-      updatedAt: DateTime.now().toUtc(),
-      sourceRoute: route,
-    );
     try {
+      final draft = WorkoutCompletionDraft(
+        instanceId: instance.id,
+        athleteId: athleteId,
+        rpe: _rpe,
+        durationMinutes: _durationMinutes,
+        athleteNotes: _notesController.text.trim().isEmpty
+            ? null
+            : _notesController.text.trim(),
+        revision: revision,
+        clientId: ref.read(workoutDraftClientIdProvider),
+        updatedAt: DateTime.now().toUtc(),
+        sourceRoute: route,
+      );
       final result =
           await ref.read(workoutCompletionDraftRepositoryProvider).save(draft);
       if (!mounted ||

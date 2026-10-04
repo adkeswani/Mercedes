@@ -1,11 +1,10 @@
-import 'dart:math';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/workouts/data/workout_completion_draft_repository.dart';
 import 'package:stage5/features/workouts/data/workout_draft_local_store.dart';
 import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
+import 'package:stage5/features/workouts/domain/workout_draft_client_id.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
 
 /// Singleton repository for workout instances.
@@ -25,10 +24,13 @@ final workoutCompletionDraftRepositoryProvider =
   );
 });
 
+final workoutDraftClientIdGeneratorProvider =
+    Provider<WorkoutDraftClientIdGenerator>((ref) {
+  return WorkoutDraftClientIdGenerator();
+});
+
 final workoutDraftClientIdProvider = Provider<String>((ref) {
-  final random = Random.secure();
-  return '${DateTime.now().microsecondsSinceEpoch}-'
-      '${random.nextInt(1 << 32).toRadixString(16)}';
+  return ref.watch(workoutDraftClientIdGeneratorProvider).generate();
 });
 
 /// Streams workout instances for the current user within a date range.
