@@ -16,6 +16,10 @@ const youtubeChannelFieldKey = Key('youtube-channel-field');
 const youtubeLoadChannelKey = Key('youtube-load-channel');
 const youtubeSearchFieldKey = Key('youtube-search-field');
 const youtubeMediaTargetKey = Key('youtube-media-target');
+const youtubeEmptyMediaTargetKey = Key('youtube-empty-media-target');
+const youtubeEmptyMediaInstructionKey = Key(
+  'youtube-empty-media-instruction',
+);
 const youtubeRemoveVideoKey = Key('youtube-remove-video');
 const youtubeOpenVideoKey = Key('youtube-open-video');
 const youtubeThumbnailFallbackKey = Key('youtube-thumbnail-fallback');
@@ -601,8 +605,20 @@ class _MediaTarget extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
           ),
           child: metadata == null
-              ? const Text(
-                  'Exercise video target — drag a video here or use Attach.',
+              ? Semantics(
+                  key: youtubeEmptyMediaTargetKey,
+                  container: true,
+                  label: 'Video attachment area',
+                  hint: 'Drag video here or use Attach',
+                  excludeSemantics: true,
+                  child: const Center(
+                    child: Text(
+                      'Drag video here or use Attach',
+                      key: youtubeEmptyMediaInstructionKey,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
                 )
               : Semantics(
                   container: true,

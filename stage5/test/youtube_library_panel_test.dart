@@ -282,6 +282,28 @@ void main() {
     expect(find.byType(YoutubeThumbnail), findsNothing);
   });
 
+  testWidgets('empty target shows centered accessible attachment guidance', (
+    tester,
+  ) async {
+    await _pumpPanel(tester, api: _FakeApi());
+    final semanticsHandle = tester.ensureSemantics();
+
+    expect(find.textContaining('Exercise video target'), findsNothing);
+    expect(find.text('Drag video here or use Attach'), findsOneWidget);
+    final instruction = tester.widget<Text>(
+      find.byKey(youtubeEmptyMediaInstructionKey),
+    );
+    expect(instruction.textAlign, TextAlign.center);
+    expect(instruction.style?.fontWeight, FontWeight.bold);
+    expect(find.bySemanticsLabel('Video attachment area'), findsOneWidget);
+    final semantics = tester
+        .getSemantics(find.byKey(youtubeEmptyMediaTargetKey))
+        .getSemanticsData();
+    expect(semantics.hint, 'Drag video here or use Attach');
+
+    semanticsHandle.dispose();
+  });
+
   testWidgets('pages and applies server-side view-count sorting', (
     tester,
   ) async {
