@@ -116,7 +116,12 @@ void main() {
         find.text('Today'),
         step: 'navigate away from workout',
       );
-      expect(find.text('Complete Workout'), findsNothing);
+      await _waitForAbsent(
+        tester,
+        waits,
+        find.text('Complete Workout'),
+        step: 'dispose workout screen',
+      );
 
       final recreatedClientId = ProviderScope.containerOf(
         tester.element(find.byType(MercedesApp)),
