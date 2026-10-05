@@ -1221,6 +1221,48 @@ describe('workoutTemplates', () => {
     await assertSucceeds(seal.commit());
   });
 
+  it('allows the owner to read a not-yet-existing draft version before first publish', async () => {
+    // Regression test: WorkoutTemplateRepository.publishVersion() reads
+    // workoutTemplateVersions/{nextVersion} with a plain .get() to check
+    // whether a draft already exists, BEFORE that document has ever been
+    // created. The read rule used to dereference resource.data
+    // unconditionally, which throws a null-value evaluation error (and
+    // therefore "Missing or insufficient permissions") for any document
+    // that doesn't exist yet -- i.e. every very first publish of a brand
+    // new workout. The rule must tolerate resource == null.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adminDb = ctx.firestore();
+      await adminDb.collection('workoutTemplates').doc('never-published').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+      });
+    });
+
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const version = db.collection('workoutTemplates').doc('never-published')
+      .collection('workoutTemplateVersions').doc('1');
+    const snapshot = await assertSucceeds(version.get());
+    expect(snapshot.exists).toBe(false);
+  });
+
+  it('denies a non-owner from reading a not-yet-existing draft version', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adminDb = ctx.firestore();
+      await adminDb.collection('workoutTemplates').doc('never-published-2').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+        clientAthleteId: ATHLETE,
+      });
+    });
+
+    const db = testEnv.authenticatedContext(STRANGER).firestore();
+    const version = db.collection('workoutTemplates').doc('never-published-2')
+      .collection('workoutTemplateVersions').doc('1');
+    await assertFails(version.get());
+  });
+
   it('allows nine typed slots with distinct blocks and exercises', async () => {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       const adminDb = ctx.firestore();

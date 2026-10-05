@@ -1442,7 +1442,8 @@ service cloud.firestore {
                            /databases/$(database)/documents/workoutTemplates/$(templateId)
                          ).data
                        )
-                    && (!('publishState' in resource.data)
+                    && (resource == null
+                        || !('publishState' in resource.data)
                         || resource.data.publishState == 'published'
                         || resource.data.ownerId == request.auth.uid);
         allow create: if isSignedIn()
