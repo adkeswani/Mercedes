@@ -247,6 +247,49 @@ void main() {
     expect(movedFolderId, 'cardio');
   });
 
+  testWidgets(
+      'on web, an immediate drag (no long-press pause) moves an item to a folder',
+      (tester) async {
+    String? dragged;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              DragTarget<String>(
+                onAcceptWithDetails: (details) => dragged = details.data,
+                builder: (context, candidate, rejected) => const SizedBox(
+                  height: 60,
+                  width: double.infinity,
+                  child: Text('target'),
+                ),
+              ),
+              buildLibraryDraggableTile<String>(
+                isWeb: true,
+                data: 'item',
+                feedback: const Material(child: Text('dragging')),
+                childWhenDragging: const Opacity(opacity: 0.4, child: Text('Mobility')),
+                child: const Text('Mobility'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // Confirms the immediate (non-long-press) Draggable is used on web.
+    expect(find.byType(Draggable<String>), findsOneWidget);
+    expect(find.byType(LongPressDraggable<String>), findsNothing);
+
+    final gesture = await tester.startGesture(tester.getCenter(find.text('Mobility')));
+    await gesture.moveTo(tester.getCenter(find.text('target')));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(dragged, 'item');
+  });
+
   testWidgets('renders client items once under the client partition',
       (tester) async {
     await tester.pumpWidget(

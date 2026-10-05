@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,6 +14,35 @@ typedef LibraryOrganizationUpdater<T> = Future<void> Function(
   required String? folderId,
   required String? clientAthleteId,
 });
+
+/// Builds the draggable wrapper used to move a library tile between
+/// folders. Web (mouse) users expect a drag to begin as soon as the pointer
+/// moves after a click — there's no touch-scroll gesture to disambiguate
+/// against. On touch platforms a long-press is required first so a vertical
+/// drag can still be interpreted as list scrolling.
+@visibleForTesting
+Widget buildLibraryDraggableTile<T extends Object>({
+  required bool isWeb,
+  required T data,
+  required Widget feedback,
+  required Widget childWhenDragging,
+  required Widget child,
+}) {
+  if (isWeb) {
+    return Draggable<T>(
+      data: data,
+      feedback: feedback,
+      childWhenDragging: childWhenDragging,
+      child: child,
+    );
+  }
+  return LongPressDraggable<T>(
+    data: data,
+    feedback: feedback,
+    childWhenDragging: childWhenDragging,
+    child: child,
+  );
+}
 
 class LibraryTagLabel extends StatelessWidget {
   const LibraryTagLabel({required this.tag, super.key});
@@ -481,20 +511,23 @@ class _LibraryOrganizerState<T extends Object> extends ConsumerState<LibraryOrga
         icon: const Icon(Icons.label_outline),
       ),
     );
-    return LongPressDraggable<T>(
-      data: item,
-      feedback: Material(
-        elevation: 4,
-        borderRadius: BorderRadius.circular(8),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 320),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Text(widget.nameOf(item)),
-          ),
+    final feedback = Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(8),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 320),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Text(widget.nameOf(item)),
         ),
       ),
-      childWhenDragging: Opacity(opacity: 0.4, child: tile),
+    );
+    final childWhenDragging = Opacity(opacity: 0.4, child: tile);
+    return buildLibraryDraggableTile<T>(
+      isWeb: kIsWeb,
+      data: item,
+      feedback: feedback,
+      childWhenDragging: childWhenDragging,
       child: tile,
     );
   }
