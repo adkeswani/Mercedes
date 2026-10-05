@@ -122,6 +122,16 @@ void main() {
         step: 'exercise added to draft',
         timeout: const Duration(seconds: 20),
       );
+      // The exercise picker's modal bottom sheet is still mid dismiss
+      // animation at this point: Navigator.pop() resolves (and the parent
+      // setState adds the slot to the draft, satisfying the wait above)
+      // before the sheet's exit transition finishes. Its scrim/overlay can
+      // still intercept the very next tap, so let it fully settle before
+      // interacting with the AppBar again.
+      await waits.runStep(
+        'settle exercise picker dismiss animation',
+        () => tester.pumpAndSettle(),
+      );
 
       await waits.runStep(
         'publish the new workout',
