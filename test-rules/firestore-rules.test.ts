@@ -2581,6 +2581,20 @@ describe('athleteProgramInstances', () => {
     );
   });
 
+  it('allows get of a non-existent athlete program instance ' +
+      '(pre-assignment idempotency check)', async () => {
+    // No seed: WorkoutInstanceRepository.assignProgram() calls
+    // instanceRef.get() on a brand-new (not-yet-created) document ID before
+    // writing anything, to check for a prior idempotent assignment. The
+    // document never exists on a first-time assignment, so resource is
+    // null here; the rule must not dereference resource.data in that case.
+    await seedProgramWithEnrollment();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      db.collection('athleteProgramInstances').doc(INSTANCE_ID).get()
+    );
+  });
+
   it('denies a stranger from creating or reading an athlete instance', async () => {
     await seedProgramWithEnrollment();
     const ownerDb = testEnv.authenticatedContext(OWNER).firestore();
@@ -4240,5 +4254,125 @@ describe('workoutInstances', () => {
         status: 'cancelled',
       })
     );
+  });
+
+  describe('program assignment batch (WorkoutInstanceRepository.assignProgram)', () => {
+    const ASSIGNMENT_ID = 'assignment-1';
+
+    /** Reproduces the exact batch written by assignProgram() in
+     * stage5/lib/features/workouts/data/workout_instance_repository.dart
+     * for a trainer assigning a brand-new athlete (no prior enrollment). */
+    async function seedProgramForAssignment() {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        const db = ctx.firestore();
+        await db.collection('trainerClientRelationships')
+          .doc(RELATIONSHIP_ID).set({
+            trainerId: OWNER,
+            athleteId: ATHLETE,
+            status: 'active',
+          });
+        await db.collection('programs').doc(PROGRAM_ID).set({
+          ownerId: OWNER,
+          name: 'Test Program',
+          type: 'assignable',
+          status: 'published',
+          currentVersion: 1,
+          createdBy: OWNER,
+        });
+      });
+    }
+
+    it('allows a trainer to assign a program to a newly enrolled athlete',
+        async () => {
+      await seedProgramForAssignment();
+      const db = testEnv.authenticatedContext(OWNER).firestore();
+      const batch = db.batch();
+
+      batch.set(db.collection('enrollments').doc(ENROLLMENT_ID), {
+        programId: PROGRAM_ID,
+        athleteId: ATHLETE,
+        addedAt: serverTimestamp(),
+        addedBy: OWNER,
+        removedAt: null,
+        removedBy: null,
+        status: 'active',
+        createdBy: OWNER,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        updatedBy: OWNER,
+        deletedAt: null,
+        deletedBy: null,
+      });
+
+      batch.set(db.collection('athleteProgramInstances').doc(ASSIGNMENT_ID), {
+        athleteOwnerId: ATHLETE,
+        assigningTrainerId: OWNER,
+        sourceProgramId: PROGRAM_ID,
+        sourceProgramVersion: 1,
+        relationshipMode: 'subscribed',
+        startDate: '2027-01-01',
+        expectedEndDate: '2027-01-01',
+        workoutCount: 1,
+        status: 'active',
+        linkedAt: serverTimestamp(),
+        unlinkedAt: null,
+        unlinkReason: null,
+        materializationKey: null,
+        propagationState: 'complete',
+        propagationTargetVersion: 1,
+        propagationAttempt: 0,
+        propagationStartedAt: null,
+        propagationCompletedAt: serverTimestamp(),
+        propagationFailedAt: null,
+        propagationError: null,
+        createdAt: serverTimestamp(),
+        createdBy: OWNER,
+        updatedAt: serverTimestamp(),
+        updatedBy: OWNER,
+        deletedAt: null,
+        deletedBy: null,
+      });
+
+      batch.set(db.collection('workoutInstances').doc(`${ASSIGNMENT_ID}-0`), {
+        programId: PROGRAM_ID,
+        programOwnerId: OWNER,
+        programVersion: 1,
+        programEntryId: 'entry-0',
+        programEntrySortOrder: 0,
+        athleteProgramInstanceId: ASSIGNMENT_ID,
+        programAssignmentId: ASSIGNMENT_ID,
+        relationshipMode: 'subscribed',
+        athleteId: ATHLETE,
+        workoutTemplateId: 'w1',
+        workoutTemplateVersion: 1,
+        scheduledDate: '2027-01-01',
+        scheduledAt: new Date('2027-01-01T00:00:00Z'),
+        workoutType: 'fullBody',
+        assignedBy: OWNER,
+        assignedAt: serverTimestamp(),
+        status: 'scheduled',
+        completedAt: null,
+        missedAt: null,
+        rpe: null,
+        durationMinutes: null,
+        loadPoints: null,
+        loadPointsOverride: null,
+        loadPointsOverriddenBy: null,
+        loadPointsOverriddenAt: null,
+        loadModelVersion: 1,
+        loadStrategyId: null,
+        recurrence: null,
+        isRecurrenceRoot: false,
+        recurrenceRootId: null,
+        actualsStorageFormat: 'slotResultsSubcollection',
+        actualSlotIds: [],
+        actuals: [],
+        athleteNotes: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      await assertSucceeds(batch.commit());
+    });
   });
 });

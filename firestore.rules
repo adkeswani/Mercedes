@@ -1872,8 +1872,14 @@ service cloud.firestore {
     // manage linked instances only while the roster relationship is active.
 
     match /athleteProgramInstances/{instanceId} {
+      // resource == null allows a get() of a non-existent instance to return
+      // "not found" instead of permission-denied — required by
+      // WorkoutInstanceRepository.assignProgram(), which reads the target
+      // instance ID before it exists to check for a prior idempotent
+      // assignment on every first-time program assignment.
       allow get: if isSignedIn()
-                 && (resource.data.athleteOwnerId == request.auth.uid
+                 && (resource == null
+                     || resource.data.athleteOwnerId == request.auth.uid
                      || (resource.data.assigningTrainerId == request.auth.uid
                          && hasManageableTrainerClientRelationship(
                               request.auth.uid,
