@@ -4375,15 +4375,17 @@ describe('workoutInstances', () => {
       await assertSucceeds(batch.commit());
     });
 
-    /** Reproduces assignProgram() when a user assigns their own personal
-     * program to themselves (athleteId == assignedBy == program owner). */
-    async function seedPersonalProgramForSelfAssignment() {
+    /** Reproduces assignProgram() when a user assigns their own program to
+     * themselves (athleteId == assignedBy == program owner). */
+    async function seedProgramForSelfAssignment({
+      type = 'personal',
+    }: { type?: string } = {}) {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         const db = ctx.firestore();
         await db.collection('programs').doc(PROGRAM_ID).set({
           ownerId: OWNER,
-          name: 'Personal Program',
-          type: 'personal',
+          name: 'Test Program',
+          type,
           status: 'published',
           currentVersion: 1,
           createdBy: OWNER,
@@ -4391,11 +4393,12 @@ describe('workoutInstances', () => {
       });
     }
 
-    it('denies a user self-assigning their own program with the default ' +
-        'subscribed relationship mode', async () => {
-      await seedPersonalProgramForSelfAssignment();
+    it('allows a user to self-assign their own assignable program with ' +
+        'the default subscribed relationship mode (self needs no ' +
+        'trainerClientRelationship)', async () => {
+      await seedProgramForSelfAssignment({ type: 'assignable' });
       const db = testEnv.authenticatedContext(OWNER).firestore();
-      await assertFails(
+      await assertSucceeds(
         db.collection('athleteProgramInstances').doc(ASSIGNMENT_ID).set({
           athleteOwnerId: OWNER,
           assigningTrainerId: OWNER,
@@ -4429,7 +4432,7 @@ describe('workoutInstances', () => {
 
     it('allows a user to self-assign their own personal program',
         async () => {
-      await seedPersonalProgramForSelfAssignment();
+      await seedProgramForSelfAssignment({ type: 'personal' });
       const db = testEnv.authenticatedContext(OWNER).firestore();
       const batch = db.batch();
 

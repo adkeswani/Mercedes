@@ -449,22 +449,20 @@ class WorkoutInstanceRepository {
     if (currentVersion == 0) {
       throw StateError('Program $programId has no published version to assign');
     }
-
     var effectiveMode = relationshipMode;
     if (type == ProgramType.personal.name) {
       if (athleteId != assignedBy) {
         throw StateError('Personal programs only allow self-assignment');
       }
       effectiveMode = ProgramRelationshipMode.copied;
-    } else if (athleteId == assignedBy) {
-      // Self-assignment of an owner's own assignable program has no
-      // separate trainer to stay "subscribed" to, so it must always be
-      // treated as an independent copy. The security rules only permit
-      // self-assigned athleteProgramInstances when relationshipMode is
-      // 'copied'; leaving the caller-selected default ('subscribed') here
-      // causes the write to be denied with "insufficient permissions".
       effectiveMode = ProgramRelationshipMode.copied;
     } else {
+      // _verifyActiveRelationship() already no-ops for self-assignment
+      // (athleteId == ownerId), since there is no separate trainer to have
+      // an active relationship with. The security rules and propagation
+      // Cloud Function likewise treat a self-assigned subscription as
+      // permanently "active" without a trainerClientRelationships doc, so
+      // relationshipMode (subscribed or copied) is honored as selected.
       await _verifyActiveRelationship(ownerId!, athleteId);
     }
 

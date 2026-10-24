@@ -1939,9 +1939,14 @@ service cloud.firestore {
                             )
                          && ((request.resource.data.athleteOwnerId
                                 == request.auth.uid
-                              && request.resource.data.relationshipMode
-                                 == 'copied'
-                              && request.resource.data.linkedAt == null)
+                              && ((request.resource.data.relationshipMode
+                                     == 'subscribed'
+                                   && request.resource.data.linkedAt
+                                      == request.time)
+                                  || (request.resource.data.relationshipMode
+                                        == 'copied'
+                                      && request.resource.data.linkedAt
+                                         == null)))
                              || (request.resource.data.athleteOwnerId
                                    != request.auth.uid
                                  && hasActiveTrainerClientRelationship(

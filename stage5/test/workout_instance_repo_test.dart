@@ -1374,8 +1374,9 @@ void main() {
       });
 
       test(
-          'forces relationshipMode to copied when self-assigning an '
-          'assignable program (default subscribed mode is invalid for self)',
+          'allows self-assigning an assignable program with the default '
+          'subscribed relationship mode (no trainerClientRelationship with '
+          'self is required)',
           () async {
         await createProgram('prog1', ownerId: 'coach1', type: 'assignable');
         await createWorkoutTemplate('wt1', 'push');
@@ -1403,8 +1404,8 @@ void main() {
             .get();
         expect(instance.data()!['athleteOwnerId'], 'coach1');
         expect(instance.data()!['assigningTrainerId'], 'coach1');
-        expect(instance.data()!['relationshipMode'], 'copied');
-        expect(instance.data()!['linkedAt'], isNull);
+        expect(instance.data()!['relationshipMode'], 'subscribed');
+        expect(instance.data()!['linkedAt'], isNotNull);
       });
 
       test('completing the final workout completes the program instance',

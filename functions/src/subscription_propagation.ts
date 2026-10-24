@@ -267,13 +267,7 @@ async function propagateInstance(args: {
     )) {
       return false;
     }
-    const relationshipRef = relationshipReference(
-      db,
-      ownerId,
-      athleteId,
-    );
-    const relationship = await transaction.get(relationshipRef);
-    if (relationship.data()?.status !== "active") {
+    if (!(await isRelationshipActive(transaction, db, ownerId, athleteId))) {
       return false;
     }
     transaction.update(instance.ref, {
@@ -335,10 +329,7 @@ async function claimInstance(
       return "skipped";
     }
     const athleteId = requiredString(data, "athleteOwnerId");
-    const relationship = await transaction.get(
-      relationshipReference(db, ownerId, athleteId),
-    );
-    if (relationship.data()?.status !== "active") {
+    if (!(await isRelationshipActive(transaction, db, ownerId, athleteId))) {
       return "skipped";
     }
     const activeOperation = optionalString(data, "propagationOperationId");
@@ -400,8 +391,8 @@ async function executeOperation(args: {
 
   return db.runTransaction(async (transaction) => {
     const instance = await transaction.get(instanceRef);
-    const relationship = await transaction.get(
-      relationshipReference(db, ownerId, athleteId),
+    const relationshipActive = await isRelationshipActive(
+      transaction, db, ownerId, athleteId,
     );
     const workout = await transaction.get(workoutRef);
     if (
@@ -413,7 +404,7 @@ async function executeOperation(args: {
         versionNumber,
         operationId,
       ) ||
-      relationship.data()?.status !== "active"
+      !relationshipActive
     ) {
       return false;
     }
@@ -703,10 +694,7 @@ async function recordInstanceFailure(
     ) {
       return;
     }
-    const relationship = await transaction.get(
-      relationshipReference(db, ownerId, athleteId),
-    );
-    if (relationship.data()?.status !== "active") {
+    if (!(await isRelationshipActive(transaction, db, ownerId, athleteId))) {
       return;
     }
     if (
@@ -733,6 +721,27 @@ function relationshipReference(
 ): DocumentReference {
   return db.collection("trainerClientRelationships")
     .doc(`${trainerId}_${athleteId}`);
+}
+
+/**
+ * A trainer-client relationship is trivially and permanently active when a
+ * user subscribes to their own program (self-assignment); there is no
+ * separate trainerClientRelationships document for that case, and none is
+ * required, since propagation eligibility reduces to program ownership.
+ */
+async function isRelationshipActive(
+  transaction: admin.firestore.Transaction,
+  db: Firestore,
+  trainerId: string,
+  athleteId: string,
+): Promise<boolean> {
+  if (trainerId === athleteId) {
+    return true;
+  }
+  const relationship = await transaction.get(
+    relationshipReference(db, trainerId, athleteId),
+  );
+  return relationship.data()?.status === "active";
 }
 
 function addDays(date: string, days: number): string {
