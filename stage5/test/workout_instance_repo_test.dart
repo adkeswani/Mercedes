@@ -1373,6 +1373,40 @@ void main() {
         expect(instance.data()!['linkedAt'], isNull);
       });
 
+      test(
+          'forces relationshipMode to copied when self-assigning an '
+          'assignable program (default subscribed mode is invalid for self)',
+          () async {
+        await createProgram('prog1', ownerId: 'coach1', type: 'assignable');
+        await createWorkoutTemplate('wt1', 'push');
+        await publishVersion('prog1', [
+          {
+            'workoutTemplateId': 'wt1',
+            'workoutTemplateVersion': 1,
+            'dayOffset': 0,
+            'sortOrder': 0,
+          },
+        ]);
+
+        // Owner assigns their own program to themselves without explicitly
+        // overriding relationshipMode (the UI default is `subscribed`).
+        final result = await repo.assignProgram(
+          programId: 'prog1',
+          athleteId: 'coach1',
+          startDate: '2026-06-01',
+          assignedBy: 'coach1',
+        );
+
+        final instance = await fakeFirestore
+            .collection('athleteProgramInstances')
+            .doc(result.programInstanceId)
+            .get();
+        expect(instance.data()!['athleteOwnerId'], 'coach1');
+        expect(instance.data()!['assigningTrainerId'], 'coach1');
+        expect(instance.data()!['relationshipMode'], 'copied');
+        expect(instance.data()!['linkedAt'], isNull);
+      });
+
       test('completing the final workout completes the program instance',
           () async {
         await createProgram('prog1');

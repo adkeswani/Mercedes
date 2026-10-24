@@ -4374,5 +4374,134 @@ describe('workoutInstances', () => {
 
       await assertSucceeds(batch.commit());
     });
+
+    /** Reproduces assignProgram() when a user assigns their own personal
+     * program to themselves (athleteId == assignedBy == program owner). */
+    async function seedPersonalProgramForSelfAssignment() {
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        const db = ctx.firestore();
+        await db.collection('programs').doc(PROGRAM_ID).set({
+          ownerId: OWNER,
+          name: 'Personal Program',
+          type: 'personal',
+          status: 'published',
+          currentVersion: 1,
+          createdBy: OWNER,
+        });
+      });
+    }
+
+    it('denies a user self-assigning their own program with the default ' +
+        'subscribed relationship mode', async () => {
+      await seedPersonalProgramForSelfAssignment();
+      const db = testEnv.authenticatedContext(OWNER).firestore();
+      await assertFails(
+        db.collection('athleteProgramInstances').doc(ASSIGNMENT_ID).set({
+          athleteOwnerId: OWNER,
+          assigningTrainerId: OWNER,
+          sourceProgramId: PROGRAM_ID,
+          sourceProgramVersion: 1,
+          relationshipMode: 'subscribed',
+          startDate: '2027-01-01',
+          expectedEndDate: '2027-01-01',
+          workoutCount: 1,
+          status: 'active',
+          linkedAt: serverTimestamp(),
+          unlinkedAt: null,
+          unlinkReason: null,
+          materializationKey: null,
+          propagationState: 'complete',
+          propagationTargetVersion: 1,
+          propagationAttempt: 0,
+          propagationStartedAt: null,
+          propagationCompletedAt: serverTimestamp(),
+          propagationFailedAt: null,
+          propagationError: null,
+          createdAt: serverTimestamp(),
+          createdBy: OWNER,
+          updatedAt: serverTimestamp(),
+          updatedBy: OWNER,
+          deletedAt: null,
+          deletedBy: null,
+        })
+      );
+    });
+
+    it('allows a user to self-assign their own personal program',
+        async () => {
+      await seedPersonalProgramForSelfAssignment();
+      const db = testEnv.authenticatedContext(OWNER).firestore();
+      const batch = db.batch();
+
+      batch.set(db.collection('athleteProgramInstances').doc(ASSIGNMENT_ID), {
+        athleteOwnerId: OWNER,
+        assigningTrainerId: OWNER,
+        sourceProgramId: PROGRAM_ID,
+        sourceProgramVersion: 1,
+        relationshipMode: 'copied',
+        startDate: '2027-01-01',
+        expectedEndDate: '2027-01-01',
+        workoutCount: 1,
+        status: 'active',
+        linkedAt: null,
+        unlinkedAt: null,
+        unlinkReason: null,
+        materializationKey: null,
+        propagationState: 'complete',
+        propagationTargetVersion: 1,
+        propagationAttempt: 0,
+        propagationStartedAt: null,
+        propagationCompletedAt: serverTimestamp(),
+        propagationFailedAt: null,
+        propagationError: null,
+        createdAt: serverTimestamp(),
+        createdBy: OWNER,
+        updatedAt: serverTimestamp(),
+        updatedBy: OWNER,
+        deletedAt: null,
+        deletedBy: null,
+      });
+
+      batch.set(db.collection('workoutInstances').doc(`${ASSIGNMENT_ID}-0`), {
+        programId: PROGRAM_ID,
+        programOwnerId: OWNER,
+        programVersion: 1,
+        programEntryId: 'entry-0',
+        programEntrySortOrder: 0,
+        athleteProgramInstanceId: ASSIGNMENT_ID,
+        programAssignmentId: ASSIGNMENT_ID,
+        relationshipMode: 'copied',
+        athleteId: OWNER,
+        workoutTemplateId: 'w1',
+        workoutTemplateVersion: 1,
+        scheduledDate: '2027-01-01',
+        scheduledAt: new Date('2027-01-01T00:00:00Z'),
+        workoutType: 'fullBody',
+        assignedBy: OWNER,
+        assignedAt: serverTimestamp(),
+        status: 'scheduled',
+        completedAt: null,
+        missedAt: null,
+        rpe: null,
+        durationMinutes: null,
+        loadPoints: null,
+        loadPointsOverride: null,
+        loadPointsOverriddenBy: null,
+        loadPointsOverriddenAt: null,
+        loadModelVersion: 1,
+        loadStrategyId: null,
+        recurrence: null,
+        isRecurrenceRoot: false,
+        recurrenceRootId: null,
+        actualsStorageFormat: 'slotResultsSubcollection',
+        actualSlotIds: [],
+        actuals: [],
+        athleteNotes: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      await assertSucceeds(batch.commit());
+    });
   });
 });

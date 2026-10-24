@@ -456,6 +456,14 @@ class WorkoutInstanceRepository {
         throw StateError('Personal programs only allow self-assignment');
       }
       effectiveMode = ProgramRelationshipMode.copied;
+    } else if (athleteId == assignedBy) {
+      // Self-assignment of an owner's own assignable program has no
+      // separate trainer to stay "subscribed" to, so it must always be
+      // treated as an independent copy. The security rules only permit
+      // self-assigned athleteProgramInstances when relationshipMode is
+      // 'copied'; leaving the caller-selected default ('subscribed') here
+      // causes the write to be denied with "insufficient permissions".
+      effectiveMode = ProgramRelationshipMode.copied;
     } else {
       await _verifyActiveRelationship(ownerId!, athleteId);
     }
