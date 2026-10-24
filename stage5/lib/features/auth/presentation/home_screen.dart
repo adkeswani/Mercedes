@@ -3,22 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stage5/core/browser_smoke_config.dart';
-import 'package:stage5/core/enums.dart';
+import 'package:stage5/features/athlete_dashboard/presentation/athlete_dashboard_view.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/profile/presentation/feedback_dialog.dart';
 import 'package:stage5/features/profile/presentation/feedback_providers.dart';
-import 'package:stage5/features/programs/presentation/program_providers.dart';
-import 'package:stage5/features/workouts/domain/workout_instance.dart';
-import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
-import 'package:stage5/features/workouts/presentation/workout_providers.dart';
-
-String workoutProgramLabel(String workoutName, String programName) =>
-    '$workoutName - $programName';
-
-String workoutStatusLabel(WorkoutInstanceStatus status) {
-  final name = status.name;
-  return '${name[0].toUpperCase()}${name.substring(1)}';
-}
 
 /// Home screen shown after authentication and onboarding.
 class HomeScreen extends ConsumerWidget {
@@ -134,9 +122,7 @@ class HomeScreenContent extends ConsumerWidget {
         // ── Dashboard section ──
         Text('Dashboard', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
-        _TodaysWorkoutsSection(),
-        const SizedBox(height: 4),
-        const _MessagesPlaceholderCard(),
+        const AthleteDashboardView(),
 
         if (showTrainerTools) ...[
           const SizedBox(height: 32),
@@ -199,137 +185,3 @@ class _FeatureCard extends StatelessWidget {
     );
   }
 }
-
-/// Placeholder for received messages until direct trainer-athlete messaging
-/// ships. Mirrors the dedicated web Messages destination's placeholder copy.
-class _MessagesPlaceholderCard extends StatelessWidget {
-  const _MessagesPlaceholderCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Card(
-      child: ListTile(
-        leading: Icon(Icons.chat_bubble_outline, size: 32),
-        title: Text('Messages'),
-        subtitle: Text(
-          'Trainer and athlete conversations will be available here.',
-        ),
-      ),
-    );
-  }
-}
-
-/// Shows the current user's workouts scheduled for today, with quick access
-/// to open details / mark completion.
-class _TodaysWorkoutsSection extends ConsumerWidget {
-  String _formatIsoDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-'
-        '${date.day.toString().padLeft(2, '0')}';
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final today = _formatIsoDate(DateTime.now());
-    final scheduleAsync = ref.watch(
-      athleteScheduleProvider(DateRange(startDate: today, endDate: today)),
-    );
-
-    return scheduleAsync.when(
-      data: (instances) {
-        if (instances.isEmpty) {
-          return const Card(
-            child: ListTile(
-              leading: Icon(Icons.event_available, size: 32),
-              title: Text('No workouts scheduled today'),
-            ),
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children:
-              instances.map((i) => _TodaysWorkoutTile(instance: i)).toList(),
-        );
-      },
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
-    );
-  }
-}
-
-/// A single today's-workout row that links to the completion/detail screen.
-class _TodaysWorkoutTile extends ConsumerWidget {
-  const _TodaysWorkoutTile({required this.instance});
-
-  final WorkoutInstance instance;
-
-  Color _statusColor(BuildContext context) {
-    switch (instance.status) {
-      case WorkoutInstanceStatus.scheduled:
-        return Theme.of(context).colorScheme.primary;
-      case WorkoutInstanceStatus.completed:
-        return Colors.green;
-      case WorkoutInstanceStatus.missed:
-        return Colors.orange;
-      case WorkoutInstanceStatus.cancelled:
-        return Colors.grey;
-    }
-  }
-
-  IconData _statusIcon() {
-    switch (instance.status) {
-      case WorkoutInstanceStatus.scheduled:
-        return Icons.schedule;
-      case WorkoutInstanceStatus.completed:
-        return Icons.check_circle;
-      case WorkoutInstanceStatus.missed:
-        return Icons.warning_amber;
-      case WorkoutInstanceStatus.cancelled:
-        return Icons.cancel_outlined;
-    }
-  }
-
-  Future<List<String>> _loadNames(WidgetRef ref) {
-    final workoutRepo = ref.watch(workoutTemplateRepositoryProvider);
-    final programRepo = ref.watch(programRepositoryProvider);
-    return Future.wait([
-      workoutRepo
-          .getById(instance.workoutTemplateId)
-          .then((workout) => workout?.name ?? 'Workout'),
-      programRepo
-          .getById(instance.programId)
-          .then((program) => program?.name ?? 'Program'),
-    ]);
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final color = _statusColor(context);
-    final canOpen = instance.isScheduled || instance.isCompleted;
-
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        leading: Icon(_statusIcon(), color: color),
-        title: FutureBuilder<List<String>>(
-          future: _loadNames(ref),
-          builder: (context, snapshot) {
-            final names = snapshot.data ?? const ['Workout', 'Program'];
-            return Text(workoutProgramLabel(names[0], names[1]));
-          },
-        ),
-        subtitle: Text(workoutStatusLabel(instance.status)),
-        trailing: instance.isScheduled
-            ? FilledButton(
-                onPressed: () =>
-                    context.push('/athlete/workouts/${instance.id}'),
-                child: const Text('Complete'),
-              )
-            : const Icon(Icons.chevron_right),
-        onTap: canOpen
-            ? () => context.push('/athlete/workouts/${instance.id}')
-            : null,
-      ),
-    );
-  }
-}
-

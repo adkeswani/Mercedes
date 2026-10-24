@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stage5/core/enums.dart';
-import 'package:stage5/features/auth/presentation/home_screen.dart';
+import 'package:stage5/features/workouts/domain/workout_instance_labels.dart';
 
 void main() {
   test('today workout label combines workout and program names', () {

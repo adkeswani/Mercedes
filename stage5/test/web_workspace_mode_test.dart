@@ -266,12 +266,10 @@ void main() {
 
       expect(find.byType(HomeScreenContent), findsOneWidget);
       expect(find.text('Dashboard'), findsOneWidget);
-      expect(
-        find.text(
-          'Trainer and athlete conversations will be available here.',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('All'), findsOneWidget);
+      expect(find.text("Today's Workouts"), findsOneWidget);
+      expect(find.text('Comments'), findsOneWidget);
+      expect(find.text('Reactions'), findsOneWidget);
       expect(find.text('My Schedule'), findsNothing);
       expect(find.byKey(webWorkspaceModeSwitcherKey), findsOneWidget);
       expect(find.text('Athlete'), findsOneWidget);
