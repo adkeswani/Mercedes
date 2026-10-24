@@ -4046,6 +4046,55 @@ describe('workoutInstances', () => {
     await assertFails(instance.update({ actualSlotIds: [] }));
   });
 
+  it('allows a climbing slot result with attempts and sent fields',
+      async () => {
+    await seedInstance();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const version = ctx.firestore().collection('workoutTemplates').doc('w1')
+        .collection('workoutTemplateVersions').doc('1');
+      await version.set({
+        versionNumber: 1,
+        storageFormat: 'typedWorkoutBlocksV1',
+        blockCount: 1,
+        slotCount: 1,
+        slots: [{
+          slotId: 'slot-climbing',
+          exerciseId: 'e1',
+        }],
+      });
+      await version.collection('exerciseSlots').doc('0').set({
+        slotId: 'slot-climbing',
+        blockId: 'block-1',
+        blockSortOrder: 0,
+        slotOrder: 0,
+        exerciseId: 'e1',
+        exerciseVersion: 1,
+        sortOrder: 0,
+        prescription: { mode: 'reps' },
+      });
+    });
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    const instance = db.collection('workoutInstances').doc(INSTANCE_ID);
+    const batch = db.batch();
+    batch.update(instance, {
+      status: 'completed',
+      rpe: 7,
+      durationMinutes: 60,
+      actualsStorageFormat: 'slotResultsSubcollection',
+      actualSlotIds: ['slot-climbing'],
+      actuals: deleteField(),
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(instance.collection('slotResults').doc('slot-climbing'), {
+      exerciseId: 'e1',
+      slotOrder: 0,
+      mode: 'reps',
+      attempts: 4,
+      sent: true,
+    });
+    await assertSucceeds(batch.commit());
+  });
+
   it('requires parent and slot results to be updated atomically', async () => {
     await seedInstance();
     const db = testEnv.authenticatedContext(ATHLETE).firestore();

@@ -137,6 +137,7 @@ void main() {
         () => FirebaseFirestore.instance
             .collection('athleteProgramInstances')
             .where('assigningTrainerId', isEqualTo: trainerUid)
+            .where('athleteOwnerId', isEqualTo: athleteUid)
             .where('status', isEqualTo: 'active')
             .where('sourceProgramId', isEqualTo: _seededProgramId)
             .limit(10)

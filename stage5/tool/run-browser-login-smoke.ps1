@@ -131,6 +131,24 @@ function New-BrowserSmokeIdentity {
         -ContentType 'application/json' `
         -Body $profileBody | Out-Null
 
+    # Also create the `usernames/{canonical}` reservation doc that
+    # UserProfileRepository.getUserByUsername() looks up; claimUsername()
+    # writes both docs together in the real app, so the seed must mirror it.
+    $canonicalUsername = $Config.Username.Trim().ToLowerInvariant()
+    $usernameReservationBody = @{
+        fields = @{
+            uid = @{ stringValue = $uid }
+        }
+    } | ConvertTo-Json -Depth 5
+    $usernameReservationUri = "http://127.0.0.1:8080/v1/projects/$projectId/" +
+        "databases/(default)/documents/usernames/$canonicalUsername"
+    Invoke-RestMethod `
+        -Method Patch `
+        -Uri $usernameReservationUri `
+        -Headers @{ Authorization = "Bearer $($authUser.idToken)" } `
+        -ContentType 'application/json' `
+        -Body $usernameReservationBody | Out-Null
+
     return [pscustomobject]@{
         Role = $Config.Role
         Email = $Config.Email
@@ -203,6 +221,7 @@ Invoke-RestMethod `
 $today = Get-Date
 $calendarDate = $today.ToString('yyyy-MM-dd')
 $historyDate = $today.AddDays(-7).ToString('yyyy-MM-dd')
+$exerciseTypesDate = $today.AddDays(14).ToString('yyyy-MM-dd')
 $calendarTimestamp = [DateTime]::ParseExact(
     $calendarDate,
     'yyyy-MM-dd',
@@ -210,6 +229,11 @@ $calendarTimestamp = [DateTime]::ParseExact(
 ).ToUniversalTime().ToString('o')
 $historyTimestamp = [DateTime]::ParseExact(
     $historyDate,
+    'yyyy-MM-dd',
+    [Globalization.CultureInfo]::InvariantCulture
+).ToUniversalTime().ToString('o')
+$exerciseTypesTimestamp = [DateTime]::ParseExact(
+    $exerciseTypesDate,
     'yyyy-MM-dd',
     [Globalization.CultureInfo]::InvariantCulture
 ).ToUniversalTime().ToString('o')
@@ -223,6 +247,9 @@ $programInstanceId = 'browser-athlete-program-instance'
 $exerciseTemplateId = 'browser-trainer-exercise'
 $calendarTemplateId = 'browser-calendar-workout'
 $historyTemplateId = 'browser-history-workout'
+$timedExerciseTemplateId = 'browser-timed-exercise'
+$climbingExerciseTemplateId = 'browser-climbing-exercise'
+$exerciseTypesTemplateId = 'browser-exercise-types-workout'
 $exerciseFolderId = 'browser-exercise-folder'
 $workoutFolderId = 'browser-workout-folder'
 $programFolderId = 'browser-program-folder'
@@ -615,9 +642,382 @@ $workspaceSeedBody = @{
                     createdAt = @{ timestampValue = $reactionTimestamp }
                 }
             }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "exerciseTemplates/$timedExerciseTemplateId"
+                fields = @{
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    currentVersion = @{ integerValue = '1' }
+                    folderId = @{ stringValue = $exerciseFolderId }
+                    createdAt = @{ timestampValue = $seedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $seedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "exerciseTemplates/$timedExerciseTemplateId/" +
+                    'exerciseVersions/1'
+                fields = @{
+                    versionNumber = @{ integerValue = '1' }
+                    name = @{ stringValue = 'Plank Hold' }
+                    description = @{
+                        stringValue = 'Deterministic timed smoke exercise'
+                    }
+                    instructions = @{ stringValue = 'Hold a rigid plank' }
+                    videoUrl = @{ nullValue = $null }
+                    mediaUrls = @{ arrayValue = @{} }
+                    exerciseType = @{ stringValue = 'conditioning' }
+                    measurementConfiguration = @{
+                        mapValue = @{
+                            fields = @{
+                                primary = @{ stringValue = 'duration' }
+                                secondary = @{ arrayValue = @{} }
+                            }
+                        }
+                    }
+                    gradingConfiguration = @{ nullValue = $null }
+                    publishedAt = @{ timestampValue = $seedTimestamp }
+                    publishedBy = @{ stringValue = $trainer.Uid }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "exerciseTemplates/$climbingExerciseTemplateId"
+                fields = @{
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    currentVersion = @{ integerValue = '1' }
+                    folderId = @{ stringValue = $exerciseFolderId }
+                    createdAt = @{ timestampValue = $seedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $seedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "exerciseTemplates/$climbingExerciseTemplateId/" +
+                    'exerciseVersions/1'
+                fields = @{
+                    versionNumber = @{ integerValue = '1' }
+                    name = @{ stringValue = 'Boulder Problem' }
+                    description = @{
+                        stringValue = 'Deterministic climbing smoke exercise'
+                    }
+                    instructions = @{ stringValue = 'Climb the marked route' }
+                    videoUrl = @{ nullValue = $null }
+                    mediaUrls = @{ arrayValue = @{} }
+                    exerciseType = @{ stringValue = 'climbing' }
+                    measurementConfiguration = @{
+                        mapValue = @{
+                            fields = @{
+                                primary = @{ stringValue = 'attempts' }
+                                secondary = @{ arrayValue = @{} }
+                            }
+                        }
+                    }
+                    gradingConfiguration = @{ nullValue = $null }
+                    publishedAt = @{ timestampValue = $seedTimestamp }
+                    publishedBy = @{ stringValue = $trainer.Uid }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutTemplates/$exerciseTypesTemplateId"
+                fields = @{
+                    name = @{ stringValue = 'Browser Exercise Types Workout' }
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    workoutType = @{ stringValue = 'fullBody' }
+                    currentVersion = @{ integerValue = '1' }
+                    folderId = @{ stringValue = $workoutFolderId }
+                    clientAthleteId = @{ stringValue = $athlete.Uid }
+                    createdAt = @{ timestampValue = $seedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $seedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "workoutTemplates/$exerciseTypesTemplateId/" +
+                    'workoutTemplateVersions/1'
+                fields = @{
+                    versionNumber = @{ integerValue = '1' }
+                    publishedAt = @{ timestampValue = $seedTimestamp }
+                    storageFormat = @{
+                        stringValue = 'typedWorkoutBlocksV1'
+                    }
+                    blocks = @{
+                        arrayValue = @{
+                            values = @(
+                                @{
+                                    mapValue = @{
+                                        fields = @{
+                                            blockId = @{
+                                                stringValue = 'block-standard'
+                                            }
+                                            type = @{
+                                                stringValue = 'standardExercise'
+                                            }
+                                            sortOrder = @{ integerValue = '0' }
+                                            slotIds = @{
+                                                arrayValue = @{
+                                                    values = @(
+                                                        @{
+                                                            stringValue =
+                                                                'slot-standard'
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                            slotStartOrder = @{
+                                                integerValue = '0'
+                                            }
+                                            slotCount = @{ integerValue = '1' }
+                                        }
+                                    }
+                                },
+                                @{
+                                    mapValue = @{
+                                        fields = @{
+                                            blockId = @{
+                                                stringValue = 'block-timed'
+                                            }
+                                            type = @{
+                                                stringValue = 'timedInterval'
+                                            }
+                                            sortOrder = @{ integerValue = '1' }
+                                            slotIds = @{
+                                                arrayValue = @{
+                                                    values = @(
+                                                        @{
+                                                            stringValue =
+                                                                'slot-timed'
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                            slotStartOrder = @{
+                                                integerValue = '0'
+                                            }
+                                            slotCount = @{ integerValue = '1' }
+                                            rounds = @{ integerValue = '1' }
+                                            workSeconds = @{
+                                                integerValue = '30'
+                                            }
+                                            restSeconds = @{
+                                                integerValue = '0'
+                                            }
+                                        }
+                                    }
+                                },
+                                @{
+                                    mapValue = @{
+                                        fields = @{
+                                            blockId = @{
+                                                stringValue = 'block-climbing'
+                                            }
+                                            type = @{
+                                                stringValue = 'climbingRoute'
+                                            }
+                                            sortOrder = @{ integerValue = '2' }
+                                            slotIds = @{
+                                                arrayValue = @{
+                                                    values = @(
+                                                        @{
+                                                            stringValue =
+                                                                'slot-climbing'
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                            slotStartOrder = @{
+                                                integerValue = '0'
+                                            }
+                                            slotCount = @{ integerValue = '1' }
+                                            grade = @{ stringValue = 'V4' }
+                                            color = @{ stringValue = 'Blue' }
+                                            targetAttempts = @{
+                                                integerValue = '3'
+                                            }
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    slots = @{
+                        arrayValue = @{
+                            values = @(
+                                @{
+                                    mapValue = @{
+                                        fields = @{
+                                            slotId = @{
+                                                stringValue = 'slot-standard'
+                                            }
+                                            blockId = @{
+                                                stringValue = 'block-standard'
+                                            }
+                                            sortOrder = @{ integerValue = '0' }
+                                            exerciseId = @{
+                                                stringValue = $exerciseTemplateId
+                                            }
+                                            exerciseVersion = @{
+                                                integerValue = '1'
+                                            }
+                                            exerciseName = @{
+                                                stringValue =
+                                                    'Browser Trainer Exercise'
+                                            }
+                                            prescription = @{
+                                                mapValue = @{
+                                                    fields = @{
+                                                        mode = @{
+                                                            stringValue = 'reps'
+                                                        }
+                                                        sets = @{
+                                                            integerValue = '3'
+                                                        }
+                                                        reps = @{
+                                                            stringValue = '10'
+                                                        }
+                                                        weight = @{
+                                                            stringValue = '20kg'
+                                                        }
+                                                        restSeconds = @{
+                                                            integerValue = '60'
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                @{
+                                    mapValue = @{
+                                        fields = @{
+                                            slotId = @{
+                                                stringValue = 'slot-timed'
+                                            }
+                                            blockId = @{
+                                                stringValue = 'block-timed'
+                                            }
+                                            sortOrder = @{ integerValue = '0' }
+                                            exerciseId = @{
+                                                stringValue =
+                                                    $timedExerciseTemplateId
+                                            }
+                                            exerciseVersion = @{
+                                                integerValue = '1'
+                                            }
+                                            exerciseName = @{
+                                                stringValue = 'Plank Hold'
+                                            }
+                                            prescription = @{
+                                                mapValue = @{
+                                                    fields = @{
+                                                        mode = @{
+                                                            stringValue = 'time'
+                                                        }
+                                                        durationSeconds = @{
+                                                            integerValue = '30'
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                @{
+                                    mapValue = @{
+                                        fields = @{
+                                            slotId = @{
+                                                stringValue = 'slot-climbing'
+                                            }
+                                            blockId = @{
+                                                stringValue = 'block-climbing'
+                                            }
+                                            sortOrder = @{ integerValue = '0' }
+                                            exerciseId = @{
+                                                stringValue =
+                                                    $climbingExerciseTemplateId
+                                            }
+                                            exerciseVersion = @{
+                                                integerValue = '1'
+                                            }
+                                            exerciseName = @{
+                                                stringValue = 'Boulder Problem'
+                                            }
+                                            prescription = @{
+                                                mapValue = @{
+                                                    fields = @{
+                                                        mode = @{
+                                                            stringValue = 'reps'
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    'workoutInstances/browser-exercise-types-workout'
+                fields = @{
+                    programId = @{ stringValue = $programId }
+                    programOwnerId = @{ stringValue = $trainer.Uid }
+                    programVersion = @{ integerValue = '1' }
+                    athleteProgramInstanceId = @{
+                        stringValue = $programInstanceId
+                    }
+                    programAssignmentId = @{
+                        stringValue = $programInstanceId
+                    }
+                    relationshipMode = @{ stringValue = 'subscribed' }
+                    athleteId = @{ stringValue = $athlete.Uid }
+                    workoutTemplateId = @{
+                        stringValue = $exerciseTypesTemplateId
+                    }
+                    workoutTemplateVersion = @{ integerValue = '1' }
+                    scheduledDate = @{ stringValue = $exerciseTypesDate }
+                    scheduledAt = @{ timestampValue = $exerciseTypesTimestamp }
+                    assignedBy = @{ stringValue = $trainer.Uid }
+                    assignedAt = @{ timestampValue = $seedTimestamp }
+                    status = @{ stringValue = 'scheduled' }
+                    workoutType = @{ stringValue = 'fullBody' }
+                    createdAt = @{ timestampValue = $seedTimestamp }
+                    updatedAt = @{ timestampValue = $seedTimestamp }
+                }
+            }
         }
     )
-} | ConvertTo-Json -Depth 12
+} | ConvertTo-Json -Depth 20
 Invoke-RestMethod `
     -Method Post `
     -Uri $commitUri `

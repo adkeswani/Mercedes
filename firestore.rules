@@ -695,7 +695,8 @@ service cloud.firestore {
     function hasValidSlotResult(data) {
       return data.keys().hasOnly([
                'exerciseId', 'mode', 'sets', 'reps', 'durationSeconds',
-               'weight', 'restSeconds', 'notes', 'slotOrder'
+               'weight', 'restSeconds', 'attempts', 'sent', 'notes',
+               'slotOrder'
              ])
              && data.exerciseId is string
              && data.exerciseId.size() > 0
@@ -718,6 +719,12 @@ service cloud.firestore {
              && (!('restSeconds' in data)
                  || data.restSeconds == null
                  || (data.restSeconds is int && data.restSeconds >= 0))
+             && (!('attempts' in data)
+                 || data.attempts == null
+                 || (data.attempts is int && data.attempts >= 0))
+             && (!('sent' in data)
+                 || data.sent == null
+                 || data.sent is bool)
              && (!('notes' in data)
                  || data.notes == null
                  || data.notes is string);
