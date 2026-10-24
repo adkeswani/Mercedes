@@ -72,7 +72,11 @@ class _WorkoutPickerSheet extends ConsumerWidget {
                 data: (workouts) {
                   final published = workouts
                       .where((w) => w.hasPublishedVersion)
-                      .toList();
+                      .toList()
+                    ..sort(
+                      (a, b) =>
+                          a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+                    );
                   if (published.isEmpty) {
                     return const Center(
                       child: Text(

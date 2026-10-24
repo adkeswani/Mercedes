@@ -69,11 +69,16 @@ class _ExercisePickerSheet extends ConsumerWidget {
                       child: Text('No exercises yet. Create one first.'),
                     );
                   }
+                  final sorted = exercises.toList()
+                    ..sort(
+                      (a, b) =>
+                          a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+                    );
                   return ListView.builder(
                     controller: scrollController,
-                    itemCount: exercises.length,
+                    itemCount: sorted.length,
                     itemBuilder: (context, index) {
-                      final exercise = exercises[index];
+                      final exercise = sorted[index];
                       return ListTile(
                         title: Text(exercise.name),
                         subtitle: Text(
