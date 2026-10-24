@@ -277,6 +277,8 @@ class ExerciseActual {
     this.durationSeconds,
     this.weight,
     this.restSeconds,
+    this.attempts,
+    this.sent,
     this.notes,
   })  : slotId = slotId ?? 'legacy-result-$exerciseId',
         hasExplicitSlotId = slotId != null;
@@ -289,6 +291,12 @@ class ExerciseActual {
   final int? durationSeconds;
   final String? weight;
   final int? restSeconds;
+
+  /// Number of climbing attempts the athlete made on the route.
+  final int? attempts;
+
+  /// Whether the athlete sent (successfully completed) the climbing route.
+  final bool? sent;
   final String? notes;
 
   /// Validates actual fields.
@@ -310,6 +318,9 @@ class ExerciseActual {
     }
     if (restSeconds != null && restSeconds! < 0) {
       throw ArgumentError('restSeconds must be >= 0 when provided');
+    }
+    if (attempts != null && attempts! < 0) {
+      throw ArgumentError('attempts must be >= 0 when provided');
     }
   }
 }

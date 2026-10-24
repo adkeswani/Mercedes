@@ -6,6 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
+import 'package:stage5/features/exercises/data/exercise_template_repository.dart';
+import 'package:stage5/features/exercises/presentation/exercise_media_widgets.dart';
+import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
 import 'package:stage5/features/workouts/data/workout_completion_draft_repository.dart';
 import 'package:stage5/features/workouts/data/workout_draft_client_id_store_contract.dart';
 import 'package:stage5/features/workouts/data/workout_draft_local_store_contract.dart';
@@ -36,6 +39,9 @@ void main() {
         ),
         workoutTemplateRepositoryProvider.overrideWithValue(
           WorkoutTemplateRepository(firestore: firestore),
+        ),
+        exerciseTemplateRepositoryProvider.overrideWithValue(
+          ExerciseTemplateRepository(firestore: firestore),
         ),
         workoutDraftLocalStoreProvider.overrideWithValue(localStore),
         workoutCompletionDraftRepositoryProvider.overrideWithValue(
@@ -422,6 +428,105 @@ void main() {
     );
     expect(localStore.value, isNull);
   });
+
+  testWidgets(
+      'standard exercise card shows media/instructions by default, '
+      'collapses, and records sets/reps/weight actuals',
+      (tester) async {
+    await _seedWorkoutWithExercises(firestore);
+
+    await pumpScreen(tester, id: 'instance-2');
+    await tester.pumpAndSettle();
+
+    final pushupCard = find.byKey(const ValueKey('slot-pushup'));
+    final instructionsInPushupCard = find.descendant(
+      of: pushupCard,
+      matching: find.text('Instructions'),
+    );
+    final setsFieldInPushupCard = find.descendant(
+      of: pushupCard,
+      matching: find.widgetWithText(TextField, 'Sets'),
+    );
+
+    expect(find.text('Push Up'), findsOneWidget);
+    expect(find.textContaining('A basic push up.'), findsOneWidget);
+    expect(find.byType(BoundedScrollableText), findsWidgets);
+    expect(setsFieldInPushupCard, findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Reps'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Weight'), findsOneWidget);
+
+    expect(instructionsInPushupCard, findsOneWidget);
+    await tester.tap(find.byIcon(Icons.expand_less).first);
+    await tester.pumpAndSettle();
+    expect(instructionsInPushupCard, findsNothing);
+    expect(setsFieldInPushupCard, findsNothing);
+
+    await tester.tap(find.byIcon(Icons.expand_more).first);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.widgetWithText(TextField, 'Sets'), '4');
+    await tester.enterText(find.widgetWithText(TextField, 'Reps'), '12');
+    await tester.enterText(find.widgetWithText(TextField, 'Weight'), '60kg');
+    await tester.pump();
+
+    await tester.scrollUntilVisible(
+      find.text('Mark as Completed'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Mark as Completed'));
+    await tester.pumpAndSettle();
+
+    final results = await firestore
+        .collection('workoutInstances')
+        .doc('instance-2')
+        .collection('slotResults')
+        .doc('slot-pushup')
+        .get();
+    expect(results.data()?['sets'], 4);
+    expect(results.data()?['reps'], '12');
+    expect(results.data()?['weight'], '60kg');
+  });
+
+  testWidgets(
+      'climbing route card shows attempts/sent inputs and records actuals',
+      (tester) async {
+    await _seedWorkoutWithExercises(firestore);
+
+    await pumpScreen(tester, id: 'instance-2');
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Boulder Problem'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    expect(find.text('Boulder Problem'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Attempts'), findsOneWidget);
+    expect(find.text('Sent the route'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, 'Attempts'), '5');
+    await tester.tap(find.text('Sent the route'));
+    await tester.pump();
+
+    await tester.scrollUntilVisible(
+      find.text('Mark as Completed'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Mark as Completed'));
+    await tester.pumpAndSettle();
+
+    final results = await firestore
+        .collection('workoutInstances')
+        .doc('instance-2')
+        .collection('slotResults')
+        .doc('slot-boulder')
+        .get();
+    expect(results.data()?['attempts'], 5);
+    expect(results.data()?['sent'], true);
+  });
 }
 
 WorkoutCompletionDraft _draftForTest({
@@ -466,6 +571,115 @@ Future<void> _seedWorkout(FakeFirebaseFirestore firestore) async {
     'versionNumber': 1,
     'publishedAt': now,
     'exercises': <Map<String, dynamic>>[],
+  });
+}
+
+/// Seeds a second workout instance with a standard exercise block and a
+/// climbing route block (each backed by a published exercise template),
+/// used by tests exercising the exercise-card media/instructions and
+/// mode-aware actual-recording UI.
+Future<void> _seedWorkoutWithExercises(FakeFirebaseFirestore firestore) async {
+  final now = DateTime.utc(2026, 10, 4, 12);
+  await firestore.collection('workoutInstances').doc('instance-2').set({
+    'programId': 'program-1',
+    'athleteId': 'athlete-1',
+    'workoutTemplateId': 'workout-2',
+    'workoutTemplateVersion': 1,
+    'scheduledDate': '2026-10-04',
+    'assignedBy': 'trainer-1',
+    'assignedAt': now,
+    'status': 'scheduled',
+    'workoutType': 'push',
+    'createdAt': now,
+    'updatedAt': now,
+  });
+  await firestore
+      .collection('workoutTemplates')
+      .doc('workout-2')
+      .collection('workoutTemplateVersions')
+      .doc('1')
+      .set({
+    'versionNumber': 1,
+    'publishedAt': now,
+    'storageFormat': 'typedWorkoutBlocksV1',
+    'blocks': [
+      {
+        'blockId': 'block-pushup',
+        'type': 'standardExercise',
+        'sortOrder': 0,
+        'slotIds': ['slot-pushup'],
+        'slotStartOrder': 0,
+        'slotCount': 1,
+      },
+      {
+        'blockId': 'block-boulder',
+        'type': 'climbingRoute',
+        'sortOrder': 1,
+        'slotIds': ['slot-boulder'],
+        'slotStartOrder': 1,
+        'slotCount': 1,
+        'grade': 'V4',
+        'color': 'Blue',
+        'targetAttempts': 3,
+      },
+    ],
+    'slots': [
+      {
+        'slotId': 'slot-pushup',
+        'blockId': 'block-pushup',
+        'exerciseId': 'ex-pushup',
+        'exerciseVersion': 1,
+        'sortOrder': 0,
+        'exerciseName': 'Push Up',
+        'prescription': {'mode': 'reps', 'sets': 3, 'reps': '10'},
+      },
+      {
+        'slotId': 'slot-boulder',
+        'blockId': 'block-boulder',
+        'exerciseId': 'ex-boulder',
+        'exerciseVersion': 1,
+        'sortOrder': 0,
+        'exerciseName': 'Boulder Problem',
+        'prescription': {'mode': 'reps'},
+      },
+    ],
+  });
+  await firestore.collection('exerciseTemplates').doc('ex-pushup').set({
+    'currentVersion': 1,
+    'createdBy': 'trainer-1',
+    'ownerId': 'trainer-1',
+  });
+  await firestore
+      .collection('exerciseTemplates')
+      .doc('ex-pushup')
+      .collection('exerciseVersions')
+      .doc('1')
+      .set({
+    'versionNumber': 1,
+    'name': 'Push Up',
+    'description': 'A basic push up.',
+    'instructions':
+        'Line one\nLine two\nLine three\nLine four\nLine five overflow',
+    'publishedAt': now,
+    'publishedBy': 'trainer-1',
+  });
+  await firestore.collection('exerciseTemplates').doc('ex-boulder').set({
+    'currentVersion': 1,
+    'createdBy': 'trainer-1',
+    'ownerId': 'trainer-1',
+  });
+  await firestore
+      .collection('exerciseTemplates')
+      .doc('ex-boulder')
+      .collection('exerciseVersions')
+      .doc('1')
+      .set({
+    'versionNumber': 1,
+    'name': 'Boulder Problem',
+    'description': 'A bouldering problem on the wall.',
+    'instructions': 'Climb the marked route to the top.',
+    'publishedAt': now,
+    'publishedBy': 'trainer-1',
   });
 }
 

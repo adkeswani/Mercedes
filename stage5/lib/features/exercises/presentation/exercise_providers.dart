@@ -32,3 +32,28 @@ final exerciseTemplatesProvider =
   final repo = ref.watch(exerciseTemplateRepositoryProvider);
   return repo.watchAll(user.uid);
 });
+
+/// Identifies a specific published version of an exercise.
+class ExerciseVersionKey {
+  const ExerciseVersionKey(this.exerciseId, this.versionNumber);
+
+  final String exerciseId;
+  final int versionNumber;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ExerciseVersionKey &&
+      other.exerciseId == exerciseId &&
+      other.versionNumber == versionNumber;
+
+  @override
+  int get hashCode => Object.hash(exerciseId, versionNumber);
+}
+
+/// Fetches a specific published exercise version, for showing media and
+/// instructions inline (e.g. while completing a workout).
+final exerciseVersionByIdProvider =
+    FutureProvider.family<ExerciseVersion?, ExerciseVersionKey>((ref, key) {
+  final repo = ref.watch(exerciseTemplateRepositoryProvider);
+  return repo.getVersion(key.exerciseId, key.versionNumber);
+});

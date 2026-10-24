@@ -1597,6 +1597,8 @@ class WorkoutInstanceRepository {
       'durationSeconds': actual.durationSeconds,
       'weight': actual.weight,
       'restSeconds': actual.restSeconds,
+      'attempts': actual.attempts,
+      'sent': actual.sent,
       'notes': actual.notes,
     };
   }
@@ -1675,6 +1677,8 @@ class WorkoutInstanceRepository {
       durationSeconds: data['durationSeconds'] as int?,
       weight: data['weight'] as String?,
       restSeconds: data['restSeconds'] as int?,
+      attempts: data['attempts'] as int?,
+      sent: data['sent'] as bool?,
       notes: data['notes'] as String?,
     );
   }

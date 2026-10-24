@@ -361,6 +361,29 @@ void main() {
       );
       expect(() => actual.validate(), throwsArgumentError);
     });
+
+    test('supports climbing-specific attempts and sent fields', () {
+      final actual = ExerciseActual(
+        slotId: 'slot-1',
+        exerciseId: 'ex1',
+        mode: ExerciseMode.reps,
+        attempts: 3,
+        sent: true,
+      );
+      expect(actual.attempts, 3);
+      expect(actual.sent, isTrue);
+      actual.validate();
+    });
+
+    test('validate throws on negative attempts', () {
+      final actual = ExerciseActual(
+        slotId: 'slot-1',
+        exerciseId: 'ex1',
+        mode: ExerciseMode.reps,
+        attempts: -1,
+      );
+      expect(() => actual.validate(), throwsArgumentError);
+    });
   });
 
   group('Recurrence', () {

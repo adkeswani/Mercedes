@@ -292,6 +292,43 @@ void main() {
         expect(result.data()!['exerciseId'], 'ex1');
       });
 
+      test('persists and round-trips climbing attempts and sent status',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+
+        await repo.completeWorkout(
+          instanceId: id,
+          athleteId: 'athlete1',
+          rpe: 6,
+          durationMinutes: 30,
+          actuals: [
+            ExerciseActual(
+              slotId: 'legacy-slot-0',
+              exerciseId: 'ex1',
+              mode: ExerciseMode.reps,
+              attempts: 4,
+              sent: true,
+            ),
+          ],
+        );
+
+        final result = await fakeFirestore
+            .collection('workoutInstances')
+            .doc(id)
+            .collection('slotResults')
+            .doc('legacy-slot-0')
+            .get();
+        expect(result.data()!['attempts'], 4);
+        expect(result.data()!['sent'], true);
+
+        final instance = await repo.getById(id);
+        final actual = instance!.actualsBySlot['legacy-slot-0']!;
+        expect(actual.attempts, 4);
+        expect(actual.sent, isTrue);
+      });
+
       test('atomically deletes the in-progress completion draft', () async {
         await createProgram('prog1');
         await enrollAthlete('prog1', 'athlete1');

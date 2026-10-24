@@ -3,10 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/exercises/domain/exercise_template.dart';
-import 'package:stage5/features/exercises/domain/youtube_url.dart';
+import 'package:stage5/features/exercises/presentation/exercise_media_widgets.dart';
 import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
-import 'package:stage5/features/exercises/presentation/youtube_video_presentation.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// Read-only detail view for an exercise template.
 ///
@@ -89,7 +87,7 @@ class _ExerciseDetailBody extends StatelessWidget {
         if (videoUrl != null && videoUrl.trim().isNotEmpty) ...[
           Text('Video', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
-          _ExerciseVideo(url: videoUrl.trim()),
+          ExerciseVideoPreview(url: videoUrl.trim()),
           const SizedBox(height: 24),
         ],
         Text('Description', style: theme.textTheme.titleMedium),
@@ -100,40 +98,6 @@ class _ExerciseDetailBody extends StatelessWidget {
         const SizedBox(height: 4),
         Text(exercise.instructions, style: theme.textTheme.bodyMedium),
       ],
-    );
-  }
-}
-
-/// Renders an embedded YouTube player for supported URLs, or an "Open link"
-/// fallback for any other URL.
-class _ExerciseVideo extends StatelessWidget {
-  const _ExerciseVideo({required this.url});
-
-  final String url;
-
-  Future<void> _openExternally() async {
-    final uri = Uri.tryParse(url);
-    if (uri == null) {
-      return;
-    }
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final videoId = extractYoutubeId(url);
-    if (videoId != null) {
-      return YoutubeVideoPlayer(videoId: videoId);
-    }
-
-    // Unsupported URL — offer to open it externally.
-    return Card(
-      child: ListTile(
-        leading: const Icon(Icons.open_in_new),
-        title: const Text('Open video link'),
-        subtitle: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
-        onTap: _openExternally,
-      ),
     );
   }
 }
