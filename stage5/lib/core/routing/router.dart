@@ -190,7 +190,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           destination: WebWorkspaceDestination.athleteToday,
           webChild: HomeScreenContent(
             showTrainerTools: false,
-            scheduleRoute: '/athlete/calendar',
           ),
         ),
       ),

@@ -247,7 +247,7 @@ void main() {
       expect(preference.writes, ['trainer']);
     });
 
-    testWidgets('athlete Today uses the namespaced calendar route',
+    testWidgets('athlete Today shows the dashboard without the schedule card',
         (tester) async {
       _setViewport(tester, const Size(1280, 800));
       final preference = _FakeWebWorkspacePreference();
@@ -264,12 +264,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      expect(find.byType(HomeScreenContent), findsOneWidget);
+      expect(find.text('Dashboard'), findsOneWidget);
       expect(
-        tester
-            .widget<HomeScreenContent>(find.byType(HomeScreenContent))
-            .scheduleRoute,
-        '/athlete/calendar',
+        find.text(
+          'Trainer and athlete conversations will be available here.',
+        ),
+        findsOneWidget,
       );
+      expect(find.text('My Schedule'), findsNothing);
       expect(find.byKey(webWorkspaceModeSwitcherKey), findsOneWidget);
       expect(find.text('Athlete'), findsOneWidget);
       expect(find.text('Trainer'), findsOneWidget);

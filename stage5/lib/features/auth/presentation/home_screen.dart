@@ -7,8 +7,6 @@ import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/profile/presentation/feedback_dialog.dart';
 import 'package:stage5/features/profile/presentation/feedback_providers.dart';
-import 'package:stage5/features/programs/domain/enrollment.dart';
-import 'package:stage5/features/programs/presentation/enrollment_providers.dart';
 import 'package:stage5/features/programs/presentation/program_providers.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
@@ -88,12 +86,10 @@ class HomeScreen extends ConsumerWidget {
 class HomeScreenContent extends ConsumerWidget {
   const HomeScreenContent({
     this.showTrainerTools = true,
-    this.scheduleRoute = '/schedule',
     super.key,
   });
 
   final bool showTrainerTools;
-  final String scheduleRoute;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -135,19 +131,12 @@ class HomeScreenContent extends ConsumerWidget {
 
         const SizedBox(height: 24),
 
-        // ── My Training section ──
-        Text('My Training', style: Theme.of(context).textTheme.titleLarge),
+        // ── Dashboard section ──
+        Text('Dashboard', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
         _TodaysWorkoutsSection(),
         const SizedBox(height: 4),
-        _FeatureCard(
-          icon: Icons.calendar_month,
-          title: 'My Schedule',
-          subtitle: 'View your workout calendar',
-          onTap: () => context.push(scheduleRoute),
-        ),
-        const SizedBox(height: 4),
-        _EnrolledProgramsSection(),
+        const _MessagesPlaceholderCard(),
 
         if (showTrainerTools) ...[
           const SizedBox(height: 32),
@@ -206,6 +195,25 @@ class _FeatureCard extends StatelessWidget {
         subtitle: Text(subtitle),
         trailing: const Icon(Icons.chevron_right),
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+/// Placeholder for received messages until direct trainer-athlete messaging
+/// ships. Mirrors the dedicated web Messages destination's placeholder copy.
+class _MessagesPlaceholderCard extends StatelessWidget {
+  const _MessagesPlaceholderCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Card(
+      child: ListTile(
+        leading: Icon(Icons.chat_bubble_outline, size: 32),
+        title: Text('Messages'),
+        subtitle: Text(
+          'Trainer and athlete conversations will be available here.',
+        ),
       ),
     );
   }
@@ -325,78 +333,3 @@ class _TodaysWorkoutTile extends ConsumerWidget {
   }
 }
 
-/// Shows programs the current user is enrolled in as an athlete.
-class _EnrolledProgramsSection extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final enrollmentsAsync = ref.watch(myEnrollmentsProvider);
-
-    return enrollmentsAsync.when(
-      data: (enrollments) {
-        if (enrollments.isEmpty) return const SizedBox.shrink();
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: enrollments.map((enrollment) {
-            return _EnrolledProgramCard(enrollment: enrollment);
-          }).toList(),
-        );
-      },
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
-    );
-  }
-}
-
-/// Card for a single enrolled program. Fetches the program name.
-class _EnrolledProgramCard extends ConsumerWidget {
-  const _EnrolledProgramCard({required this.enrollment});
-
-  final Enrollment enrollment;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final programRepo = ref.watch(programRepositoryProvider);
-
-    return FutureBuilder(
-      future: programRepo.getById(enrollment.programId),
-      builder: (context, snapshot) {
-        final program = snapshot.data;
-
-        // Hide card if program was deleted
-        if (snapshot.connectionState == ConnectionState.done &&
-            program == null) {
-          return const SizedBox.shrink();
-        }
-
-        final name = program?.name ?? 'Loading...';
-        final description = program?.description;
-
-        return Card(
-          clipBehavior: Clip.antiAlias,
-          child: ListTile(
-            leading: const Icon(Icons.school, size: 32),
-            title: Text(name),
-            subtitle: Text(
-              description ?? 'Enrolled ${_formatDate(enrollment.addedAt)}',
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              final uid = ref.read(authStateProvider).value?.uid;
-              if (uid != null) {
-                context.push(
-                  '/programs/${enrollment.programId}/athlete/$uid',
-                );
-              }
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  String _formatDate(DateTime date) {
-    if (date.millisecondsSinceEpoch == 0) return '';
-    return '${date.month}/${date.day}/${date.year}';
-  }
-}
