@@ -10,6 +10,12 @@
   because onProgramVersionPublished is retryable and idempotent.
   Android builds an AAB for Play Store upload.
 
+  Requires a prior successful run of
+  .\scripts\run-stage-validation.ps1 -Stage <StageDir> on the exact commit
+  being deployed (it includes browser integration tests). Deployment fails
+  if no matching validation stamp is found; this check is not affected by
+  -SkipTests.
+
 .PARAMETER Target
   Deployment target: 'web', 'android', or 'all'. Default: 'all'.
 
@@ -273,6 +279,41 @@ if ($dirty) {
     Write-Fail "Working tree is dirty. Commit or stash changes first."
 }
 Write-Ok "On main, clean working tree"
+
+# Require a full stage-validation run (unit tests, analyze, Firestore rules,
+# and browser integration tests) on this exact commit. This is not
+# skippable by -SkipTests: that flag only governs the quick re-run of
+# `flutter test` below, not the full validation matrix.
+Write-Step "Checking stage validation"
+$validationStampPath = Join-Path $repoRoot '.stage-validation-stamp.json'
+$validationCommand =
+    ".\scripts\run-stage-validation.ps1 -Stage $StageDir"
+if (-not (Test-Path -LiteralPath $validationStampPath -PathType Leaf)) {
+    Write-Fail (
+        'No stage validation stamp found. Run ' +
+        "'$validationCommand' (including its browser integration tests) " +
+        'before deploying.'
+    )
+}
+$validationStamp =
+    Get-Content -LiteralPath $validationStampPath -Raw | ConvertFrom-Json
+$currentCommit = (git -C $repoRoot rev-parse HEAD).Trim()
+if ($validationStamp.stage -ne $StageDir) {
+    Write-Fail (
+        "Stage validation stamp is for '$($validationStamp.stage)', not " +
+        "'$StageDir'. Run '$validationCommand' before deploying."
+    )
+}
+if ($validationStamp.commit -ne $currentCommit) {
+    Write-Fail (
+        "Stage validation stamp is for commit $($validationStamp.commit), " +
+        "but HEAD is $currentCommit. Re-run '$validationCommand' " +
+        '(including its browser integration tests) before deploying.'
+    )
+}
+Write-Ok (
+    "Stage validation stamp matches HEAD ($currentCommit) for $StageDir"
+)
 
 if ($deploysWeb) {
     Write-Step "Checking required Firebase Functions secrets"

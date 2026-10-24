@@ -372,6 +372,18 @@ try {
         }
     }
 
+    $validatedCommit = (git -C $repoRoot rev-parse HEAD).Trim()
+    $stampPath = Join-Path $repoRoot '.stage-validation-stamp.json'
+    [PSCustomObject]@{
+        stage     = $Stage
+        commit    = $validatedCommit
+        timestamp = (Get-Date).ToUniversalTime().ToString('o')
+    } | ConvertTo-Json | Set-Content -LiteralPath $stampPath -Encoding utf8
+    Write-Host (
+        "Stage validation stamp written: $stampPath ($Stage @ " +
+        "$validatedCommit)"
+    ) -ForegroundColor Green
+
     Write-Host "$Stage validation passed." -ForegroundColor Green
 }
 finally {

@@ -477,6 +477,14 @@ complete validation boundary from the exact integrated commit before deploy.
 ## Production promotion
 
 Promote the exact validated commit and repository Firebase configuration.
+`deploy.ps1` enforces this automatically: it requires a
+`.stage-validation-stamp.json` (written by
+`.\scripts\run-stage-validation.ps1 -Stage <StageDir>` on success) whose
+recorded stage and commit hash match the exact `HEAD` commit being deployed,
+including the browser integration tests. This check is independent of
+`-SkipTests` and cannot be bypassed; a stale or missing stamp fails the
+deploy before any build or Firebase operation runs. Re-run the validation
+command after any new commit, rebase, or merge before deploying again.
 Production deployment remains explicit:
 
 ```powershell

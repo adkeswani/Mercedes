@@ -33,5 +33,9 @@ ui-debug.log
 firebase-debug.log
 firebase-debug.*.log
 
+# Firebase CLI local cache
+.firebase/
+
 # Browser integration test artifacts
 stage5/test-artifacts/
+.stage-validation-stamp.json
