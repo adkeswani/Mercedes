@@ -101,8 +101,19 @@ void main() {
       );
 
       await waits.runStep(
-        'open exercise picker',
+        'open add-block menu',
         () => tester.tap(find.text('Add')),
+      );
+      await _waitFor(
+        tester,
+        waits,
+        find.text('Standard Exercise'),
+        step: 'add-block menu visible',
+        timeout: const Duration(seconds: 20),
+      );
+      await waits.runStep(
+        'choose standard exercise block type',
+        () => tester.tap(find.text('Standard Exercise')),
       );
       await _waitFor(
         tester,
