@@ -50,6 +50,12 @@
   the test window visible, foregrounded, and untouched until the run finishes;
   they should not minimize it, cover it, switch virtual desktops, lock the
   machine, or allow the display to sleep.
+- `deploy.ps1` requires its stage-validation stamp's commit hash to match
+  `HEAD` exactly. If a validation run fails, fix the issue and commit the fix
+  immediately — never run validation against uncommitted changes when the
+  result is meant to gate a deploy — then rerun validation exactly once on
+  that final committed `HEAD`. Committing after a passing validation run
+  invalidates its stamp and forces a redundant rerun.
 
 ## Ownership and authorization
 
