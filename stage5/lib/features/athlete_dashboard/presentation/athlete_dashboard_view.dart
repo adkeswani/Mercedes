@@ -13,9 +13,10 @@ import 'package:stage5/features/workouts/domain/workout_instance_labels.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
-/// The athlete's Dashboard: filter chips (All, Today's Workouts, Comments,
-/// Reactions) over Today's scheduled workouts and a completion/comment/
-/// reaction activity feed, mirroring the trainer dashboard's structure.
+/// The athlete's Dashboard: filter chips (All, Today's Workouts, Completed,
+/// Comments, Reactions) over Today's scheduled workouts and a completion/
+/// comment/reaction activity feed, mirroring the trainer dashboard's
+/// structure. Defaults to the All tab.
 ///
 /// Rendered as a plain, non-scrolling [Column] so it can be embedded inside
 /// the shared [HomeScreenContent]'s outer scroll view.
@@ -27,7 +28,7 @@ class AthleteDashboardView extends StatefulWidget {
 }
 
 class _AthleteDashboardViewState extends State<AthleteDashboardView> {
-  AthleteActivityFilter _filter = AthleteActivityFilter.todaysWorkouts;
+  AthleteActivityFilter _filter = AthleteActivityFilter.all;
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +77,7 @@ class _FilterControl extends StatelessWidget {
     final label = switch (filter) {
       AthleteActivityFilter.all => 'All',
       AthleteActivityFilter.todaysWorkouts => "Today's Workouts",
+      AthleteActivityFilter.completed => 'Completed',
       AthleteActivityFilter.comments => 'Comments',
       AthleteActivityFilter.reactions => 'Reactions',
     };
@@ -243,6 +245,7 @@ class _FeedEmpty extends StatelessWidget {
     final message = switch (filter) {
       AthleteActivityFilter.all => 'No recent activity',
       AthleteActivityFilter.todaysWorkouts => 'No workouts scheduled today',
+      AthleteActivityFilter.completed => 'No completed workouts',
       AthleteActivityFilter.comments => 'No recent comments',
       AthleteActivityFilter.reactions => 'No recent reactions',
     };

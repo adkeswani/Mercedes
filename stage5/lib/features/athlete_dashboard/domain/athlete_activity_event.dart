@@ -2,11 +2,17 @@ enum AthleteActivityEventType { completion, comment, reaction }
 
 /// "Today's workouts" is handled by a dedicated schedule-backed view rather
 /// than the activity feed, so it isn't an [AthleteActivityEventType].
-enum AthleteActivityFilter { all, todaysWorkouts, comments, reactions }
+enum AthleteActivityFilter { all, todaysWorkouts, completed, comments, reactions }
 
 const int athleteDashboardPageSize = 50;
 const int athleteDashboardCompletionQueryLimit = 40;
 const int athleteDashboardInteractionQueryLimit = 40;
+
+/// How far back the dashboard queries for activity, for every tab except
+/// Today's Workouts (which is always scoped to the current day). Keeping
+/// this a fixed window instead of a user-facing range picker keeps the
+/// feature simple while still bounding query cost.
+const int athleteDashboardQueryWindowDays = 7;
 
 const String athleteDashboardEmptyCanaryContent =
     'Athlete dashboard | No recent activity';
@@ -83,6 +89,7 @@ List<AthleteActivityEvent> filterAthleteActivityEvents(
   final type = switch (filter) {
     AthleteActivityFilter.all => null,
     AthleteActivityFilter.todaysWorkouts => null,
+    AthleteActivityFilter.completed => AthleteActivityEventType.completion,
     AthleteActivityFilter.comments => AthleteActivityEventType.comment,
     AthleteActivityFilter.reactions => AthleteActivityEventType.reaction,
   };

@@ -12,17 +12,24 @@ import 'package:stage5/features/trainer_dashboard/domain/trainer_activity_event.
 /// is needed) and is read-only: posting comments/reactions from the athlete
 /// side is not yet implemented.
 class AthleteDashboardRepository {
-  AthleteDashboardRepository({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  AthleteDashboardRepository({
+    FirebaseFirestore? firestore,
+    DateTime Function()? now,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _now = now ?? DateTime.now;
 
   final FirebaseFirestore _firestore;
+  final DateTime Function() _now;
   static const _completionActivityMessageId = 'completion-activity';
 
   Future<AthleteDashboardPage> loadInitialPage(String athleteId) async {
     _verifyAuthenticatedAthlete(athleteId);
 
-    final completionsFuture = _loadCompletions(athleteId);
-    final discussionsFuture = _loadDiscussionActivities(athleteId);
+    final windowStart = _now().subtract(
+      const Duration(days: athleteDashboardQueryWindowDays),
+    );
+    final completionsFuture = _loadCompletions(athleteId, windowStart);
+    final discussionsFuture = _loadDiscussionActivities(athleteId, windowStart);
     final completions = await completionsFuture;
     final discussions = await discussionsFuture;
 
@@ -69,11 +76,18 @@ class AthleteDashboardRepository {
     );
   }
 
-  Future<_BoundedDocuments> _loadCompletions(String athleteId) async {
+  Future<_BoundedDocuments> _loadCompletions(
+    String athleteId,
+    DateTime windowStart,
+  ) async {
     final snapshot = await _firestore
         .collection('workoutInstances')
         .where('athleteId', isEqualTo: athleteId)
         .where('status', isEqualTo: 'completed')
+        .where(
+          'completedAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(windowStart),
+        )
         .orderBy('completedAt', descending: true)
         .limit(athleteDashboardCompletionQueryLimit)
         .get();
@@ -85,8 +99,9 @@ class AthleteDashboardRepository {
 
   Future<_DiscussionActivityLoad> _loadDiscussionActivities(
     String athleteId,
+    DateTime windowStart,
   ) async {
-    final threads = await _loadDiscussionThreads(athleteId);
+    final threads = await _loadDiscussionThreads(athleteId, windowStart);
     final events = <AthleteActivityEvent>[];
     var hitLimit = threads.hitLimit;
 
@@ -109,7 +124,10 @@ class AthleteDashboardRepository {
         final body = (message.data()['body'] as String? ?? '').trim();
         final messageAt = _optionalDateTime(message.data()['createdAt']);
         final authorId = message.data()['authorId'] as String? ?? '';
-        if (!isCompletionAnchor && body.isNotEmpty && messageAt != null) {
+        if (!isCompletionAnchor &&
+            body.isNotEmpty &&
+            messageAt != null &&
+            !messageAt.isBefore(windowStart)) {
           events.add(
             AthleteCommentActivityEvent(
               id: 'comment:${thread.id}:${message.id}',
@@ -132,7 +150,9 @@ class AthleteDashboardRepository {
           final definition = _reactionForId(reactionId);
           final reactionAt = _optionalDateTime(reaction.data()['createdAt']);
           final actorId = reaction.data()['actorId'] as String? ?? '';
-          if (definition == null || reactionAt == null) {
+          if (definition == null ||
+              reactionAt == null ||
+              reactionAt.isBefore(windowStart)) {
             continue;
           }
           events.add(
@@ -162,16 +182,28 @@ class AthleteDashboardRepository {
     );
   }
 
-  Future<_BoundedDocuments> _loadDiscussionThreads(String athleteId) async {
+  Future<_BoundedDocuments> _loadDiscussionThreads(
+    String athleteId,
+    DateTime windowStart,
+  ) async {
+    final windowStartTimestamp = Timestamp.fromDate(windowStart);
     final projected = await _firestore
         .collection('workoutDiscussionThreads')
         .where('athleteId', isEqualTo: athleteId)
+        .where(
+          'lastActivityAt',
+          isGreaterThanOrEqualTo: windowStartTimestamp,
+        )
         .orderBy('lastActivityAt', descending: true)
         .limit(athleteDashboardPageSize)
         .get();
     final fallback = await _firestore
         .collection('workoutDiscussionThreads')
         .where('athleteId', isEqualTo: athleteId)
+        .where(
+          'completedAt',
+          isGreaterThanOrEqualTo: windowStartTimestamp,
+        )
         .orderBy('completedAt', descending: true)
         .limit(athleteDashboardPageSize)
         .get();

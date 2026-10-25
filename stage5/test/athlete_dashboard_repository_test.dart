@@ -7,10 +7,14 @@ import 'package:stage5/features/athlete_dashboard/domain/athlete_activity_event.
 void main() {
   late FakeFirebaseFirestore firestore;
   late AthleteDashboardRepository repository;
+  final now = DateTime(2026, 9, 19, 12);
 
   setUp(() async {
     firestore = FakeFirebaseFirestore();
-    repository = AthleteDashboardRepository(firestore: firestore);
+    repository = AthleteDashboardRepository(
+      firestore: firestore,
+      now: () => now,
+    );
     await firestore.collection('workoutTemplates').doc('workout-1').set({
       'name': 'Heavy Pull',
     });
@@ -54,6 +58,13 @@ void main() {
           AthleteActivityFilter.comments,
         ),
         [comment],
+      );
+      expect(
+        filterAthleteActivityEvents(
+          [completion, comment, reaction],
+          AthleteActivityFilter.completed,
+        ),
+        [completion],
       );
       expect(
         filterAthleteActivityEvents(
@@ -154,6 +165,63 @@ void main() {
       final page = await repository.loadInitialPage('athlete-1');
       expect(page.events, isEmpty);
       expect(page.isBounded, isFalse);
+    });
+
+    test('excludes completions and discussion activity older than the '
+        'query window', () async {
+      // Within the 7-day window relative to `now`.
+      await _workout(
+        firestore,
+        id: 'recent',
+        completedAt: now.subtract(const Duration(days: 2)),
+      );
+      // Outside the 7-day window.
+      await _workout(
+        firestore,
+        id: 'stale',
+        completedAt: now.subtract(const Duration(days: 10)),
+      );
+
+      final recentThread =
+          firestore.collection('workoutDiscussionThreads').doc('recent');
+      await recentThread.set({
+        'workoutInstanceId': 'recent',
+        'athleteId': 'athlete-1',
+        'trainerId': 'trainer-1',
+        'completedAt': now.subtract(const Duration(days: 2)),
+        'lastActivityAt': now.subtract(const Duration(days: 1)),
+        'createdAt': now.subtract(const Duration(days: 2)),
+        'createdBy': 'athlete-1',
+      });
+      await recentThread.collection('threadMessages').doc('new').set({
+        'authorId': 'trainer-1',
+        'body': 'Nice work this week',
+        'createdAt': now.subtract(const Duration(days: 1)),
+      });
+
+      final staleThread =
+          firestore.collection('workoutDiscussionThreads').doc('stale');
+      await staleThread.set({
+        'workoutInstanceId': 'stale',
+        'athleteId': 'athlete-1',
+        'trainerId': 'trainer-1',
+        'completedAt': now.subtract(const Duration(days: 10)),
+        'lastActivityAt': now.subtract(const Duration(days: 10)),
+        'createdAt': now.subtract(const Duration(days: 10)),
+        'createdBy': 'athlete-1',
+      });
+      await staleThread.collection('threadMessages').doc('old').set({
+        'authorId': 'trainer-1',
+        'body': 'From over a week ago',
+        'createdAt': now.subtract(const Duration(days: 10)),
+      });
+
+      final page = await repository.loadInitialPage('athlete-1');
+
+      expect(page.events.map((event) => event.id), [
+        'comment:recent:new',
+        'completion:recent',
+      ]);
     });
   });
 }

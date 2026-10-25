@@ -7,46 +7,55 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:stage5/features/athlete_dashboard/domain/athlete_activity_event.dart';
 import 'package:stage5/features/athlete_dashboard/presentation/athlete_dashboard_providers.dart';
 import 'package:stage5/features/athlete_dashboard/presentation/athlete_dashboard_view.dart';
+import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
 
 void main() {
-  testWidgets('defaults to Today\'s Workouts and switches to other tabs', (
-    tester,
-  ) async {
-    final completer = Completer<AthleteDashboardPage>();
-    await _pumpDashboard(tester, load: () => completer.future);
+  testWidgets(
+    "defaults to All and switches to Today's Workouts, Completed, Comments, "
+    'and Reactions',
+    (tester) async {
+      final completer = Completer<AthleteDashboardPage>();
+      await _pumpDashboard(tester, load: () => completer.future);
 
-    // Today's Workouts is the default selected filter; the activity feed
-    // provider should not be invoked until another tab is selected.
-    expect(
-      find.byKey(const Key('athlete-dashboard-filter-todaysWorkouts')),
-      findsOneWidget,
-    );
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+      // All is the default selected filter, so the activity feed provider
+      // is invoked immediately on first build.
+      expect(
+        find.byKey(const Key('athlete-dashboard-filter-all')),
+        findsOneWidget,
+      );
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
-    await tester.tap(
-      find.byKey(const Key('athlete-dashboard-filter-all')),
-    );
-    await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      completer.complete(
+        const AthleteDashboardPage(events: [], isBounded: false),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('No recent activity'), findsOneWidget);
 
-    completer.complete(
-      const AthleteDashboardPage(events: [], isBounded: false),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('No recent activity'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const Key('athlete-dashboard-filter-todaysWorkouts')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('No workouts scheduled today'), findsOneWidget);
 
-    await tester.tap(
-      find.byKey(const Key('athlete-dashboard-filter-comments')),
-    );
-    await tester.pump();
-    expect(find.text('No recent comments'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const Key('athlete-dashboard-filter-completed')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('No completed workouts'), findsOneWidget);
 
-    await tester.tap(
-      find.byKey(const Key('athlete-dashboard-filter-reactions')),
-    );
-    await tester.pump();
-    expect(find.text('No recent reactions'), findsOneWidget);
-  });
+      await tester.tap(
+        find.byKey(const Key('athlete-dashboard-filter-comments')),
+      );
+      await tester.pump();
+      expect(find.text('No recent comments'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const Key('athlete-dashboard-filter-reactions')),
+      );
+      await tester.pump();
+      expect(find.text('No recent reactions'), findsOneWidget);
+    },
+  );
 
   testWidgets('renders comment and reaction activity cards', (tester) async {
     await _pumpDashboard(
@@ -120,7 +129,10 @@ Future<void> _pumpDashboard(
 }) {
   return tester.pumpWidget(
     ProviderScope(
-      overrides: [athleteDashboardProvider.overrideWith((ref) => load())],
+      overrides: [
+        athleteDashboardProvider.overrideWith((ref) => load()),
+        athleteScheduleProvider.overrideWith((ref, range) => Stream.value([])),
+      ],
       child: const MaterialApp(
         home: Scaffold(body: AthleteDashboardView()),
       ),
