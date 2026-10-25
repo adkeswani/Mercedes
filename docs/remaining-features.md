@@ -51,13 +51,19 @@ workout spanning all three exercise types end-to-end, and a previously
 undetected Firestore rules gap that rejected climbing completions with
 `permission-denied` has been fixed.
 
+The trainer "Clients" route (`/trainer/clients`) is now a single client
+workspace: a client-selector dropdown above an All/Schedule/Programs/
+Workouts/Activity tabbed view scoped to the selected athlete. The former
+roster screen (enroll/manage clients) moved to `/roster`, reachable via a
+"Manage roster" button.
+
 These foundations do not make the workflows below complete.
 
 ## Prioritized remaining work
 
 | Status | Scope | Dependencies | Acceptance summary |
 | --- | --- | --- | --- |
-| **Next** | **Trainer client workspace** | Existing relationship, instance, library, calendar, and history repositories | One client hub exposes schedule, active and past programs, independent workouts, activity, notes/forms/messages, and common actions without crossing ownership boundaries. |
+| **Complete** | **Trainer client workspace** | Existing relationship, instance, library, calendar, and history repositories | `/trainer/clients` is now a single client hub: a client-selector dropdown plus **All, Schedule, Programs, Workouts, Activity** tabs, scoped to the selected athlete via existing per-athlete calendar/program/activity data sources. Schedule/Workouts use a bounded last-7d/next-14d window; Workouts isolates independent (non-program) instances via `athleteProgramInstanceId`. The former roster screen moved to `/roster` (linked via "Manage roster") and keeps its release-canary marker contract. Notes/forms/messages remain deferred to the **Messages and community UX** item below — not yet built. |
 | **Next** | **Trainer create/edit/assignment workflows** | Client workspace; existing immutable versions and copy/subscription rules | Trainers can create or edit from shared/client context, assign or schedule workouts/programs, use **Add next**, resolve overlaps, copy between clients, import one workout/program into another, and promote client content to a reusable template without mutating history. Program phases and main/add-on presentation must use the existing extensible model or a documented minimal extension. |
 | **Next** | **Athlete Today and workout completion refinement** | Existing workout detail, typed slots, transactional completion, notes/discussions | Athletes can review media/instructions (collapsible, 4-line clamped instructions), record typed actuals for standard/timed/climbing exercises, RPE and duration, resume safely, validate, submit, and review completion — **done**. Remaining: Today should clearly group the next work by program; timers and climbing-grade/color authoring UX still need production-ready polish. |
 | **Complete** | **Athlete Dashboard tab defaults and bounds** | Existing `athlete_dashboard` feature module (All/Today/Comments/Reactions tabs) | Dashboard defaults to the **All** tab; a dedicated **Completed** tab filters to completed-workout events; every tab except Today's Workouts (which is always "today") bounds its Firestore query to the last 7 days instead of a fixed document-count limit. |
