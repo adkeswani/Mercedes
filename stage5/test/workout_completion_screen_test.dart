@@ -608,6 +608,51 @@ void main() {
     expect(results.data()?['durationSeconds'], 3);
     expect(results.data()?['restSeconds'], 5);
   });
+
+  testWidgets(
+      'AMRAP card shows a time-cap countdown and records roundsCompleted',
+      (tester) async {
+    await _seedWorkoutWithExercises(firestore);
+
+    await pumpScreen(tester, id: 'instance-2');
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Burpee Round'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    final capTimer = find.byKey(const ValueKey('amrap-timer-slot-amrap'));
+    expect(capTimer, findsOneWidget);
+    expect(
+      find.descendant(of: capTimer, matching: find.text('0:20')),
+      findsOneWidget,
+    );
+
+    final roundsField = find.widgetWithText(TextField, 'Rounds completed');
+    expect(roundsField, findsOneWidget);
+    await tester.enterText(roundsField, '7');
+    await tester.pump();
+
+    await tester.scrollUntilVisible(
+      find.text('Mark as Completed'),
+      400,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Mark as Completed'));
+    await tester.pumpAndSettle();
+
+    final results2 = await firestore
+        .collection('workoutInstances')
+        .doc('instance-2')
+        .collection('slotResults')
+        .doc('slot-amrap')
+        .get();
+    expect(results2.data()?['roundsCompleted'], 7);
+    expect(results2.data()?['sets'], isNull);
+    expect(results2.data()?['durationSeconds'], isNull);
+  });
 }
 
 WorkoutCompletionDraft _draftForTest({
@@ -714,6 +759,15 @@ Future<void> _seedWorkoutWithExercises(FakeFirebaseFirestore firestore) async {
         'workSeconds': 30,
         'restSeconds': 15,
       },
+      {
+        'blockId': 'block-amrap',
+        'type': 'amrap',
+        'sortOrder': 3,
+        'slotIds': ['slot-amrap'],
+        'slotStartOrder': 3,
+        'slotCount': 1,
+        'timeCapSeconds': 20,
+      },
     ],
     'slots': [
       {
@@ -742,6 +796,15 @@ Future<void> _seedWorkoutWithExercises(FakeFirebaseFirestore firestore) async {
         'sortOrder': 0,
         'exerciseName': 'Plank Hold',
         'prescription': {'mode': 'time'},
+      },
+      {
+        'slotId': 'slot-amrap',
+        'blockId': 'block-amrap',
+        'exerciseId': 'ex-burpee',
+        'exerciseVersion': 1,
+        'sortOrder': 0,
+        'exerciseName': 'Burpee Round',
+        'prescription': {'mode': 'amrap'},
       },
     ],
   });
@@ -797,6 +860,25 @@ Future<void> _seedWorkoutWithExercises(FakeFirebaseFirestore firestore) async {
     'name': 'Plank Hold',
     'description': 'Hold a plank position.',
     'instructions': 'Keep the body straight.',
+    'publishedAt': now,
+    'publishedBy': 'trainer-1',
+  });
+  await firestore.collection('exerciseTemplates').doc('ex-burpee').set({
+    'currentVersion': 1,
+    'createdBy': 'trainer-1',
+    'ownerId': 'trainer-1',
+  });
+  await firestore
+      .collection('exerciseTemplates')
+      .doc('ex-burpee')
+      .collection('exerciseVersions')
+      .doc('1')
+      .set({
+    'versionNumber': 1,
+    'name': 'Burpee Round',
+    'description': 'As many burpee rounds as possible.',
+    'instructions':
+        'Complete as many rounds as possible before time runs out.',
     'publishedAt': now,
     'publishedBy': 'trainer-1',
   });

@@ -8,6 +8,7 @@ enum WorkoutBlockType {
   timedInterval,
   circuit,
   climbingRoute,
+  amrap,
 }
 
 String legacyExerciseSlotId(int sortOrder) => 'legacy-slot-$sortOrder';
@@ -281,6 +282,49 @@ class CircuitBlock extends WorkoutBlock {
     if (rounds < 1) throw ArgumentError('rounds must be >= 1');
     if (restBetweenRoundsSeconds < 0) {
       throw ArgumentError('restBetweenRoundsSeconds must be >= 0');
+    }
+  }
+}
+
+/// As Many Rounds/Reps As Possible within a fixed, open time cap.
+///
+/// Unlike [TimedIntervalBlock] (fixed rounds, fixed work/rest) or
+/// [CircuitBlock] (fixed rounds), an AMRAP block has no prescribed round
+/// count: the athlete cycles through [slots] repeatedly until
+/// [timeCapSeconds] elapses, and the recorded output is rounds (and
+/// optionally partial-round progress) completed, not a duration.
+class AmrapBlock extends WorkoutBlock {
+  const AmrapBlock({
+    required super.blockId,
+    required super.sortOrder,
+    required super.slots,
+    required this.timeCapSeconds,
+    super.title,
+    super.notes,
+  });
+
+  final int timeCapSeconds;
+
+  @override
+  WorkoutBlockType get type => WorkoutBlockType.amrap;
+
+  @override
+  AmrapBlock copyWithSortOrder(int sortOrder) {
+    return AmrapBlock(
+      blockId: blockId,
+      sortOrder: sortOrder,
+      slots: slots,
+      timeCapSeconds: timeCapSeconds,
+      title: title,
+      notes: notes,
+    );
+  }
+
+  @override
+  void validate() {
+    super.validate();
+    if (timeCapSeconds < 1) {
+      throw ArgumentError('timeCapSeconds must be >= 1');
     }
   }
 }

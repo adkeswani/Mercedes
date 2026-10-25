@@ -503,6 +503,11 @@ class _WorkoutBlockCard extends ConsumerWidget {
       final route = block as ClimbingRouteBlock;
       return '${route.grade} · ${route.color}';
     }
+    if (block is AmrapBlock) {
+      final amrap = block as AmrapBlock;
+      return 'AMRAP · ${amrap.timeCapSeconds}s time cap · '
+          '${amrap.slots.length} exercises';
+    }
     final exercise = (block as StandardExerciseBlock).exercise;
     final parts = <String>[];
     parts.add(exercise.mode.name);

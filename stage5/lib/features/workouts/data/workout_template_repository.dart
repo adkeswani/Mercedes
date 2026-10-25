@@ -739,6 +739,10 @@ class WorkoutTemplateRepository {
           'rounds': block.rounds,
           'restBetweenRoundsSeconds': block.restBetweenRoundsSeconds,
         });
+      case AmrapBlock():
+        map.addAll({
+          'timeCapSeconds': block.timeCapSeconds,
+        });
       case ClimbingRouteBlock():
         map.addAll({
           'grade': block.grade,
@@ -785,6 +789,14 @@ class WorkoutTemplateRepository {
           title: block.title,
           notes: block.notes,
         ),
+      AmrapBlock() => AmrapBlock(
+          blockId: block.blockId,
+          sortOrder: block.sortOrder,
+          slots: slots,
+          timeCapSeconds: block.timeCapSeconds,
+          title: block.title,
+          notes: block.notes,
+        ),
       ClimbingRouteBlock() => ClimbingRouteBlock(
           blockId: block.blockId,
           sortOrder: block.sortOrder,
@@ -827,6 +839,15 @@ class WorkoutTemplateRepository {
           rounds: data['rounds'] as int? ?? 1,
           restBetweenRoundsSeconds:
               data['restBetweenRoundsSeconds'] as int? ?? 0,
+          title: title,
+          notes: notes,
+        );
+      case 'amrap':
+        return AmrapBlock(
+          blockId: blockId,
+          sortOrder: sortOrder,
+          slots: slots,
+          timeCapSeconds: data['timeCapSeconds'] as int? ?? 1,
           title: title,
           notes: notes,
         );

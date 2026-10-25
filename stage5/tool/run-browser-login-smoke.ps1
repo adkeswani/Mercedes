@@ -249,6 +249,7 @@ $calendarTemplateId = 'browser-calendar-workout'
 $historyTemplateId = 'browser-history-workout'
 $timedExerciseTemplateId = 'browser-timed-exercise'
 $climbingExerciseTemplateId = 'browser-climbing-exercise'
+$amrapExerciseTemplateId = 'browser-amrap-exercise'
 $exerciseTypesTemplateId = 'browser-exercise-types-workout'
 $exerciseFolderId = 'browser-exercise-folder'
 $workoutFolderId = 'browser-workout-folder'
@@ -738,6 +739,52 @@ $workspaceSeedBody = @{
         @{
             update = @{
                 name = "projects/$projectId/databases/(default)/documents/" +
+                    "exerciseTemplates/$amrapExerciseTemplateId"
+                fields = @{
+                    ownerId = @{ stringValue = $trainer.Uid }
+                    currentVersion = @{ integerValue = '1' }
+                    folderId = @{ stringValue = $exerciseFolderId }
+                    createdAt = @{ timestampValue = $seedTimestamp }
+                    createdBy = @{ stringValue = $trainer.Uid }
+                    updatedAt = @{ timestampValue = $seedTimestamp }
+                    updatedBy = @{ stringValue = $trainer.Uid }
+                    deletedAt = @{ nullValue = $null }
+                    deletedBy = @{ nullValue = $null }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    "exerciseTemplates/$amrapExerciseTemplateId/" +
+                    'exerciseVersions/1'
+                fields = @{
+                    versionNumber = @{ integerValue = '1' }
+                    name = @{ stringValue = 'Burpee Round' }
+                    description = @{
+                        stringValue = 'Deterministic AMRAP smoke exercise'
+                    }
+                    instructions = @{ stringValue = 'Burpees until the cap' }
+                    videoUrl = @{ nullValue = $null }
+                    mediaUrls = @{ arrayValue = @{} }
+                    exerciseType = @{ stringValue = 'conditioning' }
+                    measurementConfiguration = @{
+                        mapValue = @{
+                            fields = @{
+                                primary = @{ stringValue = 'completion' }
+                                secondary = @{ arrayValue = @{} }
+                            }
+                        }
+                    }
+                    gradingConfiguration = @{ nullValue = $null }
+                    publishedAt = @{ timestampValue = $seedTimestamp }
+                    publishedBy = @{ stringValue = $trainer.Uid }
+                }
+            }
+        },
+        @{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
                     "workoutTemplates/$exerciseTypesTemplateId"
                 fields = @{
                     name = @{ stringValue = 'Browser Exercise Types Workout' }
@@ -861,6 +908,36 @@ $workspaceSeedBody = @{
                                             }
                                         }
                                     }
+                                },
+                                @{
+                                    mapValue = @{
+                                        fields = @{
+                                            blockId = @{
+                                                stringValue = 'block-amrap'
+                                            }
+                                            type = @{
+                                                stringValue = 'amrap'
+                                            }
+                                            sortOrder = @{ integerValue = '3' }
+                                            slotIds = @{
+                                                arrayValue = @{
+                                                    values = @(
+                                                        @{
+                                                            stringValue =
+                                                                'slot-amrap'
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                            slotStartOrder = @{
+                                                integerValue = '0'
+                                            }
+                                            slotCount = @{ integerValue = '1' }
+                                            timeCapSeconds = @{
+                                                integerValue = '60'
+                                            }
+                                        }
+                                    }
                                 }
                             )
                         }
@@ -972,6 +1049,39 @@ $workspaceSeedBody = @{
                                                     fields = @{
                                                         mode = @{
                                                             stringValue = 'reps'
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                @{
+                                    mapValue = @{
+                                        fields = @{
+                                            slotId = @{
+                                                stringValue = 'slot-amrap'
+                                            }
+                                            blockId = @{
+                                                stringValue = 'block-amrap'
+                                            }
+                                            sortOrder = @{ integerValue = '0' }
+                                            exerciseId = @{
+                                                stringValue =
+                                                    $amrapExerciseTemplateId
+                                            }
+                                            exerciseVersion = @{
+                                                integerValue = '1'
+                                            }
+                                            exerciseName = @{
+                                                stringValue = 'Burpee Round'
+                                            }
+                                            prescription = @{
+                                                mapValue = @{
+                                                    fields = @{
+                                                        mode = @{
+                                                            stringValue =
+                                                                'amrap'
                                                         }
                                                     }
                                                 }

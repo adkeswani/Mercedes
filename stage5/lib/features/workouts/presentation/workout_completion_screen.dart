@@ -638,6 +638,8 @@ class _WorkoutCompletionScreenState
         '$rounds rounds · ${workSeconds}s work / ${restSeconds}s rest',
       CircuitBlock(:final rounds, :final restBetweenRoundsSeconds) =>
         '$rounds rounds · ${restBetweenRoundsSeconds}s rest between rounds',
+      AmrapBlock(:final timeCapSeconds) =>
+        'AMRAP · ${timeCapSeconds}s time cap',
       StandardExerciseBlock() => null,
     };
   }
@@ -752,17 +754,20 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
   late final TextEditingController _weightController;
   late final TextEditingController _durationController;
   late final TextEditingController _attemptsController;
+  late final TextEditingController _roundsController;
   bool _sent = false;
   int? _restElapsedSeconds;
 
   bool get _isClimbing => widget.block is ClimbingRouteBlock;
+  bool get _isAmrap =>
+      widget.block is AmrapBlock || widget.slot.mode == ExerciseMode.amrap;
   bool get _isTimed =>
       widget.block is TimedIntervalBlock ||
       widget.slot.mode == ExerciseMode.time;
 
   /// Prescribed work-interval length to count down from, if known:
   /// prefers an explicit slot duration, then a timed-interval block's
-  /// per-round work length.
+  /// per-round work length, then an AMRAP block's overall time cap.
   int? get _workTargetSeconds {
     final slot = widget.slot;
     if (slot.durationSeconds != null) {
@@ -771,6 +776,9 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
     final block = widget.block;
     if (block is TimedIntervalBlock) {
       return block.workSeconds;
+    }
+    if (block is AmrapBlock) {
+      return block.timeCapSeconds;
     }
     return null;
   }
@@ -809,6 +817,7 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
     _attemptsController = TextEditingController(
       text: targetAttempts?.toString() ?? '',
     );
+    _roundsController = TextEditingController();
     if (widget.recordingEnabled) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _emitActual());
     }
@@ -821,6 +830,7 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
     _weightController.dispose();
     _durationController.dispose();
     _attemptsController.dispose();
+    _roundsController.dispose();
     super.dispose();
   }
 
@@ -831,21 +841,25 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
         exerciseId: slot.exerciseId,
         mode: slot.mode,
         slotId: slot.slotId,
-        sets: _isClimbing || _isTimed ? null : int.tryParse(_setsController.text),
-        reps: _isClimbing || _isTimed
+        sets: _isClimbing || _isTimed || _isAmrap
+            ? null
+            : int.tryParse(_setsController.text),
+        reps: _isClimbing || _isTimed || _isAmrap
             ? null
             : (_repsController.text.trim().isEmpty
                 ? null
                 : _repsController.text.trim()),
         durationSeconds:
             _isTimed ? int.tryParse(_durationController.text) : null,
-        weight: _isClimbing || _isTimed
+        weight: _isClimbing || _isTimed || _isAmrap
             ? null
             : (_weightController.text.trim().isEmpty
                 ? null
                 : _weightController.text.trim()),
         attempts: _isClimbing ? int.tryParse(_attemptsController.text) : null,
         sent: _isClimbing ? _sent : null,
+        roundsCompleted:
+            _isAmrap ? int.tryParse(_roundsController.text) : null,
         restSeconds: _restElapsedSeconds,
       ),
     );
@@ -974,6 +988,29 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
             title: const Text('Sent the route'),
             controlAffinity: ListTileControlAffinity.leading,
             contentPadding: EdgeInsets.zero,
+          ),
+        ],
+      );
+    }
+    if (_isAmrap) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          WorkoutTimerWidget(
+            key: ValueKey('amrap-timer-${widget.slot.slotId}'),
+            label: 'Time cap',
+            targetSeconds: _workTargetSeconds,
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _roundsController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Rounds completed',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (_) => _emitActual(),
           ),
         ],
       );

@@ -19,7 +19,8 @@ const _artifactPath = String.fromEnvironment(
 
 /// Deterministic workout seeded by tool/run-browser-login-smoke.ps1 with
 /// one block of each exercise type: standard (reps/sets/weight), timed
-/// (duration), and climbing route (attempts/sent).
+/// (duration), climbing route (attempts/sent), and AMRAP (rounds
+/// completed within a time cap).
 const _workoutInstanceId = 'browser-exercise-types-workout';
 
 void main() {
@@ -146,6 +147,23 @@ void main() {
         },
       );
 
+      // AMRAP: time-cap countdown timer plus a "rounds completed" field.
+      await waits.runStep(
+        'scroll to AMRAP exercise card',
+        () => tester.scrollUntilVisible(
+          find.text('Burpee Round'),
+          300,
+          scrollable: find.byType(Scrollable).first,
+        ),
+      );
+      await waits.runStep(
+        'enter AMRAP exercise actual',
+        () => tester.enterText(
+          find.widgetWithText(TextField, 'Rounds completed'),
+          '7',
+        ),
+      );
+
       await waits.runStep(
         'reveal completion controls',
         () => tester.scrollUntilVisible(
@@ -189,6 +207,7 @@ void main() {
           'slot-standard',
           'slot-timed',
           'slot-climbing',
+          'slot-amrap',
         ]),
       );
       expect(bySlotId['slot-standard']?['sets'], 3);
@@ -197,6 +216,7 @@ void main() {
       expect(bySlotId['slot-timed']?['durationSeconds'], 35);
       expect(bySlotId['slot-climbing']?['attempts'], 4);
       expect(bySlotId['slot-climbing']?['sent'], isTrue);
+      expect(bySlotId['slot-amrap']?['roundsCompleted'], 7);
 
       final instance = await waits.runStep(
         'verify workout instance marked completed',

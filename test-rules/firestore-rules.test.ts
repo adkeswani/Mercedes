@@ -1221,6 +1221,125 @@ describe('workoutTemplates', () => {
     await assertSucceeds(seal.commit());
   });
 
+  it('allows the owner to atomically publish an AMRAP block', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adminDb = ctx.firestore();
+      await adminDb.collection('workoutTemplates').doc('amrap-typed').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+      });
+      await adminDb.collection('exerciseTemplates').doc('e1').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 1,
+      });
+      await adminDb.collection('exerciseTemplates').doc('e1')
+        .collection('exerciseVersions').doc('1').set({ versionNumber: 1 });
+    });
+
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('amrap-typed');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const batch = db.batch();
+    const block = {
+      blockId: 'amrap-1',
+      type: 'amrap',
+      sortOrder: 0,
+      slotIds: ['slot-1'],
+      slotStartOrder: 0,
+      slotCount: 1,
+      timeCapSeconds: 600,
+    };
+    const slot = {
+      slotId: 'slot-1',
+      blockId: 'amrap-1',
+      blockSortOrder: 0,
+      slotOrder: 0,
+      exerciseId: 'e1',
+      exerciseVersion: 1,
+      sortOrder: 0,
+      exerciseName: 'Burpee',
+      prescription: { mode: 'amrap' },
+    };
+    batch.set(version, {
+      versionNumber: 1,
+      storageFormat: 'typedWorkoutBlocksV1',
+      publishState: 'draft',
+      ownerId: OWNER,
+      blockCount: 1,
+      slotCount: 1,
+      blockIds: ['amrap-1'],
+      slotIds: ['slot-1'],
+      blocks: [block],
+      slots: [slot],
+    });
+    batch.set(version.collection('workoutBlocks').doc('amrap-1'), block);
+    batch.set(version.collection('exerciseSlots').doc('slot-1'), slot);
+    await assertSucceeds(batch.commit());
+    const seal = db.batch();
+    seal.update(version, { publishState: 'published' });
+    seal.update(header, { currentVersion: 1, updatedBy: OWNER });
+    await assertSucceeds(seal.commit());
+  });
+
+  it('denies an AMRAP block missing timeCapSeconds', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const adminDb = ctx.firestore();
+      await adminDb.collection('workoutTemplates').doc('amrap-invalid').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 0,
+      });
+      await adminDb.collection('exerciseTemplates').doc('e1').set({
+        ownerId: OWNER,
+        createdBy: OWNER,
+        currentVersion: 1,
+      });
+      await adminDb.collection('exerciseTemplates').doc('e1')
+        .collection('exerciseVersions').doc('1').set({ versionNumber: 1 });
+    });
+
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('amrap-invalid');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const batch = db.batch();
+    const block = {
+      blockId: 'amrap-1',
+      type: 'amrap',
+      sortOrder: 0,
+      slotIds: ['slot-1'],
+      slotStartOrder: 0,
+      slotCount: 1,
+    };
+    const slot = {
+      slotId: 'slot-1',
+      blockId: 'amrap-1',
+      blockSortOrder: 0,
+      slotOrder: 0,
+      exerciseId: 'e1',
+      exerciseVersion: 1,
+      sortOrder: 0,
+      exerciseName: 'Burpee',
+      prescription: { mode: 'amrap' },
+    };
+    batch.set(version, {
+      versionNumber: 1,
+      storageFormat: 'typedWorkoutBlocksV1',
+      publishState: 'draft',
+      ownerId: OWNER,
+      blockCount: 1,
+      slotCount: 1,
+      blockIds: ['amrap-1'],
+      slotIds: ['slot-1'],
+      blocks: [block],
+      slots: [slot],
+    });
+    batch.set(version.collection('workoutBlocks').doc('amrap-1'), block);
+    batch.set(version.collection('exerciseSlots').doc('slot-1'), slot);
+    await assertFails(batch.commit());
+  });
+
   it('allows the owner to read a not-yet-existing draft version before first publish', async () => {
     // Regression test: WorkoutTemplateRepository.publishVersion() reads
     // workoutTemplateVersions/{nextVersion} with a plain .get() to check
@@ -4091,6 +4210,54 @@ describe('workoutInstances', () => {
       mode: 'reps',
       attempts: 4,
       sent: true,
+    });
+    await assertSucceeds(batch.commit());
+  });
+
+  it('allows an AMRAP slot result with a roundsCompleted field',
+      async () => {
+    await seedInstance();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const version = ctx.firestore().collection('workoutTemplates').doc('w1')
+        .collection('workoutTemplateVersions').doc('1');
+      await version.set({
+        versionNumber: 1,
+        storageFormat: 'typedWorkoutBlocksV1',
+        blockCount: 1,
+        slotCount: 1,
+        slots: [{
+          slotId: 'slot-amrap',
+          exerciseId: 'e1',
+        }],
+      });
+      await version.collection('exerciseSlots').doc('0').set({
+        slotId: 'slot-amrap',
+        blockId: 'block-1',
+        blockSortOrder: 0,
+        slotOrder: 0,
+        exerciseId: 'e1',
+        exerciseVersion: 1,
+        sortOrder: 0,
+        prescription: { mode: 'amrap' },
+      });
+    });
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    const instance = db.collection('workoutInstances').doc(INSTANCE_ID);
+    const batch = db.batch();
+    batch.update(instance, {
+      status: 'completed',
+      rpe: 7,
+      durationMinutes: 60,
+      actualsStorageFormat: 'slotResultsSubcollection',
+      actualSlotIds: ['slot-amrap'],
+      actuals: deleteField(),
+      updatedAt: serverTimestamp(),
+    });
+    batch.set(instance.collection('slotResults').doc('slot-amrap'), {
+      exerciseId: 'e1',
+      slotOrder: 0,
+      mode: 'amrap',
+      roundsCompleted: 7,
     });
     await assertSucceeds(batch.commit());
   });

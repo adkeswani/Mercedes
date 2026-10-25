@@ -427,8 +427,8 @@ service cloud.firestore {
       return data.keys().hasOnly([
                'blockId', 'type', 'sortOrder', 'title', 'notes', 'rounds',
                'workSeconds', 'restSeconds', 'restBetweenRoundsSeconds',
-               'grade', 'color', 'targetAttempts', 'slotIds',
-               'slotStartOrder', 'slotCount'
+               'grade', 'color', 'targetAttempts', 'timeCapSeconds',
+               'slotIds', 'slotStartOrder', 'slotCount'
              ])
              && data.blockId is string
              && data.blockId.size() > 0
@@ -443,7 +443,7 @@ service cloud.firestore {
              && data.slotCount == data.slotIds.size()
              && data.type in [
                   'standardExercise', 'timedInterval', 'circuit',
-                  'climbingRoute'
+                  'climbingRoute', 'amrap'
                 ]
              && (!(data.type in ['standardExercise', 'climbingRoute'])
                  || data.slotCount == 1)
@@ -467,7 +467,10 @@ service cloud.firestore {
                      && (!('targetAttempts' in data)
                          || data.targetAttempts == null
                          || (data.targetAttempts is int
-                             && data.targetAttempts >= 1))));
+                             && data.targetAttempts >= 1))))
+             && (data.type != 'amrap'
+                 || (data.timeCapSeconds is int
+                     && data.timeCapSeconds >= 1));
     }
 
     function hasValidWorkoutSlot(data) {
@@ -695,8 +698,8 @@ service cloud.firestore {
     function hasValidSlotResult(data) {
       return data.keys().hasOnly([
                'exerciseId', 'mode', 'sets', 'reps', 'durationSeconds',
-               'weight', 'restSeconds', 'attempts', 'sent', 'notes',
-               'slotOrder'
+               'weight', 'restSeconds', 'attempts', 'sent',
+               'roundsCompleted', 'notes', 'slotOrder'
              ])
              && data.exerciseId is string
              && data.exerciseId.size() > 0
@@ -725,6 +728,10 @@ service cloud.firestore {
              && (!('sent' in data)
                  || data.sent == null
                  || data.sent is bool)
+             && (!('roundsCompleted' in data)
+                 || data.roundsCompleted == null
+                 || (data.roundsCompleted is int
+                     && data.roundsCompleted >= 0))
              && (!('notes' in data)
                  || data.notes == null
                  || data.notes is string);

@@ -279,6 +279,7 @@ class ExerciseActual {
     this.restSeconds,
     this.attempts,
     this.sent,
+    this.roundsCompleted,
     this.notes,
   })  : slotId = slotId ?? 'legacy-result-$exerciseId',
         hasExplicitSlotId = slotId != null;
@@ -297,6 +298,10 @@ class ExerciseActual {
 
   /// Whether the athlete sent (successfully completed) the climbing route.
   final bool? sent;
+
+  /// Rounds (whole laps through an AMRAP block's slots) the athlete
+  /// completed within the block's time cap.
+  final int? roundsCompleted;
   final String? notes;
 
   /// Validates actual fields.
@@ -321,6 +326,9 @@ class ExerciseActual {
     }
     if (attempts != null && attempts! < 0) {
       throw ArgumentError('attempts must be >= 0 when provided');
+    }
+    if (roundsCompleted != null && roundsCompleted! < 0) {
+      throw ArgumentError('roundsCompleted must be >= 0 when provided');
     }
   }
 }
