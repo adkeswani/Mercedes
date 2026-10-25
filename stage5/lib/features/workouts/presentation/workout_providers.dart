@@ -91,6 +91,21 @@ class WorkoutDraftNotifier extends StateNotifier<List<WorkoutBlock>> {
     ];
   }
 
+  /// Adds any typed workout block (standard, timed interval, circuit,
+  /// climbing route, or AMRAP) to the end of the draft, assigning it the
+  /// next available sort order.
+  void addBlock(WorkoutBlock block) {
+    state = [...state, block.copyWithSortOrder(state.length)];
+  }
+
+  /// Replaces the block at [index] with [block], preserving the existing
+  /// block's sort order.
+  void updateBlockAt(int index, WorkoutBlock block) {
+    final updated = List.of(state);
+    updated[index] = block.copyWithSortOrder(updated[index].sortOrder);
+    state = updated;
+  }
+
   /// Removes the exercise at [index].
   void removeAt(int index) {
     final updated = List.of(state);

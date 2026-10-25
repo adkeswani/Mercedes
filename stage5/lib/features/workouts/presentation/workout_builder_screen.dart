@@ -8,6 +8,7 @@ import 'package:stage5/features/library/domain/library_metadata.dart';
 import 'package:stage5/features/library/presentation/library_providers.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/exercise_picker.dart';
+import 'package:stage5/features/workouts/presentation/workout_block_editors.dart';
 import 'package:stage5/features/workouts/presentation/workout_delete_command.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
@@ -212,6 +213,17 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
     }
   }
 
+  Future<void> _addBlock() async {
+    final type = await showBlockTypeMenu(context);
+    if (type == null) return;
+    if (type == WorkoutBlockType.standardExercise) {
+      _addExercise();
+      return;
+    }
+    if (!mounted) return;
+    await openBlockCreationSheet(context: context, ref: ref, type: type);
+  }
+
   void _addExercise() async {
     final result = await showExercisePicker(context, ref);
     if (result == null) return;
@@ -319,7 +331,7 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               TextButton.icon(
-                onPressed: _addExercise,
+                onPressed: _addBlock,
                 icon: const Icon(Icons.add),
                 label: const Text('Add'),
               ),
@@ -520,20 +532,31 @@ class _WorkoutBlockCard extends ConsumerWidget {
     return parts.join(' · ');
   }
 
+  String get _titleText {
+    if (block is ClimbingRouteBlock) {
+      final route = (block as ClimbingRouteBlock).route;
+      return route.exerciseName ?? route.exerciseId;
+    }
+    if (block is StandardExerciseBlock) {
+      final exercise = (block as StandardExerciseBlock).exercise;
+      return exercise.exerciseName ?? exercise.exerciseId;
+    }
+    final names = block.slots
+        .map((slot) => slot.exerciseName ?? slot.exerciseId)
+        .join(', ');
+    return names.isEmpty ? (block.title ?? block.type.name) : names;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isStandard = block is StandardExerciseBlock;
-    final exercise =
-        isStandard ? (block as StandardExerciseBlock).exercise : null;
     return Card(
       child: ListTile(
         leading: ReorderableDragStartListener(
           index: index,
           child: const Icon(Icons.drag_handle),
         ),
-        title: Text(
-          exercise?.exerciseName ?? block.title ?? block.type.name,
-        ),
+        title: Text(_titleText),
         subtitle: Text(_prescriptionSummary),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -541,8 +564,9 @@ class _WorkoutBlockCard extends ConsumerWidget {
             IconButton(
               icon: const Icon(Icons.edit),
               tooltip: 'Edit prescription',
-              onPressed:
-                  isStandard ? () => _editPrescription(context, ref) : null,
+              onPressed: () => isStandard
+                  ? _editPrescription(context, ref)
+                  : _editTypedBlock(context, ref),
             ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
@@ -571,6 +595,15 @@ class _WorkoutBlockCard extends ConsumerWidget {
           Navigator.of(context).pop();
         },
       ),
+    );
+  }
+
+  Future<void> _editTypedBlock(BuildContext context, WidgetRef ref) async {
+    await openBlockEditSheet(
+      context: context,
+      ref: ref,
+      block: block,
+      index: index,
     );
   }
 }
