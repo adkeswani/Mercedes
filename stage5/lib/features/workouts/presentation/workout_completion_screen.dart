@@ -16,6 +16,7 @@ import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
+import 'package:stage5/features/workouts/presentation/workout_timer_widget.dart';
 
 /// Screen for completing a scheduled workout.
 ///
@@ -752,11 +753,45 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
   late final TextEditingController _durationController;
   late final TextEditingController _attemptsController;
   bool _sent = false;
+  int? _restElapsedSeconds;
 
   bool get _isClimbing => widget.block is ClimbingRouteBlock;
   bool get _isTimed =>
       widget.block is TimedIntervalBlock ||
       widget.slot.mode == ExerciseMode.time;
+
+  /// Prescribed work-interval length to count down from, if known:
+  /// prefers an explicit slot duration, then a timed-interval block's
+  /// per-round work length.
+  int? get _workTargetSeconds {
+    final slot = widget.slot;
+    if (slot.durationSeconds != null) {
+      return slot.durationSeconds;
+    }
+    final block = widget.block;
+    if (block is TimedIntervalBlock) {
+      return block.workSeconds;
+    }
+    return null;
+  }
+
+  /// Prescribed rest length to count down from, if known: an explicit slot
+  /// rest, a timed-interval block's rest, or a circuit's rest between
+  /// rounds.
+  int? get _restTargetSeconds {
+    final slot = widget.slot;
+    if (slot.restSeconds != null) {
+      return slot.restSeconds;
+    }
+    final block = widget.block;
+    if (block is TimedIntervalBlock) {
+      return block.restSeconds;
+    }
+    if (block is CircuitBlock && block.restBetweenRoundsSeconds > 0) {
+      return block.restBetweenRoundsSeconds;
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -811,6 +846,7 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
                 : _weightController.text.trim()),
         attempts: _isClimbing ? int.tryParse(_attemptsController.text) : null,
         sent: _isClimbing ? _sent : null,
+        restSeconds: _restElapsedSeconds,
       ),
     );
   }
@@ -886,6 +922,18 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
                 Text('Record actual', style: theme.textTheme.labelLarge),
                 const SizedBox(height: 8),
                 _buildActualInputs(),
+                if (_restTargetSeconds != null) ...[
+                  const SizedBox(height: 8),
+                  WorkoutTimerWidget(
+                    key: ValueKey('rest-timer-${slot.slotId}'),
+                    label: 'Rest',
+                    targetSeconds: _restTargetSeconds,
+                    onElapsedChanged: (seconds) {
+                      _restElapsedSeconds = seconds;
+                      _emitActual();
+                    },
+                  ),
+                ],
               ],
               if (widget.isAthlete) ...[
                 const SizedBox(height: 8),
@@ -931,15 +979,30 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
       );
     }
     if (_isTimed) {
-      return TextField(
-        controller: _durationController,
-        keyboardType: TextInputType.number,
-        decoration: const InputDecoration(
-          labelText: 'Duration (seconds)',
-          border: OutlineInputBorder(),
-          isDense: true,
-        ),
-        onChanged: (_) => _emitActual(),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          WorkoutTimerWidget(
+            key: ValueKey('work-timer-${widget.slot.slotId}'),
+            label: 'Work',
+            targetSeconds: _workTargetSeconds,
+            onElapsedChanged: (seconds) {
+              _durationController.text = seconds.toString();
+              _emitActual();
+            },
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _durationController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Duration (seconds)',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onChanged: (_) => _emitActual(),
+          ),
+        ],
       );
     }
     return Row(

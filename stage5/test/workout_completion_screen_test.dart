@@ -19,6 +19,7 @@ import 'package:stage5/features/workouts/domain/workout_draft_client_id.dart';
 import 'package:stage5/features/workouts/presentation/workout_completion_screen.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
+import 'package:stage5/features/workouts/presentation/workout_timer_widget.dart';
 
 void main() {
   late FakeFirebaseFirestore firestore;
@@ -527,6 +528,86 @@ void main() {
     expect(results.data()?['attempts'], 5);
     expect(results.data()?['sent'], true);
   });
+
+  testWidgets(
+      'timed exercise work timer counts down and fills in duration; rest '
+      'timer records restSeconds', (tester) async {
+    await _seedWorkoutWithExercises(firestore);
+
+    await pumpScreen(tester, id: 'instance-2');
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Plank Hold'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    final workTimer = find.byKey(const ValueKey('work-timer-slot-plank'));
+    final restTimer = find.byKey(const ValueKey('rest-timer-slot-plank'));
+    expect(workTimer, findsOneWidget);
+    expect(restTimer, findsOneWidget);
+    expect(
+      find.descendant(of: workTimer, matching: find.text('0:30')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: restTimer, matching: find.text('0:15')),
+      findsOneWidget,
+    );
+
+    // Starting the work timer ticks down and fills in the duration field.
+    final workTimerState =
+        tester.state<WorkoutTimerWidgetState>(workTimer);
+    workTimerState.start();
+    await tester.pump(const Duration(seconds: 3));
+    expect(
+      find.descendant(of: workTimer, matching: find.text('0:27')),
+      findsOneWidget,
+    );
+    expect(
+      find.widgetWithText(TextField, 'Duration (seconds)'),
+      findsOneWidget,
+    );
+    final durationField = tester.widget<TextField>(
+      find.widgetWithText(TextField, 'Duration (seconds)'),
+    );
+    expect(durationField.controller?.text, '3');
+
+    // Pausing stops the countdown.
+    workTimerState.pause();
+    await tester.pump(const Duration(seconds: 3));
+    expect(
+      find.descendant(of: workTimer, matching: find.text('0:27')),
+      findsOneWidget,
+    );
+
+    // Starting the rest timer records the elapsed restSeconds onto the
+    // actual once the workout is completed.
+    final restTimerState =
+        tester.state<WorkoutTimerWidgetState>(restTimer);
+    restTimerState.start();
+    await tester.pump(const Duration(seconds: 5));
+    restTimerState.pause();
+    await tester.pump();
+
+    await tester.scrollUntilVisible(
+      find.text('Mark as Completed'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Mark as Completed'));
+    await tester.pumpAndSettle();
+
+    final results = await firestore
+        .collection('workoutInstances')
+        .doc('instance-2')
+        .collection('slotResults')
+        .doc('slot-plank')
+        .get();
+    expect(results.data()?['durationSeconds'], 3);
+    expect(results.data()?['restSeconds'], 5);
+  });
 }
 
 WorkoutCompletionDraft _draftForTest({
@@ -622,6 +703,17 @@ Future<void> _seedWorkoutWithExercises(FakeFirebaseFirestore firestore) async {
         'color': 'Blue',
         'targetAttempts': 3,
       },
+      {
+        'blockId': 'block-plank',
+        'type': 'timedInterval',
+        'sortOrder': 2,
+        'slotIds': ['slot-plank'],
+        'slotStartOrder': 2,
+        'slotCount': 1,
+        'rounds': 1,
+        'workSeconds': 30,
+        'restSeconds': 15,
+      },
     ],
     'slots': [
       {
@@ -641,6 +733,15 @@ Future<void> _seedWorkoutWithExercises(FakeFirebaseFirestore firestore) async {
         'sortOrder': 0,
         'exerciseName': 'Boulder Problem',
         'prescription': {'mode': 'reps'},
+      },
+      {
+        'slotId': 'slot-plank',
+        'blockId': 'block-plank',
+        'exerciseId': 'ex-plank',
+        'exerciseVersion': 1,
+        'sortOrder': 0,
+        'exerciseName': 'Plank Hold',
+        'prescription': {'mode': 'time'},
       },
     ],
   });
@@ -678,6 +779,24 @@ Future<void> _seedWorkoutWithExercises(FakeFirebaseFirestore firestore) async {
     'name': 'Boulder Problem',
     'description': 'A bouldering problem on the wall.',
     'instructions': 'Climb the marked route to the top.',
+    'publishedAt': now,
+    'publishedBy': 'trainer-1',
+  });
+  await firestore.collection('exerciseTemplates').doc('ex-plank').set({
+    'currentVersion': 1,
+    'createdBy': 'trainer-1',
+    'ownerId': 'trainer-1',
+  });
+  await firestore
+      .collection('exerciseTemplates')
+      .doc('ex-plank')
+      .collection('exerciseVersions')
+      .doc('1')
+      .set({
+    'versionNumber': 1,
+    'name': 'Plank Hold',
+    'description': 'Hold a plank position.',
+    'instructions': 'Keep the body straight.',
     'publishedAt': now,
     'publishedBy': 'trainer-1',
   });
