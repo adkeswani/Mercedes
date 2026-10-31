@@ -16,9 +16,12 @@ import 'package:stage5/features/workouts/data/workout_template_repository.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
 import 'package:stage5/features/workouts/domain/workout_completion_draft.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
+import 'package:stage5/features/workouts/presentation/climbing_completion_card.dart';
 import 'package:stage5/features/workouts/presentation/workout_completion_screen.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
+
+import '../integration_test/support/list_test_utils.dart';
 
 void main() {
   late FakeFirebaseFirestore firestore;
@@ -111,7 +114,8 @@ void main() {
   });
   tearDown(() => container.dispose());
 
-  Future<void> pumpScreen(WidgetTester tester) async {
+  Future<void> pumpScreen(WidgetTester tester,
+      {ScrollController? sidebarController}) async {
     final router =
         GoRouter(initialLocation: '/athlete/workouts/instance', routes: [
       GoRoute(
@@ -124,7 +128,23 @@ void main() {
     ]);
     await tester.pumpWidget(UncontrolledProviderScope(
       container: container,
-      child: MaterialApp.router(routerConfig: router),
+      child: MaterialApp.router(
+        routerConfig: router,
+        builder: sidebarController == null
+            ? null
+            : (_, child) => Row(children: [
+                  SizedBox(
+                    width: 120,
+                    child: ListView.builder(
+                      controller: sidebarController,
+                      itemCount: 30,
+                      itemBuilder: (_, index) =>
+                          SizedBox(height: 100, child: Text('Sidebar $index')),
+                    ),
+                  ),
+                  Expanded(child: child!),
+                ]),
+      ),
     ));
     await tester.pumpAndSettle();
   }
@@ -337,6 +357,136 @@ void main() {
     await pumpScreen(tester);
     expect(find.text('Workout Details'), findsOneWidget);
     await expectVideos(tester);
+  });
+
+  testWidgets(
+      'real completion list reveals media across large-card recycling and saves',
+      (tester) async {
+    tester.view.physicalSize = const Size(1000, 320);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final sidebar = ScrollController();
+    addTearDown(sidebar.dispose);
+    await firestore
+        .collection('exerciseTemplates')
+        .doc('exercise')
+        .collection('exerciseVersions')
+        .doc('1')
+        .update({
+      'videoUrl': 'https://example.test/exercise-drill.mp4',
+      'description': List.filled(80, 'Pinned exercise description').join('\n'),
+      'instructions': List.filled(20, 'Pinned climbing instruction').join('\n'),
+    });
+    await container.read(workoutTemplateRepositoryProvider).publishVersion(
+      templateId: 'workout',
+      userId: 'trainer',
+      blocks: [
+        ClimbingCircuitBlock(
+          blockId: circuit.blockId,
+          sortOrder: 0,
+          exercise: circuit.exercise,
+          videoUrl: circuit.videoUrl,
+          rows: [
+            ...circuit.rows,
+            const ClimbingCircuitRow(
+              rowId: 'row-rope',
+              gradingSystem: ClimbingGradingSystem.yds,
+              grade: '5.13a',
+              climbs: 1,
+            ),
+          ],
+        ),
+        free,
+        FreeClimbingBlock(
+          blockId: 'free-optional',
+          sortOrder: 2,
+          slotId: 'free-optional-slot',
+        ),
+      ],
+    );
+    await firestore.collection('workoutInstances').doc('instance').update({
+      'workoutTemplateVersion': 2,
+    });
+    await pumpScreen(tester, sidebarController: sidebar);
+    final scrollable = find
+        .descendant(
+          of: find.byKey(WorkoutCompletionScreen.listKey),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final originalState = tester.state<ScrollableState>(scrollable);
+    final originalPosition = originalState.position;
+    final originalController = tester
+        .widget<ListView>(find.byKey(WorkoutCompletionScreen.listKey))
+        .controller;
+    final video = find.byKey(const ValueKey('climbing-video-circuit'));
+    await revealListTarget(
+        tester, find.text('3 × V2 · Max 2 attempts per climb'),
+        scrollable: scrollable);
+    tester.binding.scheduleFrameCallback((_) {
+      originalPosition.jumpTo(originalPosition.maxScrollExtent);
+    });
+    await revealListTarget(tester, video, scrollable: scrollable);
+    expect(tester.widget<ExerciseVideoPreview>(video).url, circuit.videoUrl);
+    expect(tester.getSize(find.byType(ClimbingCompletionCard).first).height,
+        greaterThan(originalPosition.viewportDimension * 4));
+
+    await revealListTarget(tester, find.text('Mark as Completed'),
+        scrollable: scrollable);
+    expect(video, findsNothing);
+    await revealListTarget(tester, video, scrollable: scrollable);
+    expect(video.hitTestable(), findsOneWidget);
+    final checkbox = find.descendant(
+      of: find.byKey(const ValueKey<String>('row-1')),
+      matching: find.byType(Checkbox),
+    );
+    await revealListTarget(tester, checkbox, scrollable: scrollable);
+    await tester.tap(checkbox);
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    expect(tester.state<ScrollableState>(scrollable), same(originalState));
+    expect(originalState.position, same(originalPosition));
+    expect(
+      tester
+          .widget<ListView>(find.byKey(WorkoutCompletionScreen.listKey))
+          .controller,
+      same(originalController),
+    );
+    await revealListTarget(tester, find.text('Mark as Completed'),
+        scrollable: scrollable);
+    expect(video, findsNothing);
+    await revealListTarget(
+        tester, find.byKey(const ValueKey('climbing-video-free')),
+        scrollable: scrollable);
+    expect(
+      tester
+          .widget<ExerciseVideoPreview>(
+              find.byKey(const ValueKey('climbing-video-free')))
+          .url,
+      free.videoUrl,
+    );
+    await revealListTarget(tester, video, scrollable: scrollable);
+    await revealListTarget(tester, checkbox, scrollable: scrollable);
+    expect(tester.widget<Checkbox>(checkbox).value, isTrue);
+    expect(sidebar.offset, 0);
+    await expectLater(
+      () => revealListTarget(tester, find.text('Missing fixture target'),
+          scrollable: scrollable, maxScrolls: 2),
+      throwsA(isA<StateError>()
+          .having((error) => error.message, 'bounded diagnostic',
+              contains('Attempts: 2/2'))
+          .having((error) => error.message, 'target diagnostic',
+              contains('Missing fixture target'))
+          .having((error) => error.message, 'position diagnostic',
+              contains('Offset:'))),
+    );
+    await expectLater(
+      () => revealListTarget(tester, video,
+          scrollable: find.byKey(const Key('missing-list')), maxScrolls: 2),
+      throwsA(isA<StateError>().having((error) => error.message,
+          'scrollable diagnostic', contains('expected one Scrollable'))),
+    );
   });
 }
 

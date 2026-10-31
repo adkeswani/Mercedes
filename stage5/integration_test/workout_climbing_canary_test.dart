@@ -445,20 +445,18 @@ void main() {
 }
 
 Future<void> _expectDrillVideo(WidgetTester tester,
-    BrowserTestWaitContext waits, String blockId, String url) async {
-  final finder = find.byKey(ValueKey('climbing-video-$blockId'));
-  await _wait(tester, waits, finder, 'drill video $blockId', reveal: true);
-  expect(
-      tester
-          .widget<ExerciseVideoPreview>(
-              find.byKey(ValueKey('climbing-video-$blockId')))
-          .url,
-      url);
-  expect(
-      find.byWidgetPredicate((widget) =>
-          widget is ExerciseVideoPreview && widget.url == _replacementDrill),
-      findsNothing);
-}
+        BrowserTestWaitContext waits, String blockId, String url) =>
+    waits.runStep('verify pinned drill video $blockId', () async {
+      final finder = find.byKey(ValueKey('climbing-video-$blockId'));
+      await _wait(tester, waits, finder, 'drill video $blockId', reveal: true);
+      expect(finder, findsOneWidget);
+      expect(tester.widget<ExerciseVideoPreview>(finder).url, url);
+      expect(
+          find.byWidgetPredicate((widget) =>
+              widget is ExerciseVideoPreview &&
+              widget.url == _replacementDrill),
+          findsNothing);
+    });
 
 BrowserTestWaitContext _waits(WidgetTester tester) => BrowserTestWaitContext(
       identity: browserSmokeConfig.identityRole?.name ?? 'unconfigured',
@@ -502,7 +500,7 @@ Future<void> _wait(WidgetTester tester, BrowserTestWaitContext waits,
 }
 
 Finder _workoutScrollables() => find.descendant(
-      of: find.byType(WorkoutCompletionScreen),
+      of: find.byKey(WorkoutCompletionScreen.listKey),
       matching: find.byType(Scrollable),
     );
 

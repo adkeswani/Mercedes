@@ -27,6 +27,8 @@ import 'package:stage5/features/workouts/presentation/climbing_completion_card.d
 class WorkoutCompletionScreen extends ConsumerStatefulWidget {
   const WorkoutCompletionScreen({required this.instanceId, super.key});
 
+  static const listKey = ValueKey<String>('workout-completion-list');
+
   final String instanceId;
 
   @override
@@ -37,6 +39,7 @@ class WorkoutCompletionScreen extends ConsumerStatefulWidget {
 class _WorkoutCompletionScreenState
     extends ConsumerState<WorkoutCompletionScreen> with WidgetsBindingObserver {
   final _notesController = TextEditingController();
+  final _scrollController = ScrollController();
   int _rpe = 5;
   int _durationMinutes = 45;
   bool _isLoading = false;
@@ -68,6 +71,7 @@ class _WorkoutCompletionScreenState
     _saveDebounce?.cancel();
     _notesController.removeListener(_scheduleSave);
     _notesController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -348,6 +352,8 @@ class _WorkoutCompletionScreenState
         ),
       ),
       body: ListView(
+        key: WorkoutCompletionScreen.listKey,
+        controller: _scrollController,
         padding: const EdgeInsets.all(16),
         children: [
           // Workout info
