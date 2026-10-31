@@ -6,6 +6,7 @@ import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
 import 'package:stage5/features/workouts/data/workout_template_repository.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
 import 'package:stage5/features/workouts/domain/climbing_completion_input.dart';
+import 'package:stage5/features/workouts/domain/climbing_video.dart';
 import 'package:stage5/features/workouts/domain/workout_completion_draft.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
@@ -32,11 +33,13 @@ ClimbingCircuitRow _row({
       maxAttemptsPerClimb: attempts,
       notes: 'Technique',
     );
-ClimbingCircuitBlock _circuit({List<ClimbingCircuitRow>? rows}) =>
+ClimbingCircuitBlock _circuit(
+        {List<ClimbingCircuitRow>? rows, String? videoUrl}) =>
     ClimbingCircuitBlock(
       blockId: 'circuit',
       sortOrder: 0,
       exercise: _slot('circuit-slot'),
+      videoUrl: videoUrl,
       rows: rows ??
           [
             _row(),
@@ -46,14 +49,44 @@ ClimbingCircuitBlock _circuit({List<ClimbingCircuitRow>? rows}) =>
                 system: ClimbingGradingSystem.yds)
           ],
     );
-FreeClimbingBlock _free() => FreeClimbingBlock(
+FreeClimbingBlock _free({String? videoUrl}) => FreeClimbingBlock(
       blockId: 'free',
       sortOrder: 1,
       slotId: 'free-slot',
       notes: 'Enjoy climbing',
+      videoUrl: videoUrl,
     );
 
 void main() {
+  test('optional drill URLs are canonical and validated for both block types',
+      () {
+    const canonical = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+    expect(normalizeClimbingVideoUrl('https://youtu.be/dQw4w9WgXcQ?t=20'),
+        canonical);
+    expect(normalizeClimbingVideoUrl('https://example.test/drill.mp4#start'),
+        'https://example.test/drill.mp4');
+    expect(normalizeClimbingVideoUrl('  '), isNull);
+    for (final value in [
+      'javascript:alert(1)',
+      'http://example.test/drill.mp4',
+      'https://',
+      'https://user:password@example.test/drill.mp4',
+      'https://youtube.com/watch?v=invalid',
+      'https://example.test/${'x' * maxClimbingVideoUrlLength}',
+    ]) {
+      expect(() => normalizeClimbingVideoUrl(value), throwsArgumentError);
+    }
+    for (final block in [
+      _circuit(videoUrl: canonical),
+      _free(videoUrl: canonical),
+    ]) {
+      expect(block.validate, returnsNormally);
+      expect(block.copyWithSortOrder(3).videoUrl, canonical);
+    }
+    expect(_circuit(videoUrl: 'https://youtu.be/dQw4w9WgXcQ').validate,
+        throwsArgumentError);
+    expect(_free(videoUrl: 'not a URL').validate, throwsArgumentError);
+  });
   test('canonical grades are explicitly ordered and rules use the same lists',
       () {
     expect(vScaleGrades.indexOf('V2'), lessThan(vScaleGrades.indexOf('V10')));
@@ -384,10 +417,11 @@ void main() {
         'ownerId': 'trainer',
         'currentVersion': 0,
       });
-      await templates.publishVersion(
-          templateId: 'workout',
-          userId: 'trainer',
-          blocks: [_circuit(), _free()]);
+      await templates
+          .publishVersion(templateId: 'workout', userId: 'trainer', blocks: [
+        _circuit(videoUrl: 'https://example.test/circuit-drill.mp4'),
+        _free(videoUrl: 'https://example.test/free-drill.mp4'),
+      ]);
       await firestore.collection('workoutInstances').doc('instance').set({
         'programId': 'program',
         'athleteId': 'athlete',
@@ -401,12 +435,36 @@ void main() {
       });
     });
 
+    test('duplicate draft and republish retain both immutable drill videos',
+        () async {
+      final source = await templates.getLatestBlocks('workout');
+      final duplicate = await templates.duplicateTemplate(
+          sourceTemplateId: 'workout', userId: 'trainer');
+      final draft = WorkoutDraftNotifier();
+      addTearDown(draft.dispose);
+      draft.load(source);
+      draft.reorder(0, 2);
+      await templates.publishVersion(
+          templateId: duplicate, userId: 'trainer', blocks: draft.state);
+      final copied = (await templates.getVersion(duplicate, 1))!;
+      expect(copied.blocks.map((b) => b.videoUrl), [
+        'https://example.test/free-drill.mp4',
+        'https://example.test/circuit-drill.mp4',
+      ]);
+      expect((await templates.getVersion('workout', 1))!.blocks.first.videoUrl,
+          'https://example.test/circuit-drill.mp4');
+    });
+
     test('publish, decode and complete both blocks with immutable history',
         () async {
       final version = (await templates.getVersion('workout', 1))!;
       expect((version.blocks.first as ClimbingCircuitBlock).rows.last.grade,
           '5.13a');
       expect(version.blocks.last, isA<FreeClimbingBlock>());
+      expect(version.blocks.first.videoUrl,
+          'https://example.test/circuit-drill.mp4');
+      expect(
+          version.blocks.last.videoUrl, 'https://example.test/free-drill.mp4');
       final before = (await firestore
               .collection('workoutTemplates')
               .doc('workout')
@@ -460,6 +518,14 @@ void main() {
               .first
               .grade,
           'V2');
+      final pinned = (await templates.getVersion(
+          'workout', completed.workoutTemplateVersion))!;
+      expect(pinned.blocks.first.videoUrl,
+          'https://example.test/circuit-drill.mp4');
+      expect(
+          pinned.blocks.last.videoUrl, 'https://example.test/free-drill.mp4');
+      expect((await templates.getVersion('workout', 2))!.blocks.first.videoUrl,
+          isNull);
     });
 
     test(

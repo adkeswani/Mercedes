@@ -1,5 +1,6 @@
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
+import 'package:stage5/features/workouts/domain/climbing_video.dart';
 
 const maxWorkoutBlocksPerVersion = 9;
 const maxExerciseSlotsPerWorkoutVersion = 9;
@@ -135,6 +136,7 @@ sealed class WorkoutBlock {
   final String? notes;
 
   WorkoutBlockType get type;
+  String? get videoUrl => null;
 
   WorkoutBlock copyWithSortOrder(int sortOrder);
 
@@ -401,12 +403,15 @@ class ClimbingCircuitBlock extends WorkoutBlock {
     required super.sortOrder,
     required ExerciseSlot exercise,
     required List<ClimbingCircuitRow> rows,
+    this.videoUrl,
     super.title,
     super.notes,
   })  : rows = List.unmodifiable(rows),
         super(slots: [exercise]);
 
   final List<ClimbingCircuitRow> rows;
+  @override
+  final String? videoUrl;
   ExerciseSlot get exercise => slots.single;
   @override
   WorkoutBlockType get type => WorkoutBlockType.climbingCircuit;
@@ -419,6 +424,7 @@ class ClimbingCircuitBlock extends WorkoutBlock {
         rows: rows,
         title: title,
         notes: notes,
+        videoUrl: videoUrl,
       );
 
   @override
@@ -438,6 +444,7 @@ class ClimbingCircuitBlock extends WorkoutBlock {
         throw ArgumentError('Climbing row IDs must be unique');
     }
     validateClimbingNote(notes);
+    validateClimbingVideoUrl(videoUrl);
   }
 }
 
@@ -446,6 +453,7 @@ class FreeClimbingBlock extends WorkoutBlock {
     required super.blockId,
     required super.sortOrder,
     required String slotId,
+    this.videoUrl,
     super.title,
     super.notes,
   }) : super(slots: [
@@ -460,6 +468,8 @@ class FreeClimbingBlock extends WorkoutBlock {
 
   @override
   WorkoutBlockType get type => WorkoutBlockType.freeClimbing;
+  @override
+  final String? videoUrl;
 
   @override
   FreeClimbingBlock copyWithSortOrder(int sortOrder) => FreeClimbingBlock(
@@ -468,12 +478,14 @@ class FreeClimbingBlock extends WorkoutBlock {
         slotId: slots.single.slotId,
         title: title,
         notes: notes,
+        videoUrl: videoUrl,
       );
 
   @override
   void validate() {
     super.validate();
     validateClimbingNote(notes);
+    validateClimbingVideoUrl(videoUrl);
   }
 }
 

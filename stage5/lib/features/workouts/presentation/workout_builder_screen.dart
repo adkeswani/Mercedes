@@ -520,10 +520,10 @@ class _WorkoutBlockCard extends ConsumerWidget {
     }
     if (block is ClimbingCircuitBlock) {
       final circuit = block as ClimbingCircuitBlock;
-      return 'Climbing Circuit · ${circuit.rows.map((r) => '${r.climbs} × ${r.grade}${r.maxAttemptsPerClimb == null ? '' : ' (max ${r.maxAttemptsPerClimb}/climb)'}').join(' · ')}';
+      return 'Climbing Circuit · ${circuit.rows.map((r) => '${r.climbs} × ${r.grade}${r.maxAttemptsPerClimb == null ? '' : ' (max ${r.maxAttemptsPerClimb}/climb)'}').join(' · ')}${block.videoUrl == null ? '' : ' · Drill video attached'}';
     }
     if (block is FreeClimbingBlock) {
-      return block.notes ?? 'Optional grade results at completion';
+      return '${block.notes ?? 'Optional grade results at completion'}${block.videoUrl == null ? '' : ' · Drill video attached'}';
     }
     if (block is AmrapBlock) {
       final amrap = block as AmrapBlock;

@@ -86,9 +86,15 @@ Implemented in this slice:
   exercise slot, with optional max attempts **per climb** and notes. Athletes
   record a completion checkbox, optional note, and optional RPE (1–10) per row;
   partial climb counts and actual attempts are not inferred.
-- Free climbing asks the trainer only for a note. Athlete grade/count result
-  rows are optional; a note and RPE (both optional) suffice. It uses one
+- Free climbing asks the trainer only for a note and optional drill video.
+  Athlete grade/count result rows are optional; a note and RPE (both optional)
+  suffice. It uses one
   reserved built-in result slot, not a trainer-created exercise template.
+- Both new climbing blocks support optional HTTPS drill video URLs and the
+  existing YouTube library picker/preview. YouTube links normalize to canonical
+  watch URLs. Editing, copying, publishing, recovered completion, and completed
+  details retain the video from the pinned immutable workout version; athlete
+  drafts and actuals do not duplicate or overwrite prescribed media.
 - New climbing grades are canonical dropdown selections in explicit
   difficulty order: V-scale (`VB`, `V0`–`V17`) or YDS (`5.0`–`5.9`,
   `5.10a`–`5.15d`). New single-route authoring no longer requires color.

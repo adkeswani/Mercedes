@@ -652,11 +652,18 @@ deletion/anonymization plus explicit relationship/history handling.
   Grade lists are explicit and difficulty-ordered, never alphabetically sorted.
   Up to nine rows share **one** exercise prescription; the existing nine-block
   and nine-slot workout limits remain independent of row counts.
-- `freeClimbing` contains only trainer notes and one built-in result slot
+- `freeClimbing` contains trainer notes, an optional drill video, and one
+  built-in result slot
   (`exerciseId: builtin-free-climbing`, version 1, mode `reps`). This reserved
   identity is exempt from exercise-template lookup **only** for an otherwise
   canonical free-climbing slot; it cannot authorize other block kinds or
   sets/reps/count/grade prescriptions.
+- Both climbing block kinds support nullable canonical `videoUrl` fields:
+  HTTPS links, with YouTube links normalized to canonical watch URLs. Authoring
+  reuses the existing YouTube library picker and exercise video preview.
+  Removing/replacing a video changes only a new draft/version. Copy/reorder
+  preserves it, and recovered completion/history reads the pinned version's
+  media rather than saving media inside athlete drafts or actuals.
 - Circuit actuals have `climbingType: climbingCircuit`, ordered `circuitRows`
   (`rowId`, `completed`, nullable `notes` and `rpe`), and `rowIds` identical to
   the pinned prescription. They do not record partial climbs or actual

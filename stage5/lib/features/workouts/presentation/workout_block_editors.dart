@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:stage5/core/enums.dart';
+import 'package:stage5/features/exercises/domain/youtube_channel.dart';
+import 'package:stage5/features/exercises/presentation/exercise_media_widgets.dart';
+import 'package:stage5/features/exercises/presentation/youtube_library_panel.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/exercise_picker.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
+import 'package:stage5/features/workouts/domain/climbing_video.dart';
 import 'package:stage5/features/workouts/presentation/climbing_grade_field.dart';
 
 /// Total exercise slots currently used across every block in [blocks].
@@ -778,6 +782,8 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _targetAttemptsController;
   late final TextEditingController _notesController;
+  late final TextEditingController _videoUrlController;
+  YoutubeVideoMetadata? _videoMetadata;
   final List<_ClimbingRowInput> _rows = [];
   ClimbingGradingSystem _system = ClimbingGradingSystem.vScale;
   String _grade = 'V0';
@@ -797,6 +803,7 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
           : '',
     );
     _notesController = TextEditingController(text: existing?.notes ?? '');
+    _videoUrlController = TextEditingController(text: existing?.videoUrl ?? '');
     _route = existing?.slots.single;
     if (existing is ClimbingRouteBlock) {
       _gradeChosen = existing.gradingSystem != null;
@@ -816,6 +823,7 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
   void dispose() {
     _targetAttemptsController.dispose();
     _notesController.dispose();
+    _videoUrlController.dispose();
     for (final row in _rows) {
       row.dispose();
     }
@@ -853,6 +861,7 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
       final notes = _notesController.text.trim().isEmpty
           ? null
           : _notesController.text.trim();
+      final videoUrl = normalizeClimbingVideoUrl(_videoUrlController.text);
       final WorkoutBlock block = _isFree
           ? FreeClimbingBlock(
               blockId: widget.blockId,
@@ -862,6 +871,7 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
                       .read(workoutTemplateRepositoryProvider)
                       .generateExerciseSlotId(),
               notes: notes,
+              videoUrl: videoUrl,
               title: widget.existing?.title,
             )
           : _isCircuit
@@ -871,6 +881,7 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
                   exercise: _route!,
                   rows: _rows.map((r) => r.toRow()).toList(),
                   notes: notes,
+                  videoUrl: videoUrl,
                   title: widget.existing?.title,
                 )
               : ClimbingRouteBlock(
@@ -897,6 +908,55 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
       ref.read(workoutTemplateRepositoryProvider).generateExerciseSlotId(),
     ));
   }
+
+  String? _videoError(String? value) {
+    try {
+      normalizeClimbingVideoUrl(value);
+      return null;
+    } on ArgumentError catch (error) {
+      return '${error.message}';
+    }
+  }
+
+  String? get _previewVideoUrl {
+    try {
+      return normalizeClimbingVideoUrl(_videoUrlController.text);
+    } on ArgumentError {
+      return null;
+    }
+  }
+
+  void _removeVideo() => setState(() {
+        _videoUrlController.clear();
+        _videoMetadata = null;
+      });
+
+  Future<void> _chooseVideo() => showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (pickerContext) => SafeArea(
+          child: SizedBox(
+            height: MediaQuery.sizeOf(pickerContext).height * .8,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: YoutubeLibraryPanel(
+                attachedVideo: _videoMetadata,
+                onAttach: (video) {
+                  setState(() {
+                    _videoUrlController.text = video.canonicalUrl;
+                    _videoMetadata = video.metadata;
+                  });
+                  Navigator.of(pickerContext).pop();
+                },
+                onRemove: () {
+                  _removeVideo();
+                  Navigator.of(pickerContext).pop();
+                },
+              ),
+            ),
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -1012,6 +1072,38 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
                   const InputDecoration(labelText: 'Trainer note (optional)'),
               maxLength: 4000,
             ),
+            if (_isFree || _isCircuit) ...[
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _videoUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'Video URL (optional)',
+                  hintText: 'YouTube or HTTPS drill video',
+                ),
+                keyboardType: TextInputType.url,
+                maxLength: maxClimbingVideoUrlLength,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+                validator: _videoError,
+                onChanged: (value) => setState(() {
+                  if (value.trim() != _videoMetadata?.canonicalUrl) {
+                    _videoMetadata = null;
+                  }
+                }),
+              ),
+              TextButton.icon(
+                onPressed: _chooseVideo,
+                icon: const Icon(Icons.video_library_outlined),
+                label: const Text('Choose from YouTube library'),
+              ),
+              if (_previewVideoUrl case final url?) ...[
+                const Text('Drill video preview'),
+                ExerciseVideoPreview(url: url),
+                TextButton(
+                  onPressed: _removeVideo,
+                  child: const Text('Remove drill video'),
+                ),
+              ],
+            ],
           ],
         ));
   }

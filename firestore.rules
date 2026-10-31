@@ -607,12 +607,20 @@ service cloud.firestore {
              && (rows.size() < 9 || validCircuitResultRow(rows[8], ids[8], keys));
     }
 
+    function validClimbingVideoUrl(url) {
+      return url == null
+             || (url is string && url.size() <= 2048
+                 && url.matches('^https://[A-Za-z0-9][A-Za-z0-9.-]*(?::[0-9]+)?(?:[/?][^[:space:]#]*)?$')
+                 && (!url.matches('^https://(?:(?:www[.]|m[.])?youtube[.]com|(?:www[.])?youtube-nocookie[.]com|(?:www[.])?youtu[.]be)(?::[0-9]+)?(?:[/?].*)?$')
+                     || url.matches('^https://www[.]youtube[.]com/watch[?]v=[A-Za-z0-9_-]{11}$')));
+    }
+
     function hasValidWorkoutBlock(data) {
       return data.keys().hasOnly([
                'blockId', 'type', 'sortOrder', 'title', 'notes', 'rounds',
                'workSeconds', 'restSeconds', 'restBetweenRoundsSeconds',
                'grade', 'color', 'targetAttempts', 'timeCapSeconds',
-               'slotIds', 'slotStartOrder', 'slotCount', 'gradingSystem', 'rows', 'rowIds'
+               'slotIds', 'slotStartOrder', 'slotCount', 'gradingSystem', 'rows', 'rowIds', 'videoUrl'
              ])
              && data.blockId is string
              && data.blockId.size() > 0
@@ -629,6 +637,9 @@ service cloud.firestore {
                   'standardExercise', 'timedInterval', 'circuit',
                   'climbingRoute', 'amrap', 'climbingCircuit', 'freeClimbing'
                 ]
+              && (!('videoUrl' in data)
+                 || data.type in ['climbingCircuit', 'freeClimbing'])
+              && validClimbingVideoUrl(data.get('videoUrl', null))
              && (!(data.type in ['standardExercise', 'climbingRoute', 'climbingCircuit', 'freeClimbing'])
                  || data.slotCount == 1)
              && (data.type != 'timedInterval'
@@ -655,13 +666,13 @@ service cloud.firestore {
              && (data.type != 'climbingCircuit'
                  || (data.keys().hasOnly([
                       'blockId', 'type', 'sortOrder', 'title', 'notes',
-                      'slotIds', 'slotStartOrder', 'slotCount', 'rows', 'rowIds'
+                      'slotIds', 'slotStartOrder', 'slotCount', 'rows', 'rowIds', 'videoUrl'
                     ]) && validClimbingCircuitHead(data)
                     && validClimbingNote(data)))
              && (data.type != 'freeClimbing'
                  || (data.keys().hasOnly([
                       'blockId', 'type', 'sortOrder', 'title', 'notes',
-                      'slotIds', 'slotStartOrder', 'slotCount'
+                      'slotIds', 'slotStartOrder', 'slotCount', 'videoUrl'
                     ]) && validClimbingNote(data)))
              && (data.type != 'amrap'
                  || (data.timeCapSeconds is int

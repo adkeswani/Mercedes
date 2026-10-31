@@ -321,7 +321,9 @@ describe('climbing circuit and free climbing', () => {
 
   it.each(['climbingCircuit', 'freeClimbing'])('allows owner publish and immutable seal: %s', async type => {
     await seedAuthoring();
-    await assertSucceeds(publish(block(type), slot(type)));
+    await assertSucceeds(publish({
+      ...block(type), videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    }, slot(type)));
     const db = testEnv.authenticatedContext(OWNER).firestore();
     const header = db.collection('workoutTemplates').doc('climbing-workout');
     const version = header.collection('workoutTemplateVersions').doc('1');
@@ -330,7 +332,21 @@ describe('climbing circuit and free climbing', () => {
     seal.update(header, { currentVersion: 1, updatedBy: OWNER });
     await assertSucceeds(seal.commit());
     await assertFails(version.collection('workoutBlocks').doc('climbing-block').update({ notes: 'Changed' }));
+    await assertFails(version.collection('workoutBlocks').doc('climbing-block').update({
+      videoUrl: 'https://example.test/replaced-drill.mp4',
+    }));
     await assertFails(version.collection('exerciseSlots').doc('climbing-slot').delete());
+  });
+
+  it.each(['climbingCircuit', 'freeClimbing'])('rejects invalid drill video URLs: %s', async type => {
+    await seedAuthoring();
+    for (const videoUrl of [
+      123, 'javascript:alert(1)', 'http://example.test/drill.mp4', 'https://',
+      'https://youtu.be/dQw4w9WgXcQ', 'https://user:password@example.test/drill.mp4',
+      `https://example.test/${'x'.repeat(2048)}`,
+    ]) {
+      await assertFails(publish({ ...block(type), videoUrl }, slot(type)));
+    }
   });
 
   it.each([
@@ -352,7 +368,8 @@ describe('climbing circuit and free climbing', () => {
   it.each([1, 2, 3, 4, 5, 6, 7, 8, 9])('allows %s climbing rows without multiplying exercise slots', async count => {
     await seedAuthoring();
     await assertSucceeds(publish({
-      ...block(), rows: Array.from({ length: count }, (_, i) => ({ ...rows[0], rowId: `r${i}` })),
+      ...block(), videoUrl: 'https://example.test/circuit-drill.mp4',
+      rows: Array.from({ length: count }, (_, i) => ({ ...rows[0], rowId: `r${i}` })),
     }, slot()));
   });
 

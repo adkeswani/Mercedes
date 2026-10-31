@@ -38,6 +38,7 @@ function Get-ClimbingBrowserFixtureWrites {
             sortOrder = 0; slotStartOrder = 0; slotCount = 1
             slotIds = @('slot-climbing-circuit'); title = $null
             notes = 'Technique before intensity'
+            videoUrl = 'https://example.test/climbing-circuit-drill.mp4'
             rowIds = @('row-boulder', 'row-rope')
             rows = @(
                 @{
@@ -54,6 +55,7 @@ function Get-ClimbingBrowserFixtureWrites {
             blockId = 'block-free-climbing'; type = 'freeClimbing'
             sortOrder = 1; slotStartOrder = 1; slotCount = 1
             slotIds = @('slot-free-climbing'); title = $null; notes = 'Explore routes'
+            videoUrl = 'https://example.test/free-climbing-drill.mp4'
         },
         @{
             blockId = 'block-free-climbing-optional'; type = 'freeClimbing'
@@ -117,6 +119,8 @@ function Get-ClimbingBrowserFixtureWrites {
     $newRows[0].grade = 'V5'
     $newRows[0].climbs = 9
     $newBlocks[0].rows = $newRows
+    $newBlocks[0].videoUrl = 'https://example.test/replaced-circuit-drill.mp4'
+    $newBlocks[1].Remove('videoUrl')
     $newVersion.blocks = $newBlocks
     $documents += @{
         path = "workoutTemplates/$workoutId/workoutTemplateVersions/2"; data = $newVersion

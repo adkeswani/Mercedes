@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stage5/features/exercises/presentation/exercise_media_widgets.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
 import 'package:stage5/features/workouts/domain/climbing_completion_input.dart';
 import 'package:stage5/features/workouts/domain/workout_block.dart';
@@ -105,6 +106,13 @@ class _ClimbingCompletionCardState
                   block.slots.single.exerciseId),
             if (widget.exerciseContent != null) widget.exerciseContent!,
             if (block.notes != null) Text('Trainer note: ${block.notes}'),
+            if (block.videoUrl case final url?) ...[
+              const Text('Drill video'),
+              ExerciseVideoPreview(
+                key: ValueKey('climbing-video-${block.blockId}'),
+                url: url,
+              ),
+            ],
             if (widget.recordingEnabled) ...[
               if (!_isCircuit)
                 const Text(

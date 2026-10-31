@@ -9,6 +9,8 @@ import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/exercises/domain/exercise_template.dart';
 import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
+import 'package:stage5/features/exercises/presentation/exercise_media_widgets.dart';
+import 'package:stage5/features/exercises/presentation/youtube_library_panel.dart';
 import 'package:stage5/features/workouts/data/workout_template_repository.dart';
 import 'package:stage5/features/workouts/domain/workout_block.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
@@ -158,6 +160,16 @@ void main() {
     await tester.enterText(
         find.widgetWithText(TextFormField, 'Max attempts per climb (optional)'),
         '2');
+    final video = find.widgetWithText(TextFormField, 'Video URL (optional)');
+    await tester.ensureVisible(video);
+    await tester.enterText(
+        video, 'https://example.test/circuit-drill.mp4#start');
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<ExerciseVideoPreview>(find.byType(ExerciseVideoPreview))
+            .url,
+        'https://example.test/circuit-drill.mp4');
     await tester.ensureVisible(save);
     await tester.tap(save);
     await tester.pumpAndSettle();
@@ -166,8 +178,11 @@ void main() {
         tester.element(find.byType(WorkoutBuilderScreen)));
     final original =
         container.read(workoutDraftProvider).single as ClimbingCircuitBlock;
+    expect(original.videoUrl, 'https://example.test/circuit-drill.mp4');
     await tester.tap(find.byTooltip('Edit prescription'));
     await tester.pumpAndSettle();
+    expect(tester.widget<TextFormField>(video).controller!.text,
+        original.videoUrl);
     await tester.ensureVisible(count);
     await tester.enterText(count, '4');
     await tester.ensureVisible(save);
@@ -178,9 +193,10 @@ void main() {
     expect(edited.rows.single.rowId, original.rows.single.rowId);
     expect(edited.exercise.slotId, original.exercise.slotId);
     expect(edited.rows.single.climbs, 4);
+    expect(edited.videoUrl, original.videoUrl);
   });
 
-  testWidgets('free climbing trainer editor only asks for a note',
+  testWidgets('free climbing has only notes and an optional removable video',
       (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
@@ -192,13 +208,45 @@ void main() {
     expect(find.text('Choose exercise'), findsNothing);
     expect(find.text('Grade'), findsNothing);
     expect(find.text('Number of climbs'), findsNothing);
+    expect(find.text('Choose from YouTube library'), findsOneWidget);
+    await tester.ensureVisible(find.text('Choose from YouTube library'));
+    await tester.tap(find.text('Choose from YouTube library'));
+    await tester.pumpAndSettle();
+    expect(find.byType(YoutubeLibraryPanel), findsOneWidget);
+    Navigator.of(tester.element(find.byType(YoutubeLibraryPanel))).pop();
+    await tester.pumpAndSettle();
     await tester.enterText(
         find.widgetWithText(TextFormField, 'Trainer note (optional)'),
         'Explore routes');
+    final video = find.widgetWithText(TextFormField, 'Video URL (optional)');
+    await tester.ensureVisible(video);
+    await tester.enterText(video, 'javascript:bad');
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a valid HTTPS video URL'), findsOneWidget);
+    await tester.enterText(video, 'https://example.test/free-drill.mp4');
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<ExerciseVideoPreview>(find.byType(ExerciseVideoPreview))
+            .url,
+        'https://example.test/free-drill.mp4');
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Save'));
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pumpAndSettle();
     expect(find.text('Free Climbing'), findsOneWidget);
-    expect(find.text('Explore routes'), findsOneWidget);
+    expect(find.textContaining('Explore routes'), findsOneWidget);
+    final container = ProviderScope.containerOf(
+        tester.element(find.byType(WorkoutBuilderScreen)));
+    expect(container.read(workoutDraftProvider).single.videoUrl,
+        'https://example.test/free-drill.mp4');
+    await tester.tap(find.byTooltip('Edit prescription'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Remove drill video'));
+    await tester.tap(find.text('Remove drill video'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    expect(container.read(workoutDraftProvider).single.videoUrl, isNull);
   });
 
   testWidgets('edits an existing circuit block via the edit icon',

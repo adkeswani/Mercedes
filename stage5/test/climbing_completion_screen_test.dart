@@ -8,6 +8,7 @@ import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/exercises/data/exercise_template_repository.dart';
 import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
+import 'package:stage5/features/exercises/presentation/exercise_media_widgets.dart';
 import 'package:stage5/features/workouts/data/workout_completion_draft_repository.dart';
 import 'package:stage5/features/workouts/data/workout_draft_local_store_contract.dart';
 import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
@@ -26,6 +27,7 @@ void main() {
   final circuit = ClimbingCircuitBlock(
     blockId: 'circuit',
     sortOrder: 0,
+    videoUrl: 'https://example.test/circuit-drill.mp4',
     exercise: ExerciseSlot(
         slotId: 'circuit-slot',
         exerciseId: 'exercise',
@@ -47,6 +49,7 @@ void main() {
     sortOrder: 1,
     slotId: 'free-slot',
     notes: 'Explore routes',
+    videoUrl: 'https://example.test/free-drill.mp4',
   );
 
   setUp(() async {
@@ -129,8 +132,21 @@ void main() {
   Future<void> complete(WidgetTester tester) async {
     await tester.scrollUntilVisible(find.text('Mark as Completed'), 250,
         scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Mark as Completed'));
     await tester.pumpAndSettle();
+  }
+
+  Future<void> expectVideos(WidgetTester tester) async {
+    for (final entry in {
+      'circuit': 'https://example.test/circuit-drill.mp4',
+      'free': 'https://example.test/free-drill.mp4',
+    }.entries) {
+      final finder = find.byKey(ValueKey('climbing-video-${entry.key}'));
+      await tester.scrollUntilVisible(finder, 250,
+          scrollable: find.byType(Scrollable).first);
+      expect(tester.widget<ExerciseVideoPreview>(finder).url, entry.value);
+    }
   }
 
   testWidgets(
@@ -167,6 +183,7 @@ void main() {
     final add = find.text('Add result row');
     await tester.scrollUntilVisible(add, 250,
         scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
     await tester.tap(add);
     await tester.pumpAndSettle();
     final count = find.widgetWithText(TextFormField, 'Climbs completed');
@@ -215,6 +232,7 @@ void main() {
     final add = find.text('Add result row');
     await tester.scrollUntilVisible(add, 250,
         scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
     await tester.tap(add);
     await tester.pumpAndSettle();
     final count = find.widgetWithText(TextFormField, 'Climbs completed');
@@ -270,6 +288,7 @@ void main() {
     await pumpScreen(tester);
     await tester.scrollUntilVisible(find.text('Add result row'), 250,
         scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Add result row'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Remove result row'));
@@ -277,6 +296,47 @@ void main() {
     await tester.pumpAndSettle();
     await complete(tester);
     expect(find.text('Done'), findsOneWidget);
+  });
+
+  testWidgets('drill videos display through recovery and pinned history',
+      (tester) async {
+    await pumpScreen(tester);
+    await expectVideos(tester);
+    await tester.scrollUntilVisible(find.byType(Checkbox), -250,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(Checkbox));
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await pumpScreen(tester);
+    await expectVideos(tester);
+    await complete(tester);
+    expect(find.text('Done'), findsOneWidget);
+    await container.read(workoutTemplateRepositoryProvider).publishVersion(
+      templateId: 'workout',
+      userId: 'trainer',
+      blocks: [
+        ClimbingCircuitBlock(
+          blockId: circuit.blockId,
+          sortOrder: 0,
+          exercise: circuit.exercise,
+          rows: circuit.rows,
+          videoUrl: 'https://example.test/new-drill.mp4',
+        ),
+        FreeClimbingBlock(
+          blockId: free.blockId,
+          sortOrder: 1,
+          slotId: free.slots.single.slotId,
+        ),
+      ],
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    await pumpScreen(tester);
+    expect(find.text('Workout Details'), findsOneWidget);
+    await expectVideos(tester);
   });
 }
 

@@ -764,8 +764,9 @@ class WorkoutTemplateRepository {
       case ClimbingCircuitBlock():
         map['rows'] = block.rows.map((row) => row.toMap()).toList();
         map['rowIds'] = block.rows.map((row) => row.rowId).toList();
+        if (block.videoUrl != null) map['videoUrl'] = block.videoUrl;
       case FreeClimbingBlock():
-        break;
+        if (block.videoUrl != null) map['videoUrl'] = block.videoUrl;
     }
     return map;
   }
@@ -832,6 +833,7 @@ class WorkoutTemplateRepository {
           rows: block.rows,
           title: block.title,
           notes: block.notes,
+          videoUrl: block.videoUrl,
         ),
       FreeClimbingBlock() => block.copyWithSortOrder(block.sortOrder),
     };
@@ -908,6 +910,7 @@ class WorkoutTemplateRepository {
               .toList(),
           title: title,
           notes: notes,
+          videoUrl: data['videoUrl'] as String?,
         );
         block.validate();
         validateClimbingRowManifest(
@@ -933,6 +936,7 @@ class WorkoutTemplateRepository {
           slotId: slots.single.slotId,
           title: title,
           notes: notes,
+          videoUrl: data['videoUrl'] as String?,
         )..validate();
       case 'standardExercise':
       default:
