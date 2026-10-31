@@ -13,6 +13,7 @@ import 'package:stage5/main.dart' as app;
 
 import 'support/browser_test_wait.dart';
 import 'support/dropdown_test_utils.dart';
+import 'support/router_test_utils.dart';
 
 const _testFile = 'integration_test/workout_climbing_canary_test.dart';
 const _artifactPath = String.fromEnvironment('BROWSER_TEST_ARTIFACT_PATH',
@@ -435,9 +436,7 @@ BrowserTestWaitContext _waits(WidgetTester tester) => BrowserTestWaitContext(
           : _router(tester).routeInformationProvider.value.uri.toString(),
     );
 
-GoRouter _router(WidgetTester tester) => GoRouter.of(
-      tester.element(find.byKey(authenticatedAppEntryKey)),
-    );
+GoRouter _router(WidgetTester tester) => mountedAppRouter(tester);
 
 Future<void> _login(WidgetTester tester, BrowserTestWaitContext waits) async {
   await waits.runStep('initialize emulators', app.initializeMercedesApp,
