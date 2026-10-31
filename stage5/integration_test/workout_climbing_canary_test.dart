@@ -9,10 +9,12 @@ import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/features/exercises/presentation/exercise_media_widgets.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
 import 'package:stage5/features/workouts/presentation/climbing_completion_card.dart';
+import 'package:stage5/features/workouts/presentation/workout_completion_screen.dart';
 import 'package:stage5/main.dart' as app;
 
 import 'support/browser_test_wait.dart';
 import 'support/dropdown_test_utils.dart';
+import 'support/list_test_utils.dart';
 import 'support/router_test_utils.dart';
 
 const _testFile = 'integration_test/workout_climbing_canary_test.dart';
@@ -212,9 +214,13 @@ void main() {
     _router(tester).go('/athlete/workouts/$_instanceId');
     await _wait(tester, waits, find.text('Complete Workout'),
         'climbing completion screen');
+    await _wait(tester, waits, find.text('3 × V2 · Max 2 attempts per climb'),
+        'pinned circuit prescription',
+        reveal: true);
     expect(find.text('3 × V2 · Max 2 attempts per climb'), findsOneWidget);
     expect(find.text('1 × 5.13a'), findsOneWidget);
-    _expectDrillVideo(tester, 'block-climbing-circuit', _circuitDrill);
+    await _expectDrillVideo(
+        tester, waits, 'block-climbing-circuit', _circuitDrill);
     expect(find.text('Attempts'), findsNothing);
 
     for (final row in ['row-boulder', 'row-rope']) {
@@ -243,7 +249,7 @@ void main() {
 
     await _scroll(tester, waits, find.text('Trainer note: Explore routes'), 250,
         'reveal free climbing card');
-    _expectDrillVideo(tester, 'block-free-climbing', _freeDrill);
+    await _expectDrillVideo(tester, waits, 'block-free-climbing', _freeDrill);
     final freeCard = find.ancestor(
         of: find.text('Trainer note: Explore routes'),
         matching: find.byType(ClimbingCompletionCard));
@@ -338,17 +344,37 @@ void main() {
     _router(tester).go('/athlete/workouts/$_instanceId');
     await _wait(tester, waits, find.text('Complete Workout'),
         'restore canonical completion route');
-    _expectDrillVideo(tester, 'block-climbing-circuit', _circuitDrill);
+    await _expectDrillVideo(
+        tester, waits, 'block-climbing-circuit', _circuitDrill);
     final checkbox = find.descendant(
         of: find.byKey(const ValueKey('row-boulder')),
         matching: find.byType(Checkbox));
+    await _wait(tester, waits, checkbox, 'recovered prescribed row',
+        reveal: true);
+    await waits.waitForCondition(
+      condition: 'recovered prescribed row is completed',
+      isSatisfied: () => checkbox
+          .evaluate()
+          .any((element) => (element.widget as Checkbox).value == true),
+      pump: () => tester.pump(const Duration(milliseconds: 100)),
+      timeout: const Duration(seconds: 20),
+    );
     expect(tester.widget<Checkbox>(checkbox).value, isTrue);
     await _scroll(tester, waits, find.text('Trainer note: Explore routes'), 250,
         'reveal recovered free card');
-    _expectDrillVideo(tester, 'block-free-climbing', _freeDrill);
+    await _expectDrillVideo(tester, waits, 'block-free-climbing', _freeDrill);
     final count = find.descendant(
         of: freeCard,
         matching: find.widgetWithText(TextFormField, 'Climbs completed'));
+    await _wait(tester, waits, count, 'recovered free result count',
+        reveal: true);
+    await waits.waitForCondition(
+      condition: 'recovered free result count is restored',
+      isSatisfied: () => count.evaluate().any(
+          (element) => (element.widget as TextFormField).initialValue == '2'),
+      pump: () => tester.pump(const Duration(milliseconds: 100)),
+      timeout: const Duration(seconds: 20),
+    );
     expect(tester.widget<TextFormField>(count).initialValue, '2');
     await waits.runStep('capture recovered climbing inputs',
         () => binding.takeScreenshot('athlete-climbing-recovery'));
@@ -400,21 +426,28 @@ void main() {
     _router(tester).go('/athlete/workouts/$_instanceId');
     await _wait(tester, waits, find.text('Workout Details'),
         'immutable completed detail');
+    await _wait(tester, waits, find.text('3 × V2 · Max 2 attempts per climb'),
+        'completed pinned circuit prescription',
+        reveal: true);
     expect(find.text('3 × V2 · Max 2 attempts per climb'), findsOneWidget);
     expect(find.text('Completed · RPE 8 · Controlled feet actual'),
         findsOneWidget);
     expect(find.text('9 × V5 · Max 2 attempts per climb'), findsNothing);
-    _expectDrillVideo(tester, 'block-climbing-circuit', _circuitDrill);
+    await _expectDrillVideo(
+        tester, waits, 'block-climbing-circuit', _circuitDrill);
     expect(find.text('Completed prescribed row'), findsNothing);
     await _scroll(tester, waits, find.text('2 × 5.13a · Two clean climbs'), 250,
         'free climbing history');
-    _expectDrillVideo(tester, 'block-free-climbing', _freeDrill);
+    await _expectDrillVideo(tester, waits, 'block-free-climbing', _freeDrill);
     await waits.runStep('capture completed climbing history',
         () => binding.takeScreenshot('athlete-climbing-history'));
   }, skip: browserSmokeConfig.identityRole != BrowserSmokeIdentityRole.athlete);
 }
 
-void _expectDrillVideo(WidgetTester tester, String blockId, String url) {
+Future<void> _expectDrillVideo(WidgetTester tester,
+    BrowserTestWaitContext waits, String blockId, String url) async {
+  final finder = find.byKey(ValueKey('climbing-video-$blockId'));
+  await _wait(tester, waits, finder, 'drill video $blockId', reveal: true);
   expect(
       tester
           .widget<ExerciseVideoPreview>(
@@ -452,22 +485,41 @@ Future<void> _login(WidgetTester tester, BrowserTestWaitContext waits) async {
 }
 
 Future<void> _wait(WidgetTester tester, BrowserTestWaitContext waits,
-        Finder finder, String label,
-        {bool absent = false}) =>
-    waits.waitForCondition(
-      condition: label,
-      isSatisfied: () => finder.evaluate().isEmpty == absent,
-      pump: () => tester.pump(const Duration(milliseconds: 100)),
-      timeout: const Duration(seconds: 30),
-      details: () =>
-          'Visible: ${find.byType(Text).evaluate().map((e) => (e.widget as Text).data).whereType<String>().take(25).join(' | ')}',
+    Finder finder, String label,
+    {bool absent = false, bool reveal = false}) async {
+  if (reveal) {
+    await _wait(tester, waits, _workoutScrollables(), 'workout list ready');
+    await waits.runStep('reveal $label', () => _reveal(tester, finder));
+  }
+  await waits.waitForCondition(
+    condition: label,
+    isSatisfied: () => finder.evaluate().isEmpty == absent,
+    pump: () => tester.pump(const Duration(milliseconds: 100)),
+    timeout: const Duration(seconds: 30),
+    details: () =>
+        'Visible: ${find.byType(Text).evaluate().map((e) => (e.widget as Text).data).whereType<String>().take(25).join(' | ')}',
+  );
+}
+
+Finder _workoutScrollables() => find.descendant(
+      of: find.byType(WorkoutCompletionScreen),
+      matching: find.byType(Scrollable),
     );
+
+Future<void> _reveal(WidgetTester tester, Finder finder) async {
+  if (find.byType(WorkoutCompletionScreen).evaluate().isNotEmpty) {
+    await revealListTarget(tester, finder,
+        scrollable: _workoutScrollables().first);
+  } else {
+    await tester.ensureVisible(finder);
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
 
 Future<void> _tap(WidgetTester tester, BrowserTestWaitContext waits,
         Finder finder, String label) =>
     waits.runStep(label, () async {
-      await tester.ensureVisible(finder);
-      await tester.pump(const Duration(milliseconds: 100));
+      await _reveal(tester, finder);
       await tester.tap(finder);
       await tester.pump(const Duration(milliseconds: 400));
     });
@@ -475,8 +527,7 @@ Future<void> _tap(WidgetTester tester, BrowserTestWaitContext waits,
 Future<void> _enter(WidgetTester tester, BrowserTestWaitContext waits,
         Finder finder, String value, String label) =>
     waits.runStep(label, () async {
-      await tester.ensureVisible(finder);
-      await tester.pump(const Duration(milliseconds: 100));
+      await _reveal(tester, finder);
       await tester.enterText(finder, value);
       await tester.pump(const Duration(milliseconds: 100));
     });
@@ -484,9 +535,8 @@ Future<void> _enter(WidgetTester tester, BrowserTestWaitContext waits,
 Future<void> _scroll(WidgetTester tester, BrowserTestWaitContext waits,
         Finder finder, double delta, String label) =>
     waits.runStep(label, () async {
-      await tester.scrollUntilVisible(finder, delta,
-          scrollable: find.byType(Scrollable).first, maxScrolls: 40);
-      await tester.pump(const Duration(milliseconds: 100));
+      await revealListTarget(tester, finder,
+          scrollable: _workoutScrollables().first, delta: delta);
     });
 
 Future<void> _addBlock(

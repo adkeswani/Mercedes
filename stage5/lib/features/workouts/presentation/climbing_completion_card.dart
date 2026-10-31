@@ -161,7 +161,7 @@ class _ClimbingCompletionCardState
     final prescription =
         _isCircuit ? (widget.block as ClimbingCircuitBlock).rows[index] : null;
     return Padding(
-      key: ValueKey(row['rowId']),
+      key: ValueKey<String>(row['rowId'] as String),
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
