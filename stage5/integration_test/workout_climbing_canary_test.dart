@@ -51,7 +51,7 @@ void main() {
         'climbing exercise picker');
     await _tap(tester, waits, find.text('Boulder Problem').last,
         'select climbing exercise');
-    await _selectGrade(
+    await selectClimbingGrade(
         tester, waits, find.byType(DropdownButtonFormField<String>).last, 'V2');
     await _enter(
         tester,
@@ -69,9 +69,9 @@ void main() {
         'prescribe per-climb attempt cap');
     await _tap(tester, waits, find.text('Add climbing row'),
         'add rope prescription row');
-    await _selectSystem(tester, waits,
+    await selectClimbingSystem(tester, waits,
         find.byType(DropdownButtonFormField<ClimbingGradingSystem>).last);
-    await _selectGrade(tester, waits,
+    await selectClimbingGrade(tester, waits,
         find.byType(DropdownButtonFormField<String>).last, '5.13a');
     await _enter(
         tester,
@@ -230,7 +230,7 @@ void main() {
           waits,
           find.descendant(of: scope, matching: find.byType(Checkbox)),
           'complete prescribed $row');
-      await _selectRpe(
+      await selectClimbingRpe(
           tester,
           waits,
           find.descendant(
@@ -258,14 +258,14 @@ void main() {
         waits,
         find.descendant(of: freeCard, matching: find.text('Add result row')),
         'add optional free result');
-    await _selectSystem(
+    await selectClimbingSystem(
         tester,
         waits,
         find.descendant(
             of: freeCard,
             matching:
                 find.byType(DropdownButtonFormField<ClimbingGradingSystem>)));
-    await _selectGrade(
+    await selectClimbingGrade(
         tester,
         waits,
         find.descendant(
@@ -289,7 +289,7 @@ void main() {
                 find.widgetWithText(TextFormField, 'Row note (optional)')),
         'Two clean climbs',
         'record free row note');
-    await _selectRpe(
+    await selectClimbingRpe(
         tester,
         waits,
         find.descendant(
@@ -548,26 +548,122 @@ Future<void> _addBlock(
   await _tap(tester, waits, find.text(type), 'choose $type');
 }
 
-Future<void> _selectSystem(
+@visibleForTesting
+Future<void> selectClimbingSystem(
     WidgetTester tester, BrowserTestWaitContext waits, Finder finder) async {
-  await _tap(tester, waits, finder, 'open grading system dropdown');
+  if (find.byType(WorkoutCompletionScreen).evaluate().isNotEmpty) {
+    await _scroll(
+        tester,
+        waits,
+        find.descendant(
+          of: find.byKey(WorkoutCompletionScreen.listKey),
+          matching: find.textContaining(RegExp(
+              r'^(Saving\.\.\.|Saved|Offline — saved on this device|Save failed|Newer progress restored)$')),
+        ),
+        250,
+        'reveal save status before grading');
+    await _wait(
+        tester,
+        waits,
+        find.descendant(
+          of: find.byKey(WorkoutCompletionScreen.listKey),
+          matching: find.text('Saved'),
+        ),
+        'save settled before grading');
+  }
+  await _tap(
+      tester,
+      waits,
+      find.descendant(
+          of: finder,
+          matching: find.byType(DropdownButton<ClimbingGradingSystem>)),
+      'open grading system dropdown');
   final option = await waits.runStep('reveal YDS grading',
       () => revealDropdownOption(tester, finder, ClimbingGradingSystem.yds));
-  await _tap(tester, waits, option, 'select YDS grading');
+  await waits.runStep('select YDS grading', () async {
+    await tester.ensureVisible(option);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(option);
+    await tester.pump(const Duration(milliseconds: 400));
+    await _wait(tester, waits, option, 'grading popup dismissed', absent: true);
+  });
 }
 
-Future<void> _selectGrade(WidgetTester tester, BrowserTestWaitContext waits,
-    Finder finder, String grade) async {
-  await _tap(tester, waits, finder, 'open canonical grade dropdown');
+@visibleForTesting
+Future<void> selectClimbingGrade(WidgetTester tester,
+    BrowserTestWaitContext waits, Finder finder, String grade) async {
+  if (find.byType(WorkoutCompletionScreen).evaluate().isNotEmpty) {
+    await _scroll(
+        tester,
+        waits,
+        find.descendant(
+          of: find.byKey(WorkoutCompletionScreen.listKey),
+          matching: find.textContaining(RegExp(
+              r'^(Saving\.\.\.|Saved|Offline — saved on this device|Save failed|Newer progress restored)$')),
+        ),
+        250,
+        'reveal save status before grade');
+    await _wait(
+        tester,
+        waits,
+        find.descendant(
+          of: find.byKey(WorkoutCompletionScreen.listKey),
+          matching: find.text('Saved'),
+        ),
+        'save settled before grade');
+  }
+  await _tap(
+      tester,
+      waits,
+      find.descendant(
+          of: finder, matching: find.byType(DropdownButton<String>)),
+      'open canonical grade dropdown');
   final option = await waits.runStep('reveal canonical grade $grade',
       () => revealDropdownOption(tester, finder, grade));
-  await _tap(tester, waits, option, 'select canonical grade $grade');
+  await waits.runStep('select canonical grade $grade', () async {
+    await tester.ensureVisible(option);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(option);
+    await tester.pump(const Duration(milliseconds: 400));
+    await _wait(tester, waits, option, 'grade popup dismissed', absent: true);
+  });
 }
 
-Future<void> _selectRpe(WidgetTester tester, BrowserTestWaitContext waits,
-    Finder finder, int rpe) async {
-  await _tap(tester, waits, finder, 'open row RPE dropdown');
+@visibleForTesting
+Future<void> selectClimbingRpe(WidgetTester tester,
+    BrowserTestWaitContext waits, Finder finder, int rpe) async {
+  if (find.byType(WorkoutCompletionScreen).evaluate().isNotEmpty) {
+    await _scroll(
+        tester,
+        waits,
+        find.descendant(
+          of: find.byKey(WorkoutCompletionScreen.listKey),
+          matching: find.textContaining(RegExp(
+              r'^(Saving\.\.\.|Saved|Offline — saved on this device|Save failed|Newer progress restored)$')),
+        ),
+        250,
+        'reveal save status before RPE');
+    await _wait(
+        tester,
+        waits,
+        find.descendant(
+          of: find.byKey(WorkoutCompletionScreen.listKey),
+          matching: find.text('Saved'),
+        ),
+        'save settled before RPE');
+  }
+  await _tap(
+      tester,
+      waits,
+      find.descendant(of: finder, matching: find.byType(DropdownButton<int>)),
+      'open row RPE dropdown');
   final option = await waits.runStep(
       'reveal RPE $rpe', () => revealDropdownOption(tester, finder, rpe));
-  await _tap(tester, waits, option, 'record RPE $rpe');
+  await waits.runStep('record RPE $rpe', () async {
+    await tester.ensureVisible(option);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(option);
+    await tester.pump(const Duration(milliseconds: 400));
+    await _wait(tester, waits, option, 'RPE popup dismissed', absent: true);
+  });
 }

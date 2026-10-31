@@ -22,6 +22,8 @@ import 'package:stage5/features/workouts/presentation/workout_instance_providers
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
 import '../integration_test/support/list_test_utils.dart';
+import '../integration_test/support/browser_test_wait.dart';
+import '../integration_test/workout_climbing_canary_test.dart' as canary;
 
 void main() {
   late FakeFirebaseFirestore firestore;
@@ -497,6 +499,85 @@ void main() {
       throwsA(isA<StateError>().having((error) => error.message,
           'scrollable diagnostic', contains('expected one Scrollable'))),
     );
+  });
+
+  testWidgets(
+      'real canary selectors never scroll the workout with a popup open',
+      (tester) async {
+    tester.view.physicalSize = const Size(600, 320);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final sidebar = ScrollController();
+    addTearDown(sidebar.dispose);
+    await pumpScreen(tester, sidebarController: sidebar);
+    final waits = BrowserTestWaitContext(
+      identity: 'athlete',
+      testFile: 'test/climbing_completion_screen_test.dart',
+      artifactPath: '<widget regression>',
+      currentRoute: () => '/athlete/workouts/instance',
+    );
+    final scrollable = find
+        .descendant(
+          of: find.byKey(WorkoutCompletionScreen.listKey),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final position = tester.state<ScrollableState>(scrollable).position;
+    final barrierCount = find.byType(ModalBarrier).evaluate().length;
+    final movedWithPopup = <double>[];
+    void recordMovement() {
+      if (find.byType(ModalBarrier).evaluate().length > barrierCount) {
+        movedWithPopup.add(position.pixels);
+      }
+    }
+
+    position.addListener(recordMovement);
+    addTearDown(() => position.removeListener(recordMovement));
+    final circuitRpe = find.descendant(
+      of: find.byKey(const ValueKey<String>('row-1')),
+      matching: find.byType(DropdownButtonFormField<int>),
+    );
+    await canary.selectClimbingRpe(tester, waits, circuitRpe, 8);
+    expect(tester.widget<DropdownButtonFormField<int>>(circuitRpe).initialValue,
+        8);
+    final freeCard = find.ancestor(
+      of: find.text('Trainer note: Explore routes'),
+      matching: find.byType(ClimbingCompletionCard),
+    );
+    final add =
+        find.descendant(of: freeCard, matching: find.text('Add result row'));
+    await revealListTarget(tester, add, scrollable: scrollable);
+    await tester.tap(add);
+    await tester.pump(const Duration(milliseconds: 400));
+    final system = find.descendant(
+      of: freeCard,
+      matching: find.byType(DropdownButtonFormField<ClimbingGradingSystem>),
+    );
+    await canary.selectClimbingSystem(tester, waits, system);
+    expect(
+      tester
+          .widget<DropdownButtonFormField<ClimbingGradingSystem>>(system)
+          .initialValue,
+      ClimbingGradingSystem.yds,
+    );
+    final grade = find.descendant(
+      of: freeCard,
+      matching: find.byType(DropdownButtonFormField<String>),
+    );
+    await canary.selectClimbingGrade(tester, waits, grade, '5.13a');
+    expect(tester.widget<DropdownButtonFormField<String>>(grade).initialValue,
+        '5.13a');
+    final freeRpe = find.descendant(
+      of: freeCard,
+      matching: find.byType(DropdownButtonFormField<int>),
+    );
+    await canary.selectClimbingRpe(tester, waits, freeRpe, 7);
+    expect(
+        tester.widget<DropdownButtonFormField<int>>(freeRpe).initialValue, 7);
+    expect(movedWithPopup, isEmpty);
+    expect(sidebar.offset, 0);
+    await tester.pump(const Duration(milliseconds: 800));
   });
 }
 
