@@ -447,7 +447,10 @@ void main() {
 Future<void> _expectDrillVideo(WidgetTester tester,
         BrowserTestWaitContext waits, String blockId, String url) =>
     waits.runStep('verify pinned drill video $blockId', () async {
-      final finder = find.byKey(ValueKey('climbing-video-$blockId'));
+      final finder = find.descendant(
+        of: find.byKey(WorkoutCompletionScreen.listKey),
+        matching: find.byKey(ValueKey('climbing-video-$blockId')),
+      );
       await _wait(tester, waits, finder, 'drill video $blockId', reveal: true);
       expect(finder, findsOneWidget);
       expect(tester.widget<ExerciseVideoPreview>(finder).url, url);

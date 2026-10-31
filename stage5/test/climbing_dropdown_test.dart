@@ -78,4 +78,62 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(recorded, 10);
   });
+
+  testWidgets('popup target stays scoped when a sidebar follows its navigator',
+      (tester) async {
+    tester.view.physicalSize = const Size(600, 320);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var grade = '5.0';
+    final sidebar = ScrollController();
+    addTearDown(sidebar.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: Row(children: [
+        Expanded(
+          child: Navigator(
+            onGenerateRoute: (_) => MaterialPageRoute<void>(
+              builder: (_) => Scaffold(
+                body: SingleChildScrollView(
+                  child: StatefulBuilder(builder: (_, setState) {
+                    return ClimbingGradeField(
+                      system: ClimbingGradingSystem.yds,
+                      grade: grade,
+                      onChanged: (_, value) => setState(() => grade = value),
+                    );
+                  }),
+                ),
+              ),
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 120,
+          child: ListView(
+            key: const Key('sidebar'),
+            controller: sidebar,
+            children: const [
+              Text('5.13a'),
+              SizedBox(height: 2000),
+            ],
+          ),
+        ),
+      ]),
+    ));
+    final field = find.byType(DropdownButtonFormField<String>);
+    await tester.tap(field);
+    await tester.pump(const Duration(milliseconds: 400));
+    final sidebarScrollable = find.descendant(
+      of: find.byKey(const Key('sidebar')),
+      matching: find.byType(Scrollable),
+    );
+    expect(find.byType(Scrollable).last.evaluate().single,
+        same(sidebarScrollable.evaluate().single));
+    final target = await revealDropdownOption(tester, field, '5.13a');
+    expect(target.hitTestable(), findsOneWidget);
+    await tester.tap(target);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(grade, '5.13a');
+    expect(sidebar.offset, 0);
+  });
 }

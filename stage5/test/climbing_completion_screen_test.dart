@@ -420,7 +420,17 @@ void main() {
     final originalController = tester
         .widget<ListView>(find.byKey(WorkoutCompletionScreen.listKey))
         .controller;
-    final video = find.byKey(const ValueKey('climbing-video-circuit'));
+    final video = find.descendant(
+      of: find.byKey(WorkoutCompletionScreen.listKey),
+      matching: find.byKey(const ValueKey('climbing-video-circuit')),
+    );
+    expect(
+      find.descendant(
+        of: find.byType(Scrollable).last,
+        matching: find.byKey(const ValueKey('climbing-video-circuit')),
+      ),
+      findsNothing,
+    );
     await revealListTarget(
         tester, find.text('3 × V2 · Max 2 attempts per climb'),
         scrollable: scrollable);
