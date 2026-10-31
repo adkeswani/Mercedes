@@ -10,6 +10,7 @@ import 'package:stage5/features/exercises/presentation/exercise_media_widgets.da
 import 'package:stage5/features/workouts/domain/climbing.dart';
 import 'package:stage5/features/workouts/presentation/climbing_completion_card.dart';
 import 'package:stage5/features/workouts/presentation/workout_completion_screen.dart';
+import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
 import 'package:stage5/main.dart' as app;
 
 import 'support/browser_test_wait.dart';
@@ -495,7 +496,49 @@ Future<void> _wait(WidgetTester tester, BrowserTestWaitContext waits,
   await waits.waitForCondition(
     condition: label,
     isSatisfied: () => finder.evaluate().isEmpty == absent,
-    pump: () => tester.pump(const Duration(milliseconds: 100)),
+    pump: () async {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (label.startsWith('save settled before') &&
+          find
+              .descendant(
+                of: find.byKey(WorkoutCompletionScreen.listKey),
+                matching: find.text('Newer progress restored'),
+              )
+              .evaluate()
+              .isNotEmpty) {
+        await waits.runStep('inspect and capture contested climbing draft',
+            () async {
+          final screen = find.byType(WorkoutCompletionScreen);
+          final instanceId =
+              tester.widget<WorkoutCompletionScreen>(screen).instanceId;
+          final container = ProviderScope.containerOf(tester.element(screen));
+          final clientId = container.read(workoutDraftClientIdProvider);
+          final local = await container
+              .read(workoutDraftLocalStoreProvider)
+              .read(instanceId);
+          final server = await FirebaseFirestore.instance
+              .collection('workoutInstances')
+              .doc(instanceId)
+              .collection('completionDrafts')
+              .doc('current')
+              .get(_server);
+          if (tester.binding is IntegrationTestWidgetsFlutterBinding) {
+            await _reveal(
+                tester,
+                find.text(
+                    'Another tab saved newer progress. Its draft was restored.'));
+            await (tester.binding as IntegrationTestWidgetsFlutterBinding)
+                .takeScreenshot('athlete-climbing-draft-conflict');
+          }
+          throw StateError(
+              'Contested draft requires review, not a Saved fallback: '
+              'instance=$instanceId currentClient=$clientId '
+              'localClient=${local?.clientId} localRevision=${local?.revision} '
+              'serverClient=${server.data()?['clientId']} '
+              'serverRevision=${server.data()?['revision']}');
+        });
+      }
+    },
     timeout: const Duration(seconds: 30),
     details: () =>
         'Visible: ${find.byType(Text).evaluate().map((e) => (e.widget as Text).data).whereType<String>().take(25).join(' | ')}',

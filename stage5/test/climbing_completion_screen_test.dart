@@ -14,6 +14,7 @@ import 'package:stage5/features/workouts/data/workout_draft_local_store_contract
 import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
 import 'package:stage5/features/workouts/data/workout_template_repository.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
+import 'package:stage5/features/workouts/domain/climbing_completion_input.dart';
 import 'package:stage5/features/workouts/domain/workout_completion_draft.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/climbing_completion_card.dart';
@@ -122,8 +123,8 @@ void main() {
         GoRouter(initialLocation: '/athlete/workouts/instance', routes: [
       GoRoute(
           path: '/athlete/workouts/:id',
-          builder: (_, __) =>
-              const WorkoutCompletionScreen(instanceId: 'instance')),
+          builder: (_, state) =>
+              WorkoutCompletionScreen(instanceId: state.pathParameters['id']!)),
       GoRoute(
           path: '/athlete/today',
           builder: (_, __) => const Scaffold(body: Text('Done'))),
@@ -579,6 +580,157 @@ void main() {
     expect(sidebar.offset, 0);
     await tester.pump(const Duration(milliseconds: 800));
   });
+
+  testWidgets(
+      'changing workout reloads its own draft without carrying conflict',
+      (tester) async {
+    await pumpScreen(tester);
+    final repository = container.read(workoutCompletionDraftRepositoryProvider);
+    final other = WorkoutCompletionDraft(
+      instanceId: 'instance',
+      athleteId: 'athlete',
+      rpe: 9,
+      durationMinutes: 60,
+      revision: 20,
+      clientId: 'other-tab',
+      updatedAt: DateTime.utc(2026, 10, 31, 12),
+      sourceRoute: '/athlete/workouts/instance',
+      athleteNotes: 'Authoritative other-tab notes',
+      slotInputs: {
+        'circuit-slot': initialClimbingInput(circuit),
+        'free-slot': initialClimbingInput(free),
+      },
+    );
+    await repository.save(other);
+    final notes =
+        find.widgetWithText(TextFormField, 'Climbing note (optional)').first;
+    await tester.ensureVisible(notes);
+    await tester.enterText(notes, 'Contested first workout edit');
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    final scrollable = find
+        .descendant(
+          of: find.byKey(WorkoutCompletionScreen.listKey),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await revealListTarget(tester,
+        find.text('Another tab saved newer progress. Its draft was restored.'),
+        scrollable: scrollable);
+
+    final second = FreeClimbingBlock(
+      blockId: 'second-free',
+      sortOrder: 0,
+      slotId: 'second-free-slot',
+      notes: 'Second workout has no prescribed rows',
+      videoUrl: 'https://example.test/second-free-drill.mp4',
+    );
+    await firestore.collection('workoutTemplates').doc('second-workout').set({
+      'createdBy': 'trainer',
+      'ownerId': 'trainer',
+      'currentVersion': 0,
+    });
+    await container.read(workoutTemplateRepositoryProvider).publishVersion(
+      templateId: 'second-workout',
+      userId: 'trainer',
+      blocks: [second],
+    );
+    await firestore.collection('workoutInstances').doc('second-instance').set({
+      'programId': 'program',
+      'athleteId': 'athlete',
+      'assignedBy': 'trainer',
+      'workoutTemplateId': 'second-workout',
+      'workoutTemplateVersion': 1,
+      'scheduledDate': '2026-10-31',
+      'status': 'scheduled',
+      'actualsStorageFormat': 'slotResultsSubcollection',
+      'actualSlotIds': <String>[],
+    });
+    final secondInput = initialClimbingInput(second)
+      ..['notes'] = 'Second draft note';
+    final secondDraft = WorkoutCompletionDraft(
+      instanceId: 'second-instance',
+      athleteId: 'athlete',
+      rpe: 4,
+      durationMinutes: 30,
+      revision: 30,
+      clientId: 'climbing-test-tab',
+      updatedAt: DateTime.utc(2026, 10, 31, 13),
+      sourceRoute: '/athlete/workouts/second-instance',
+      athleteNotes: 'Second workout notes',
+      slotInputs: {'second-free-slot': secondInput},
+    );
+    await repository.save(secondDraft);
+    final screen = find.byType(WorkoutCompletionScreen);
+    final originalState = tester.state(screen);
+    GoRouter.of(tester.element(screen)).go('/athlete/workouts/second-instance');
+    await tester.pumpAndSettle();
+    expect(tester.state(screen), same(originalState));
+    expect(find.text('Trainer note: Second workout has no prescribed rows'),
+        findsOneWidget);
+    expect(
+        find.textContaining('Another tab saved newer progress'), findsNothing);
+    final secondNotes =
+        find.widgetWithText(TextFormField, 'Climbing note (optional)');
+    expect(tester.widget<TextFormField>(secondNotes).initialValue,
+        'Second draft note');
+    await tester.ensureVisible(secondNotes);
+    await tester.enterText(secondNotes, 'Latest second workout note');
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    await canary.selectClimbingRpe(
+      tester,
+      BrowserTestWaitContext(
+        identity: 'athlete',
+        testFile: 'test/climbing_completion_screen_test.dart',
+        artifactPath: '<workout transition regression>',
+        currentRoute: () => '/athlete/workouts/second-instance',
+      ),
+      find.byType(DropdownButtonFormField<int>),
+      6,
+    );
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    final restored = await repository.load(
+      instanceId: 'second-instance',
+      athleteId: 'athlete',
+      currentClientId: 'climbing-test-tab',
+    );
+    expect(restored.kind, WorkoutDraftRestoreKind.server);
+    expect(restored.draft!.revision, 32);
+    expect(restored.draft!.clientId, 'climbing-test-tab');
+    expect(restored.draft!.slotInputs.keys, ['second-free-slot']);
+    expect(
+        restored.draft!.slotInputs['second-free-slot']!['freeRows'], isEmpty);
+    expect(restored.draft!.slotInputs['second-free-slot']!['rpe'], 6);
+    expect(restored.draft!.slotInputs['second-free-slot']!['notes'],
+        'Latest second workout note');
+    final firstPrimary = await firestore
+        .collection('workoutInstances')
+        .doc('instance')
+        .collection('completionDrafts')
+        .doc('current')
+        .get();
+    expect(firstPrimary.data()!['revision'], 20);
+    expect(firstPrimary.data()!['clientId'], 'other-tab');
+    final secondPrimary = await firestore
+        .collection('workoutInstances')
+        .doc('second-instance')
+        .collection('completionDrafts')
+        .doc('current')
+        .get();
+    final secondChild = await secondPrimary.reference
+        .collection('climbingInputs')
+        .doc('second-free-slot')
+        .get();
+    expect(secondPrimary.data()!['revision'], 32);
+    expect(secondChild.data()!['revision'], 32);
+    expect(secondChild.data()!['rpe'], 6);
+    expect(secondChild.data()!['clientId'], 'climbing-test-tab');
+    expect(secondChild.data()!['notes'], 'Latest second workout note');
+    expect((await store.read('instance'))!.clientId, 'other-tab');
+    expect((await store.read('second-instance'))!.revision, 32);
+  });
 }
 
 class _User extends Fake implements User {
@@ -589,13 +741,19 @@ class _User extends Fake implements User {
 
 class _MemoryStore implements WorkoutDraftLocalStore {
   WorkoutCompletionDraft? draft;
+  final _drafts = <String, WorkoutCompletionDraft>{};
   @override
-  Future<WorkoutCompletionDraft?> read(String instanceId) async => draft;
+  Future<WorkoutCompletionDraft?> read(String instanceId) async =>
+      _drafts[instanceId];
   @override
   Future<void> write(WorkoutCompletionDraft value) async {
     draft = WorkoutCompletionDraft.fromMap(value.toLocalMap());
+    _drafts[value.instanceId] = draft!;
   }
 
   @override
-  Future<void> delete(String instanceId) async => draft = null;
+  Future<void> delete(String instanceId) async {
+    _drafts.remove(instanceId);
+    if (draft?.instanceId == instanceId) draft = null;
+  }
 }

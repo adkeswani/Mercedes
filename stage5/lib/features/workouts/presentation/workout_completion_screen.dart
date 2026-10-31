@@ -56,6 +56,7 @@ class _WorkoutCompletionScreenState
   bool _restoring = true;
   String? _recoveryMessage;
   String? _loadMessage;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -63,6 +64,31 @@ class _WorkoutCompletionScreenState
     WidgetsBinding.instance.addObserver(this);
     _notesController.addListener(_scheduleSave);
     _loadInstance();
+  }
+
+  @override
+  void didUpdateWidget(WorkoutCompletionScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.instanceId == widget.instanceId) return;
+    _saveDebounce?.cancel();
+    _restoring = true;
+    _notesController.clear();
+    _rpe = 5;
+    _durationMinutes = 45;
+    _revision = 0;
+    _isLoading = false;
+    _instance = null;
+    _isAthlete = false;
+    _blocks = [];
+    _actuals.clear();
+    _slotInputs.clear();
+    _climbingRestoreRevision++;
+    _loadState = _WorkoutLoadState.loading;
+    _saveState = _DraftSaveState.saved;
+    _recoveryMessage = null;
+    _loadMessage = null;
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    unawaited(_loadInstance());
   }
 
   @override
@@ -86,9 +112,12 @@ class _WorkoutCompletionScreenState
   }
 
   Future<void> _loadInstance() async {
+    final instanceId = widget.instanceId;
+    final generation = ++_loadGeneration;
     try {
       final repo = ref.read(workoutInstanceRepositoryProvider);
-      final instance = await repo.getById(widget.instanceId);
+      final instance = await repo.getById(instanceId);
+      if (!mounted || generation != _loadGeneration) return;
       if (instance == null) {
         if (mounted) {
           setState(() => _loadState = _WorkoutLoadState.notFound);
@@ -125,7 +154,9 @@ class _WorkoutCompletionScreenState
               currentClientId: currentClientId,
             );
       }
-      if (!mounted || widget.instanceId != instance.id) {
+      if (!mounted ||
+          generation != _loadGeneration ||
+          widget.instanceId != instance.id) {
         return;
       }
       setState(() {
@@ -155,7 +186,7 @@ class _WorkoutCompletionScreenState
         _restoring = false;
       });
     } catch (error) {
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
           _loadState = _WorkoutLoadState.error;
           _loadMessage = error.toString();
@@ -194,6 +225,7 @@ class _WorkoutCompletionScreenState
   }
 
   Future<void> _saveDraft() async {
+    final generation = _loadGeneration;
     final instance = _instance;
     final athleteId = ref.read(authStateProvider).value?.uid;
     if (instance == null ||
@@ -226,6 +258,7 @@ class _WorkoutCompletionScreenState
       final result =
           await ref.read(workoutCompletionDraftRepositoryProvider).save(draft);
       if (!mounted ||
+          generation != _loadGeneration ||
           widget.instanceId != instance.id ||
           revision != _revision ||
           _isLoading) {
@@ -268,6 +301,7 @@ class _WorkoutCompletionScreenState
       });
     } catch (_) {
       if (mounted &&
+          generation == _loadGeneration &&
           widget.instanceId == instance.id &&
           revision == _revision &&
           !_isLoading) {
@@ -281,6 +315,8 @@ class _WorkoutCompletionScreenState
   }
 
   Future<void> _complete() async {
+    final generation = _loadGeneration;
+    final instanceId = widget.instanceId;
     _saveDebounce?.cancel();
     setState(() => _isLoading = true);
     try {
@@ -290,7 +326,7 @@ class _WorkoutCompletionScreenState
         throw StateError('A signed-in athlete is required');
       }
       await repo.completeWorkout(
-        instanceId: widget.instanceId,
+        instanceId: instanceId,
         athleteId: athleteId,
         rpe: _rpe,
         durationMinutes: _durationMinutes,
@@ -308,11 +344,11 @@ class _WorkoutCompletionScreenState
       await ref
           .read(workoutCompletionDraftRepositoryProvider)
           .clearLocalAfterCompletion(
-            instanceId: widget.instanceId,
+            instanceId: instanceId,
             athleteId: athleteId,
           );
 
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Workout completed! 💪')),
         );
@@ -323,13 +359,13 @@ class _WorkoutCompletionScreenState
         }
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed: $e')),
         );
       }
     } finally {
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() => _isLoading = false);
       }
     }
