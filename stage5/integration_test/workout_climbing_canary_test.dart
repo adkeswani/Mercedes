@@ -7,6 +7,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:stage5/app.dart';
 import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/features/exercises/presentation/exercise_media_widgets.dart';
+import 'package:stage5/features/workouts/data/workout_completion_draft_repository.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
 import 'package:stage5/features/workouts/presentation/climbing_completion_card.dart';
 import 'package:stage5/features/workouts/presentation/workout_completion_screen.dart';
@@ -17,6 +18,7 @@ import 'support/browser_test_wait.dart';
 import 'support/dropdown_test_utils.dart';
 import 'support/list_test_utils.dart';
 import 'support/router_test_utils.dart';
+import 'support/workout_draft_diagnostics.dart';
 
 const _testFile = 'integration_test/workout_climbing_canary_test.dart';
 const _artifactPath = String.fromEnvironment('BROWSER_TEST_ARTIFACT_PATH',
@@ -26,6 +28,7 @@ const _circuitDrill = 'https://example.test/climbing-circuit-drill.mp4';
 const _freeDrill = 'https://example.test/free-climbing-drill.mp4';
 const _replacementDrill = 'https://example.test/replaced-circuit-drill.mp4';
 const _server = GetOptions(source: Source.server);
+WorkoutDraftDiagnostics _draftDiagnostics = WorkoutDraftDiagnostics();
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -476,8 +479,25 @@ GoRouter _router(WidgetTester tester) => mountedAppRouter(tester);
 Future<void> _login(WidgetTester tester, BrowserTestWaitContext waits) async {
   await waits.runStep('initialize emulators', app.initializeMercedesApp,
       timeout: const Duration(seconds: 30));
-  await waits.runStep('mount application',
-      () => tester.pumpWidget(const ProviderScope(child: MercedesApp())));
+  final diagnostics = WorkoutDraftDiagnostics();
+  _draftDiagnostics = diagnostics;
+  await waits.runStep(
+      'mount application',
+      () => tester.pumpWidget(ProviderScope(
+            overrides: [
+              workoutCompletionDraftRepositoryProvider.overrideWith((ref) {
+                final currentClientId = ref.read(workoutDraftClientIdProvider);
+                return WorkoutCompletionDraftRepository(
+                  localStore: ref.watch(workoutDraftLocalStoreProvider),
+                  onDiagnostic: (event) => diagnostics.record({
+                    ...event,
+                    'currentClientId': currentClientId,
+                  }),
+                );
+              }),
+            ],
+            child: const MercedesApp(),
+          )));
   await _wait(
       tester, waits, find.byKey(browserSmokeLoginButtonKey), 'emulator login');
   await _tap(
@@ -493,56 +513,49 @@ Future<void> _wait(WidgetTester tester, BrowserTestWaitContext waits,
     await _wait(tester, waits, _workoutScrollables(), 'workout list ready');
     await waits.runStep('reveal $label', () => _reveal(tester, finder));
   }
-  await waits.waitForCondition(
-    condition: label,
-    isSatisfied: () => finder.evaluate().isEmpty == absent,
-    pump: () async {
-      await tester.pump(const Duration(milliseconds: 100));
-      if (label.startsWith('save settled before') &&
-          find
-              .descendant(
-                of: find.byKey(WorkoutCompletionScreen.listKey),
-                matching: find.text('Newer progress restored'),
-              )
-              .evaluate()
-              .isNotEmpty) {
-        await waits.runStep('inspect and capture contested climbing draft',
-            () async {
+  try {
+    await waits.waitForCondition(
+      condition: label,
+      isSatisfied: () => finder.evaluate().isEmpty == absent,
+      pump: () async {
+        await tester.pump(const Duration(milliseconds: 100));
+        if (label.startsWith('save settled before') &&
+            find
+                .descendant(
+                  of: find.byKey(WorkoutCompletionScreen.listKey),
+                  matching: find.text('Newer progress restored'),
+                )
+                .evaluate()
+                .isNotEmpty) {
           final screen = find.byType(WorkoutCompletionScreen);
           final instanceId =
               tester.widget<WorkoutCompletionScreen>(screen).instanceId;
           final container = ProviderScope.containerOf(tester.element(screen));
-          final clientId = container.read(workoutDraftClientIdProvider);
-          final local = await container
-              .read(workoutDraftLocalStoreProvider)
-              .read(instanceId);
-          final server = await FirebaseFirestore.instance
-              .collection('workoutInstances')
-              .doc(instanceId)
-              .collection('completionDrafts')
-              .doc('current')
-              .get(_server);
-          if (tester.binding is IntegrationTestWidgetsFlutterBinding) {
-            await _reveal(
-                tester,
-                find.text(
-                    'Another tab saved newer progress. Its draft was restored.'));
-            await (tester.binding as IntegrationTestWidgetsFlutterBinding)
-                .takeScreenshot('athlete-climbing-draft-conflict');
-          }
-          throw StateError(
-              'Contested draft requires review, not a Saved fallback: '
-              'instance=$instanceId currentClient=$clientId '
-              'localClient=${local?.clientId} localRevision=${local?.revision} '
-              'serverClient=${server.data()?['clientId']} '
-              'serverRevision=${server.data()?['revision']}');
-        });
-      }
-    },
-    timeout: const Duration(seconds: 30),
-    details: () =>
-        'Visible: ${find.byType(Text).evaluate().map((e) => (e.widget as Text).data).whereType<String>().take(25).join(' | ')}',
-  );
+          throw _draftDiagnostics.conflictFailure(
+            workoutId: instanceId,
+            currentClientId: container.read(workoutDraftClientIdProvider),
+          );
+        }
+      },
+      timeout: const Duration(seconds: 30),
+      details: () =>
+          'Visible: ${find.byType(Text).evaluate().map((e) => (e.widget as Text).data).whereType<String>().take(25).join(' | ')}',
+    );
+  } on WorkoutDraftConflictFailure catch (failure, stack) {
+    await waits.runStep(
+      'report contested climbing draft (supplementary screenshot)',
+      () => _draftDiagnostics.captureAndFail(
+        failure,
+        stack,
+        capture: tester.binding is IntegrationTestWidgetsFlutterBinding
+            ? () async {
+                await (tester.binding as IntegrationTestWidgetsFlutterBinding)
+                    .takeScreenshot('athlete-climbing-draft-conflict');
+              }
+            : null,
+      ),
+    );
+  }
 }
 
 Finder _workoutScrollables() => find.descendant(

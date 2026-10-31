@@ -87,6 +87,73 @@ void main() {
     });
   }
 
+  test(
+      'diagnostics retain exact attempted and authoritative conflict revisions',
+      () async {
+    await repository.save(draft(revision: 8, clientId: 'other-tab'));
+    final events = <Map<String, Object?>>[];
+    repository = WorkoutCompletionDraftRepository(
+      firestore: firestore,
+      localStore: localStore,
+      onDiagnostic: events.add,
+    );
+    final result = await repository.save(draft(revision: 4));
+    expect(result.status, WorkoutDraftSaveStatus.conflict);
+    final decision =
+        events.singleWhere((event) => event['phase'] == 'transaction-decision');
+    final returned =
+        events.singleWhere((event) => event['phase'] == 'save-result');
+    for (final event in [decision, returned]) {
+      expect(event['clientId'], 'client-a');
+      expect(event['revision'], 4);
+      expect(event['serverClientId'], 'other-tab');
+      expect(event['serverRevision'], 8);
+      expect(event['status'], 'conflict');
+    }
+    expect(decision['transactionAttempt'], 1);
+    expect(events.map((event) => event['phase']), [
+      'save-start',
+      'save-local-written',
+      'transaction-start',
+      'transaction-decision',
+      'save-result',
+      'save-authoritative-local-written',
+      'save-return',
+    ]);
+    expect(events.every((event) => event['operation'] == 1), isTrue);
+    expect(events.join(), isNot(contains('athlete-1')));
+  });
+
+  test(
+      'diagnostics distinguish historical-client restore sync from current tab',
+      () async {
+    localStore.value = draft(revision: 8, clientId: 'historical-tab');
+    await repository.save(draft(revision: 4));
+    localStore.value = draft(revision: 8, clientId: 'historical-tab');
+    final events = <Map<String, Object?>>[];
+    repository = WorkoutCompletionDraftRepository(
+      firestore: firestore,
+      localStore: localStore,
+      onDiagnostic: events.add,
+    );
+    await repository.load(
+      instanceId: 'instance-1',
+      athleteId: 'athlete-1',
+      currentClientId: 'client-a',
+    );
+    final sync =
+        events.singleWhere((event) => event['phase'] == 'load-sync-local');
+    expect(sync['operation'], 1);
+    expect(sync['currentClientId'], 'client-a');
+    expect(sync['clientId'], 'historical-tab');
+    expect(sync['revision'], 8);
+    final save = events.singleWhere((event) => event['phase'] == 'save-start');
+    expect(save['operation'], 2);
+    expect(save['clientId'], 'historical-tab');
+    expect(events.indexOf(sync), lessThan(events.indexOf(save)));
+    expect(localStore.value!.clientId, 'historical-tab');
+  });
+
   test('rejects climbing recovery against an unpublished pinned version',
       () async {
     final value = await climbingDraft(revision: 2);

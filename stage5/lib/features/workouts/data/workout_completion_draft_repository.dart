@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:stage5/features/workouts/data/workout_draft_local_store.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
@@ -48,11 +49,40 @@ class WorkoutCompletionDraftRepository {
   WorkoutCompletionDraftRepository({
     FirebaseFirestore? firestore,
     WorkoutDraftLocalStore? localStore,
+    this.onDiagnostic,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _localStore = localStore ?? createWorkoutDraftLocalStore();
 
   final FirebaseFirestore _firestore;
   final WorkoutDraftLocalStore _localStore;
+
+  @visibleForTesting
+  final void Function(Map<String, Object?> event)? onDiagnostic;
+  int _diagnosticOperation = 0;
+
+  void _diagnose(
+    int operation,
+    String phase,
+    String instanceId, {
+    WorkoutCompletionDraft? draft,
+    WorkoutCompletionDraft? server,
+    String? currentClientId,
+    int? transactionAttempt,
+    WorkoutDraftSaveStatus? status,
+  }) {
+    onDiagnostic?.call({
+      'operation': operation,
+      'phase': phase,
+      'workoutId': instanceId,
+      if (draft != null) 'clientId': draft.clientId,
+      if (draft != null) 'revision': draft.revision,
+      if (server != null) 'serverClientId': server.clientId,
+      if (server != null) 'serverRevision': server.revision,
+      if (currentClientId != null) 'currentClientId': currentClientId,
+      if (transactionAttempt != null) 'transactionAttempt': transactionAttempt,
+      if (status != null) 'status': status.name,
+    });
+  }
 
   DocumentReference<Map<String, dynamic>> _instance(String instanceId) =>
       _firestore.collection('workoutInstances').doc(instanceId);
@@ -101,6 +131,9 @@ class WorkoutCompletionDraftRepository {
     required String athleteId,
     required String currentClientId,
   }) async {
+    final operation = ++_diagnosticOperation;
+    _diagnose(operation, 'load-start', instanceId,
+        currentClientId: currentClientId);
     if (currentClientId.isEmpty) {
       throw StateError('A workout draft client ID is required');
     }
@@ -120,6 +153,8 @@ class WorkoutCompletionDraftRepository {
       await _localStore.delete(instanceId);
       local = null;
     }
+    _diagnose(operation, 'load-local-read', instanceId,
+        draft: local, currentClientId: currentClientId);
 
     try {
       final instance = await _instance(instanceId).get();
@@ -156,6 +191,8 @@ class WorkoutCompletionDraftRepository {
       }
       rethrow;
     }
+    _diagnose(operation, 'load-server-read', instanceId,
+        draft: local, server: server, currentClientId: currentClientId);
 
     final result = reconcileWorkoutDrafts(
       local: local,
@@ -163,6 +200,8 @@ class WorkoutCompletionDraftRepository {
       currentClientId: currentClientId,
     );
     final selected = result.draft;
+    _diagnose(operation, 'load-selected', instanceId,
+        draft: selected, server: server, currentClientId: currentClientId);
     if (selected != null &&
         (local == null || compareWorkoutDrafts(selected, local) != 0)) {
       await _localStore.write(selected);
@@ -178,6 +217,8 @@ class WorkoutCompletionDraftRepository {
     }
     if (local != null &&
         (server == null || compareWorkoutDrafts(local, server) > 0)) {
+      _diagnose(operation, 'load-sync-local', instanceId,
+          draft: local, server: server, currentClientId: currentClientId);
       final synchronized = await save(local);
       if (synchronized.status == WorkoutDraftSaveStatus.conflict &&
           synchronized.authoritativeDraft != null) {
@@ -214,12 +255,19 @@ class WorkoutCompletionDraftRepository {
   Future<WorkoutDraftSaveResult> save(
     WorkoutCompletionDraft draft,
   ) async {
+    final operation = ++_diagnosticOperation;
+    _diagnose(operation, 'save-start', draft.instanceId, draft: draft);
     draft.validate();
     await _localStore.write(draft);
+    _diagnose(operation, 'save-local-written', draft.instanceId, draft: draft);
     try {
+      var transactionAttempt = 0;
       final result = await _firestore.runTransaction<WorkoutDraftSaveResult>((
         transaction,
       ) async {
+        transactionAttempt++;
+        _diagnose(operation, 'transaction-start', draft.instanceId,
+            draft: draft, transactionAttempt: transactionAttempt);
         final instanceSnapshot = await transaction.get(
           _instance(draft.instanceId),
         );
@@ -238,6 +286,11 @@ class WorkoutCompletionDraftRepository {
           draft: draft,
           server: server,
         );
+        _diagnose(operation, 'transaction-decision', draft.instanceId,
+            draft: draft,
+            server: server,
+            transactionAttempt: transactionAttempt,
+            status: decision.result.status);
         if (!decision.shouldWrite) {
           return decision.result;
         }
@@ -314,11 +367,20 @@ class WorkoutCompletionDraftRepository {
         return decision.result;
       });
       final authoritative = result.authoritativeDraft;
+      _diagnose(operation, 'save-result', draft.instanceId,
+          draft: draft, server: authoritative, status: result.status);
       if (authoritative != null) {
         await _localStore.write(authoritative);
+        _diagnose(
+            operation, 'save-authoritative-local-written', draft.instanceId,
+            draft: draft, server: authoritative, status: result.status);
       }
+      _diagnose(operation, 'save-return', draft.instanceId,
+          draft: draft, server: authoritative, status: result.status);
       return result;
     } on FirebaseException {
+      _diagnose(operation, 'save-return', draft.instanceId,
+          draft: draft, status: WorkoutDraftSaveStatus.offline);
       return const WorkoutDraftSaveResult(WorkoutDraftSaveStatus.offline);
     }
   }
