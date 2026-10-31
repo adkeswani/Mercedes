@@ -6,6 +6,7 @@ import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/library/data/library_serialization.dart';
 import 'package:stage5/features/library/domain/library_metadata.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
+import 'package:stage5/features/workouts/domain/climbing.dart';
 
 /// Firestore repository for workout template CRUD and version publishing.
 ///
@@ -170,11 +171,13 @@ class WorkoutTemplateRepository {
   }
 
   Future<void> _verifyExerciseReferences(
-    List<ExerciseSlot> exerciseSlots,
+    List<WorkoutBlock> blocks,
     String userId,
   ) async {
     final checked = <String>{};
-    for (final slot in exerciseSlots) {
+    for (final slot in blocks
+        .where((b) => b is! FreeClimbingBlock)
+        .expand((b) => b.slots)) {
       slot.validate();
       final key = '${slot.exerciseId}:${slot.exerciseVersion}';
       if (!checked.add(key)) continue;
@@ -250,7 +253,7 @@ class WorkoutTemplateRepository {
     );
     version.validate();
     await _verifyOwnership(templateId, userId);
-    await _verifyExerciseReferences(version.exerciseSlots, userId);
+    await _verifyExerciseReferences(version.blocks, userId);
     final headerRef = _collection.doc(templateId);
     final headerSnap = await headerRef.get();
     if (!headerSnap.exists || headerSnap.data() == null) {
@@ -290,6 +293,11 @@ class WorkoutTemplateRepository {
       'slotCount': version.exerciseSlots.length,
       'blockIds': typedBlocks.map((block) => block.blockId).toList(),
       'slotIds': version.exerciseSlots.map((slot) => slot.slotId).toList(),
+      'climbingSlotIds': [
+        for (final block in typedBlocks)
+          if (block is ClimbingCircuitBlock || block is FreeClimbingBlock)
+            block.slots.single.slotId,
+      ],
       'blocks': blockMaps,
       'slots': slotMaps,
       'childWorkouts': <Map<String, dynamic>>[],
@@ -307,6 +315,8 @@ class WorkoutTemplateRepository {
       final matches = data['publishState'] == 'draft' &&
           jsonEncode(data['blockIds']) == jsonEncode(draftData['blockIds']) &&
           jsonEncode(data['slotIds']) == jsonEncode(draftData['slotIds']) &&
+          jsonEncode(data['climbingSlotIds']) ==
+              jsonEncode(draftData['climbingSlotIds']) &&
           jsonEncode(data['blocks']) == jsonEncode(draftData['blocks']) &&
           jsonEncode(data['slots']) == jsonEncode(draftData['slots']);
       if (!matches) {
@@ -748,7 +758,14 @@ class WorkoutTemplateRepository {
           'grade': block.grade,
           'color': block.color,
           'targetAttempts': block.targetAttempts,
+          if (block.gradingSystem != null)
+            'gradingSystem': block.gradingSystem!.name,
         });
+      case ClimbingCircuitBlock():
+        map['rows'] = block.rows.map((row) => row.toMap()).toList();
+        map['rowIds'] = block.rows.map((row) => row.rowId).toList();
+      case FreeClimbingBlock():
+        break;
     }
     return map;
   }
@@ -803,10 +820,20 @@ class WorkoutTemplateRepository {
           route: slots.single,
           grade: block.grade,
           color: block.color,
+          gradingSystem: block.gradingSystem,
           targetAttempts: block.targetAttempts,
           title: block.title,
           notes: block.notes,
         ),
+      ClimbingCircuitBlock() => ClimbingCircuitBlock(
+          blockId: block.blockId,
+          sortOrder: block.sortOrder,
+          exercise: slots.single,
+          rows: block.rows,
+          title: block.title,
+          notes: block.notes,
+        ),
+      FreeClimbingBlock() => block.copyWithSortOrder(block.sortOrder),
     };
   }
 
@@ -863,10 +890,50 @@ class WorkoutTemplateRepository {
           route: slots.single,
           grade: data['grade'] as String? ?? '',
           color: data['color'] as String? ?? '',
+          gradingSystem: data['gradingSystem'] == null
+              ? null
+              : parseGradingSystem(data['gradingSystem']),
           targetAttempts: data['targetAttempts'] as int?,
           title: title,
           notes: notes,
         );
+      case 'climbingCircuit':
+        final block = ClimbingCircuitBlock(
+          blockId: blockId,
+          sortOrder: sortOrder,
+          exercise: slots.single,
+          rows: (data['rows'] as List)
+              .map((raw) => ClimbingCircuitRow.fromMap(
+                  Map<String, dynamic>.from(raw as Map)))
+              .toList(),
+          title: title,
+          notes: notes,
+        );
+        block.validate();
+        validateClimbingRowManifest(
+            data['rowIds'], block.rows.map((r) => r.rowId).toList());
+        return block;
+      case 'freeClimbing':
+        if (slots.length != 1 ||
+            slots.single.exerciseId != freeClimbingExerciseId ||
+            slots.single.exerciseVersion != 1 ||
+            slots.single.mode != ExerciseMode.reps ||
+            slots.single.sets != null ||
+            slots.single.reps != null ||
+            slots.single.durationSeconds != null ||
+            slots.single.weight != null ||
+            slots.single.restSeconds != null ||
+            slots.single.notes != null) {
+          throw StateError(
+              'Free climbing must contain only its built-in result slot');
+        }
+        return FreeClimbingBlock(
+          blockId: blockId,
+          sortOrder: sortOrder,
+          slotId: slots.single.slotId,
+          title: title,
+          notes: notes,
+        )..validate();
       case 'standardExercise':
       default:
         if (slots.length != 1) {

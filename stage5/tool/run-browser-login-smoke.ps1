@@ -1135,6 +1135,18 @@ Invoke-RestMethod `
     -ContentType 'application/json' `
     -Body $workspaceSeedBody | Out-Null
 
+. (Join-Path $PSScriptRoot 'seed-climbing-browser-fixtures.ps1')
+$climbingSeedBody = @{
+    writes = @(Get-ClimbingBrowserFixtureWrites `
+        -ProjectId $projectId -TrainerId $trainer.Uid -AthleteId $athlete.Uid `
+        -ProgramId $programId -ProgramInstanceId $programInstanceId `
+        -ExerciseId $climbingExerciseTemplateId -Timestamp $seedTimestamp `
+        -ScheduledDate $exerciseTypesDate)
+} | ConvertTo-Json -Depth 30
+Invoke-RestMethod -Method Post -Uri $commitUri `
+    -Headers @{ Authorization = 'Bearer owner' } `
+    -ContentType 'application/json' -Body $climbingSeedBody | Out-Null
+
 $selectedIdentity = if ($Identity -eq 'trainer') { $trainer } else { $athlete }
 $attempt = $env:BROWSER_SMOKE_ATTEMPT
 if ($attempt -and $attempt -ne '1') {

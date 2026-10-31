@@ -1589,19 +1589,7 @@ class WorkoutInstanceRepository {
   }
 
   Map<String, dynamic> _actualToMap(ExerciseActual actual) {
-    return {
-      'exerciseId': actual.exerciseId,
-      'mode': actual.mode.name,
-      'sets': actual.sets,
-      'reps': actual.reps,
-      'durationSeconds': actual.durationSeconds,
-      'weight': actual.weight,
-      'restSeconds': actual.restSeconds,
-      'attempts': actual.attempts,
-      'sent': actual.sent,
-      'roundsCompleted': actual.roundsCompleted,
-      'notes': actual.notes,
-    };
+    return actual.toMap();
   }
 
   Future<Map<String, ExerciseActual>> _readSlotResults(
@@ -1669,6 +1657,9 @@ class WorkoutInstanceRepository {
     Map<String, dynamic> data, {
     required String slotId,
   }) {
+    if (data['climbingType'] != null) {
+      return ExerciseActual.fromMap(data, slotId: slotId);
+    }
     return ExerciseActual(
       slotId: slotId,
       exerciseId: data['exerciseId'] as String? ?? '',
@@ -1740,6 +1731,9 @@ class WorkoutInstanceRepository {
           'Actual for slot $resolvedSlotId references the wrong exercise',
         );
       }
+      actual.validateForBlock(version.blocks.firstWhere(
+        (block) => block.slots.any((slot) => slot.slotId == resolvedSlotId),
+      ));
       if (result.containsKey(resolvedSlotId)) {
         throw ArgumentError('Only one actual is allowed per exercise slot');
       }
@@ -1747,6 +1741,12 @@ class WorkoutInstanceRepository {
         ..._actualToMap(actual),
         'slotOrder': pinned.slotOrder,
       };
+    }
+    for (final block in version.blocks) {
+      if ((block is ClimbingCircuitBlock || block is FreeClimbingBlock) &&
+          !result.containsKey(block.slots.single.slotId)) {
+        throw ArgumentError('Record a result for ${block.type.name}');
+      }
     }
     return result;
   }
@@ -1790,6 +1790,11 @@ class WorkoutInstanceRepository {
         );
       }
       if (draftSnapshot.exists) {
+        final climbingIds =
+            draftSnapshot.data()?['climbingSlotIds'] as List? ?? const [];
+        for (final slotId in climbingIds.cast<String>()) {
+          transaction.delete(draftRef.collection('climbingInputs').doc(slotId));
+        }
         transaction.delete(draftRef);
       }
       transaction.update(instanceRef, {

@@ -1,4 +1,6 @@
 import 'package:stage5/core/enums.dart';
+import 'package:stage5/features/workouts/domain/climbing.dart';
+import 'package:stage5/features/workouts/domain/workout_block.dart';
 
 Map<String, ExerciseActual> _actualsToSlotMap(List<ExerciseActual> actuals) {
   final result = <String, ExerciseActual>{};
@@ -281,7 +283,14 @@ class ExerciseActual {
     this.sent,
     this.roundsCompleted,
     this.notes,
+    this.climbingType,
+    this.rpe,
+    List<ClimbingCircuitResultRow>? circuitRows,
+    List<FreeClimbingResultRow>? freeRows,
   })  : slotId = slotId ?? 'legacy-result-$exerciseId',
+        circuitRows =
+            circuitRows == null ? null : List.unmodifiable(circuitRows),
+        freeRows = freeRows == null ? null : List.unmodifiable(freeRows),
         hasExplicitSlotId = slotId != null;
   final String slotId;
   final bool hasExplicitSlotId;
@@ -303,6 +312,112 @@ class ExerciseActual {
   /// completed within the block's time cap.
   final int? roundsCompleted;
   final String? notes;
+  final String? climbingType;
+  final int? rpe;
+  final List<ClimbingCircuitResultRow>? circuitRows;
+  final List<FreeClimbingResultRow>? freeRows;
+
+  Map<String, dynamic> toMap() {
+    if (climbingType != null) validate();
+    return {
+      'exerciseId': exerciseId,
+      'mode': mode.name,
+      if (climbingType == null) ...{
+        'sets': sets,
+        'reps': reps,
+        'durationSeconds': durationSeconds,
+        'weight': weight,
+        'restSeconds': restSeconds,
+        'attempts': attempts,
+        'sent': sent,
+        'roundsCompleted': roundsCompleted,
+      },
+      'notes': notes,
+      if (climbingType != null) ...{
+        'climbingType': climbingType,
+        'rpe': rpe,
+        'rowIds': [
+          for (final row in circuitRows ?? <ClimbingCircuitResultRow>[])
+            row.rowId,
+          for (final row in freeRows ?? <FreeClimbingResultRow>[]) row.rowId,
+        ],
+        if (circuitRows != null)
+          'circuitRows': circuitRows!.map((r) => r.toMap()).toList(),
+        if (freeRows != null)
+          'freeRows': freeRows!.map((r) => r.toMap()).toList(),
+      },
+    };
+  }
+
+  factory ExerciseActual.fromMap(Map<String, dynamic> data,
+      {required String slotId}) {
+    final actual = ExerciseActual(
+      slotId: slotId,
+      exerciseId: data['exerciseId'] as String,
+      mode: ExerciseMode.values.byName(data['mode'] as String),
+      sets: data['sets'] as int?,
+      reps: data['reps'] as String?,
+      durationSeconds: data['durationSeconds'] as int?,
+      weight: data['weight'] as String?,
+      restSeconds: data['restSeconds'] as int?,
+      attempts: data['attempts'] as int?,
+      sent: data['sent'] as bool?,
+      roundsCompleted: data['roundsCompleted'] as int?,
+      notes: data['notes'] as String?,
+      climbingType: data['climbingType'] as String?,
+      rpe: data['rpe'] as int?,
+      circuitRows: (data['circuitRows'] as List?)
+          ?.map((r) => ClimbingCircuitResultRow.fromMap(
+              Map<String, dynamic>.from(r as Map)))
+          .toList(),
+      freeRows: (data['freeRows'] as List?)
+          ?.map((r) => FreeClimbingResultRow.fromMap(
+              Map<String, dynamic>.from(r as Map)))
+          .toList(),
+    );
+    actual.validate();
+    if (actual.climbingType != null) {
+      validateClimbingRowManifest(data['rowIds'], [
+        for (final row in actual.circuitRows ?? <ClimbingCircuitResultRow>[])
+          row.rowId,
+        for (final row in actual.freeRows ?? <FreeClimbingResultRow>[])
+          row.rowId,
+      ]);
+    }
+    return actual;
+  }
+
+  void validateForBlock(WorkoutBlock block) {
+    validate();
+    if (mode != block.slots.first.mode) {
+      throw ArgumentError('Actual mode must match its pinned exercise slot');
+    }
+    if (block is ClimbingCircuitBlock) {
+      if (climbingType != 'climbingCircuit' ||
+          circuitRows == null ||
+          circuitRows!.length != block.rows.length) {
+        throw ArgumentError(
+            'Record completion for every prescribed climbing row');
+      }
+      for (var i = 0; i < block.rows.length; i++) {
+        if (circuitRows![i].rowId != block.rows[i].rowId) {
+          throw ArgumentError(
+              'Circuit result IDs must match the immutable prescription');
+        }
+      }
+    } else if (block is FreeClimbingBlock) {
+      if (climbingType != 'freeClimbing' || freeRows == null) {
+        throw ArgumentError(
+            'Free climbing requires a result; grade rows are optional');
+      }
+    } else if (climbingType != null ||
+        circuitRows != null ||
+        freeRows != null ||
+        rpe != null) {
+      throw ArgumentError(
+          'Climbing row results require a climbing circuit or free climbing block');
+    }
+  }
 
   /// Validates actual fields.
   void validate() {
@@ -329,6 +444,55 @@ class ExerciseActual {
     }
     if (roundsCompleted != null && roundsCompleted! < 0) {
       throw ArgumentError('roundsCompleted must be >= 0 when provided');
+    }
+    if (climbingType != null) {
+      if (!['climbingCircuit', 'freeClimbing'].contains(climbingType)) {
+        throw ArgumentError('Unknown climbing result type');
+      }
+      if (sets != null ||
+          reps != null ||
+          durationSeconds != null ||
+          weight != null ||
+          restSeconds != null ||
+          attempts != null ||
+          sent != null ||
+          roundsCompleted != null ||
+          mode != ExerciseMode.reps) {
+        throw ArgumentError('Climbing row results cannot infer other actuals');
+      }
+      validateClimbingNote(notes);
+      validateClimbingRpe(rpe);
+      if (climbingType == 'climbingCircuit' &&
+          (circuitRows == null ||
+              circuitRows!.isEmpty ||
+              freeRows != null ||
+              rpe != null)) {
+        throw ArgumentError(
+            'Circuit results require prescribed rows and per-row RPE');
+      }
+      if (climbingType == 'freeClimbing' &&
+          (freeRows == null || circuitRows != null)) {
+        throw ArgumentError(
+            'Free climbing results cannot contain prescribed rows');
+      }
+    } else if (rpe != null || circuitRows != null || freeRows != null) {
+      throw ArgumentError('Climbing results must identify their type');
+    }
+    final ids = <String>{};
+    if ((circuitRows?.length ?? 0) > maxClimbingRows ||
+        (freeRows?.length ?? 0) > maxClimbingRows) {
+      throw ArgumentError(
+          'At most $maxClimbingRows climbing rows are supported');
+    }
+    for (final row in circuitRows ?? <ClimbingCircuitResultRow>[]) {
+      row.validate();
+      if (!ids.add(row.rowId))
+        throw ArgumentError('Climbing result row IDs must be unique');
+    }
+    for (final row in freeRows ?? <FreeClimbingResultRow>[]) {
+      row.validate();
+      if (!ids.add(row.rowId))
+        throw ArgumentError('Climbing result row IDs must be unique');
     }
   }
 }

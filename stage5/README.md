@@ -79,8 +79,29 @@ Implemented in this slice:
   version. Replacement/removal is explicit. Private and unlisted videos remain
   unavailable until a future OAuth feature, and Firebase identity is never
   treated as YouTube channel ownership.
-- Immutable typed workout blocks for standard exercise work, timed intervals,
-  circuits, and climbing routes.
+- Immutable typed workout blocks and typed authoring editors for standard
+  exercises, timed intervals, circuits, climbing routes, AMRAP, climbing
+  circuits, and free climbing.
+- Climbing circuits prescribe up to nine stable-ID grade/count rows for one
+  exercise slot, with optional max attempts **per climb** and notes. Athletes
+  record a completion checkbox, optional note, and optional RPE (1–10) per row;
+  partial climb counts and actual attempts are not inferred.
+- Free climbing asks the trainer only for a note. Athlete grade/count result
+  rows are optional; a note and RPE (both optional) suffice. It uses one
+  reserved built-in result slot, not a trainer-created exercise template.
+- New climbing grades are canonical dropdown selections in explicit
+  difficulty order: V-scale (`VB`, `V0`–`V17`) or YDS (`5.0`–`5.9`,
+  `5.10a`–`5.15d`). New single-route authoring no longer requires color.
+  Existing arbitrary grade/color routes remain unchanged in immutable history.
+- Climbing result inputs, including unfinished free-row counts, recover from
+  athlete-only local/server drafts. Local drafts keep complete inline inputs;
+  server drafts store one `climbingInputs/{slotId}` child per climbing slot
+  beneath `completionDrafts/current`, supporting nine slots with nine rows
+  each. Atomic revision/client-ID and server-timestamp generations prevent
+  partial or mixed recovery. Completion validates pinned row identities,
+  writes immutable actuals, and deletes the primary draft and its children
+  transactionally. Completed details retain the original prescription and
+  pinned exercise instructions/media after newer versions are published.
 - Stable exercise-slot IDs that pin both the logical exercise ID and immutable
   exercise version for every occurrence.
 - Workout completion actuals keyed by slot ID so repeated exercises are
@@ -141,7 +162,9 @@ Compatibility behavior:
 - New typed versions stage an immutable manifest plus stable-ID block and slot
   children, then atomically seal the complete snapshot and advance the template
   header. Firestore rules validate manifest ID uniqueness, block cardinality,
-  completeness, and each owner-scoped exercise-version pin.
+  completeness, and each owner-scoped exercise-version pin. The checked
+  `climbingSlotIds` manifest requires circuit/free actuals at completion;
+  earlier versions retain their existing completion requirements.
 - Workout versions currently support up to nine blocks and nine exercise slots.
 - Existing list-backed completion actuals remain readable. Athlete-owned
   migration maps unique exercises, and complete repeated-exercise result sets,
@@ -154,10 +177,10 @@ Compatibility behavior:
   workout slot. Legacy synthesized slot IDs and Stage 4 list writes remain
   readable and migratable.
 - Workout draft schema version 1 is intentionally extensible through stable
-  slot IDs, but Stage 5 persists only fields currently editable in completion:
-  RPE, duration, notes, recovery position, and an empty slot-input map until
-  per-slot actual-entry controls ship. Invalid schema or identity data is
-  rejected and the unsafe local copy is removed with a visible warning.
+  slot IDs. RPE, duration, notes, recovery position, and circuit/free-climbing
+  inputs now recover without changing the existing generic-actual behavior.
+  Invalid schema or identity data is rejected and the unsafe local copy is
+  removed with a visible warning.
 - Existing exercise and workout documents without `ownerId` derive ownership
   from `createdBy`; owner mutations backfill `ownerId`.
 - Owner library queries remain keyed by `createdBy` so existing Stage 4
@@ -307,6 +330,21 @@ Screenshots are diagnostic artifacts rather than golden assertions.
 The runner drives the real Flutter application through ChromeDriver and the
 emulator-only login seam. Successful screenshot directories must remain in the
 worktree after validation; they are gitignored and must not be committed.
+
+`integration_test/workout_climbing_canary_test.dart` adds real-UI trainer
+creation/edit/publication of **Climbing Circuit** and **Free Climbing**, and
+athlete recovery/completion/history against deterministic emulator fixtures.
+Its fixture includes both grading systems, a newer published version, and a
+second free-climbing block completed without any grade rows. It verifies
+server drafts, immutable version/block documents, and stable-slot actuals.
+Role-specific tests skip the other identity. Its screenshots are
+`trainer-climbing-authoring.png`, `athlete-climbing-recovery.png`, and
+`athlete-climbing-history.png` in the runner's selected artifact directory.
+
+**Before running any browser test, explicitly acknowledge that you are ready
+to foreground Chrome.** After launch, keep the Chrome test window visible,
+foregrounded, and untouched until it finishes. Do not minimize/cover it,
+switch desktops, lock the machine, or allow the display to sleep.
 
 Flutter Web's semantics DOM does not reliably propagate ChromeDriver element
 clears into `TextEditingController`, or native pointer gestures into

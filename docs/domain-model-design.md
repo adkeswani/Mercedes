@@ -156,7 +156,10 @@ The block model must accommodate:
 - Duration and distance work.
 - Timed intervals.
 - Circuits.
-- Climbing routes with grade and color.
+- Climbing routes with canonical grades (legacy grade/color routes remain readable).
+- AMRAP time caps and completed rounds.
+- Climbing circuits with repeatable canonical-grade prescriptions.
+- Free climbing with optional athlete grade/count results.
 - Future block types without redesigning the entire workout entity.
 
 ### 3.4 Program template
@@ -623,7 +626,8 @@ deletion/anonymization plus explicit relationship/history handling.
   exercises atomically materialize source content as version 1. Provenance is
   created with the copy and cannot be rewritten.
 - Workout versions now store ordered typed blocks for standard exercise work,
-  timed intervals, circuits, and climbing routes. Each exercise occurrence has
+  timed intervals, circuits, climbing routes, AMRAP, climbing circuits, and
+  free climbing. Each exercise occurrence has
   a stable slot ID and continues to pin an immutable `exerciseId` plus
   `exerciseVersion`.
 - New typed versions stage an immutable manifest plus stable-ID block and slot
@@ -639,10 +643,53 @@ deletion/anonymization plus explicit relationship/history handling.
   remain readable and have an athlete-owned migration that maps safe unique or
   complete repeated-exercise results to pinned slots. Ambiguous partial
   repeated-exercise results are rejected rather than guessed.
-- The current builder continues to create and edit standard exercise blocks,
-  while preserving typed blocks loaded from storage. Rich authoring controls
-  for interval, circuit, and climbing payloads can be added without another
-  workout-version schema change.
+- The current builder creates and edits all seven typed block kinds through
+  the block-type picker and typed editors.
+- `climbingCircuit` has one exercise slot and an ordered `rows` prescription
+  plus a parallel unique `rowIds` manifest. Each row has a stable `rowId`,
+  `gradingSystem` (`vScale` or `yds`), canonical `grade`, positive integer
+  `climbs`, nullable positive `maxAttemptsPerClimb`, and optional `notes`.
+  Grade lists are explicit and difficulty-ordered, never alphabetically sorted.
+  Up to nine rows share **one** exercise prescription; the existing nine-block
+  and nine-slot workout limits remain independent of row counts.
+- `freeClimbing` contains only trainer notes and one built-in result slot
+  (`exerciseId: builtin-free-climbing`, version 1, mode `reps`). This reserved
+  identity is exempt from exercise-template lookup **only** for an otherwise
+  canonical free-climbing slot; it cannot authorize other block kinds or
+  sets/reps/count/grade prescriptions.
+- Circuit actuals have `climbingType: climbingCircuit`, ordered `circuitRows`
+  (`rowId`, `completed`, nullable `notes` and `rpe`), and `rowIds` identical to
+  the pinned prescription. They do not record partial climbs or actual
+  attempts. Free actuals have `climbingType: freeClimbing`, nullable block
+  `notes`/`rpe`, and optional `freeRows` (`rowId`, `gradingSystem`, `grade`,
+  positive actual `climbs`, nullable `notes`). Free rows have no prescribed
+  attempt cap. All optional RPE values use the existing integer 1–10 scale.
+- Local/server drafts retain raw unfinished free-row number text and stable
+  row identities. The draft codec checks shape, canonical grades, RPE, and
+  manifest integrity; restoration checks pinned circuit rows. Submission
+  additionally validates positive counts. Both new kinds require a result
+  document, but free climbing may complete with an empty `freeRows` list.
+  Local drafts remain complete inline DTOs. Server climbing inputs are
+  separate `completionDrafts/current/climbingInputs/{slotId}` children, read
+  transactionally with the primary draft and checked against its revision and
+  client ID. Each save writes the primary and every declared child together
+  with fresh server timestamps. This bounds per-document rules validation
+  while supporting nine slots with nine rows each. Completion removes all
+  declared children and the primary draft atomically.
+- New single climbing routes carry `gradingSystem` and a canonical `grade`,
+  with empty color. Absence of `gradingSystem` identifies legacy grade/color
+  routes; their existing nonempty grade/color validation is retained.
+  Editing a legacy route requires an explicit canonical grade selection for
+  the new version; no old version/completion is rewritten or color mapped.
+- Firestore validates ordered/unique row manifests, canonical grades,
+  positive counts/caps, result shape, row identity, and optional RPE alongside
+  existing owner/athlete enforcement. Circuit authoring row checks are split
+  across the two mandatory immutable block/slot children to stay inside the
+  per-write expression limit; an incomplete or invalid child set cannot seal.
+  Those children validate the version's `climbingSlotIds` manifest, allowing
+  completion to require all climbing actuals without scanning every row.
+  Versions predating the new types keep their existing completion behavior.
+  Completed detail uses the instance's pinned version, not the latest version.
 - Program assignment now creates an athlete-owned `AthleteProgramInstance` and
   all pinned scheduled workouts in one atomic batch. A caller-supplied
   idempotency key makes retries safe, and deterministic workout IDs prevent
@@ -701,7 +748,9 @@ The model intentionally leaves these extensible rather than blocking the first
 implementation:
 
 - Exact typed block payloads for every workout format.
-- Complete climbing grading and gym-color schemas.
+- Climbing progress/charts, grading comparators/personal bests, and a separate
+  journal view. Canonical V-scale/YDS authoring and workout completion are
+  implemented; new gym-color authoring is not planned by this change.
 - The full personal-best comparator catalog.
 - Search indexing and saved-view implementation.
 - Native versus web capability presentation details.

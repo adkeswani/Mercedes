@@ -5,6 +5,8 @@ import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/exercise_picker.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
+import 'package:stage5/features/workouts/domain/climbing.dart';
+import 'package:stage5/features/workouts/presentation/climbing_grade_field.dart';
 
 /// Total exercise slots currently used across every block in [blocks].
 int totalSlotCount(List<WorkoutBlock> blocks) =>
@@ -64,7 +66,19 @@ Future<WorkoutBlockType?> showBlockTypeMenu(BuildContext context) {
                 type: WorkoutBlockType.climbingRoute,
                 icon: Icons.terrain,
                 title: 'Climbing Route',
-                subtitle: 'Grade, color, and target attempts',
+                subtitle: 'Canonical grade and target attempts',
+              ),
+              option(
+                type: WorkoutBlockType.climbingCircuit,
+                icon: Icons.terrain,
+                title: 'Climbing Circuit',
+                subtitle: 'Repeatable grade rows for one climbing exercise',
+              ),
+              option(
+                type: WorkoutBlockType.freeClimbing,
+                icon: Icons.landscape,
+                title: 'Free Climbing',
+                subtitle: 'Trainer note; optional athlete grade results',
               ),
               option(
                 type: WorkoutBlockType.amrap,
@@ -184,12 +198,15 @@ Future<WorkoutBlock?> _showTypedBlockEditor({
         ),
       );
     case WorkoutBlockType.climbingRoute:
+    case WorkoutBlockType.climbingCircuit:
+    case WorkoutBlockType.freeClimbing:
       return showModalBottomSheet<WorkoutBlock>(
         context: context,
         isScrollControlled: true,
-        builder: (context) => _ClimbingRouteEditorSheet(
+        builder: (context) => _ClimbingEditorSheet(
           blockId: blockId,
-          existing: existing as ClimbingRouteBlock?,
+          existing: existing,
+          type: type,
         ),
       );
     case WorkoutBlockType.amrap:
@@ -741,44 +758,67 @@ class _AmrapEditorSheetState extends State<_AmrapEditorSheet> {
   }
 }
 
-class _ClimbingRouteEditorSheet extends ConsumerStatefulWidget {
-  const _ClimbingRouteEditorSheet({
+class _ClimbingEditorSheet extends ConsumerStatefulWidget {
+  const _ClimbingEditorSheet({
     required this.blockId,
     required this.existing,
+    required this.type,
   });
 
   final String blockId;
-  final ClimbingRouteBlock? existing;
+  final WorkoutBlock? existing;
+  final WorkoutBlockType type;
 
   @override
-  ConsumerState<_ClimbingRouteEditorSheet> createState() =>
-      _ClimbingRouteEditorSheetState();
+  ConsumerState<_ClimbingEditorSheet> createState() =>
+      _ClimbingEditorSheetState();
 }
 
-class _ClimbingRouteEditorSheetState
-    extends ConsumerState<_ClimbingRouteEditorSheet> {
-  late final TextEditingController _gradeController;
-  late final TextEditingController _colorController;
+class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
+  final _formKey = GlobalKey<FormState>();
   late final TextEditingController _targetAttemptsController;
+  late final TextEditingController _notesController;
+  final List<_ClimbingRowInput> _rows = [];
+  ClimbingGradingSystem _system = ClimbingGradingSystem.vScale;
+  String _grade = 'V0';
+  bool _gradeChosen = true;
+  String? _error;
   ExerciseSlot? _route;
+  bool get _isFree => widget.type == WorkoutBlockType.freeClimbing;
+  bool get _isCircuit => widget.type == WorkoutBlockType.climbingCircuit;
 
   @override
   void initState() {
     super.initState();
     final existing = widget.existing;
-    _gradeController = TextEditingController(text: existing?.grade ?? '');
-    _colorController = TextEditingController(text: existing?.color ?? '');
     _targetAttemptsController = TextEditingController(
-      text: existing?.targetAttempts?.toString() ?? '',
+      text: existing is ClimbingRouteBlock
+          ? existing.targetAttempts?.toString() ?? ''
+          : '',
     );
-    _route = existing?.route;
+    _notesController = TextEditingController(text: existing?.notes ?? '');
+    _route = existing?.slots.single;
+    if (existing is ClimbingRouteBlock) {
+      _gradeChosen = existing.gradingSystem != null;
+      if (_gradeChosen) {
+        _system = existing.gradingSystem!;
+        _grade = existing.grade;
+      }
+    }
+    if (existing is ClimbingCircuitBlock) {
+      _rows.addAll(existing.rows.map(_ClimbingRowInput.fromRow));
+    } else if (_isCircuit) {
+      _addRow();
+    }
   }
 
   @override
   void dispose() {
-    _gradeController.dispose();
-    _colorController.dispose();
     _targetAttemptsController.dispose();
+    _notesController.dispose();
+    for (final row in _rows) {
+      row.dispose();
+    }
     super.dispose();
   }
 
@@ -799,65 +839,220 @@ class _ClimbingRouteEditorSheetState
   }
 
   void _save() {
-    final route = _route;
-    if (route == null) return;
-    if (_gradeController.text.trim().isEmpty ||
-        _colorController.text.trim().isEmpty) {
+    if (!_formKey.currentState!.validate()) return;
+    if (!_isFree && _route == null) {
+      setState(() => _error = 'Choose the climbing exercise');
       return;
     }
-    Navigator.of(context).pop(
-      ClimbingRouteBlock(
-        blockId: widget.blockId,
-        sortOrder: 0,
-        route: route,
-        grade: _gradeController.text.trim(),
-        color: _colorController.text.trim(),
-        targetAttempts: _targetAttemptsController.text.trim().isEmpty
-            ? null
-            : int.tryParse(_targetAttemptsController.text),
-      ),
-    );
+    if (!_isFree && !_isCircuit && !_gradeChosen) {
+      setState(() =>
+          _error = 'Choose a canonical grade before saving this legacy route');
+      return;
+    }
+    try {
+      final notes = _notesController.text.trim().isEmpty
+          ? null
+          : _notesController.text.trim();
+      final WorkoutBlock block = _isFree
+          ? FreeClimbingBlock(
+              blockId: widget.blockId,
+              sortOrder: widget.existing?.sortOrder ?? 0,
+              slotId: _route?.slotId ??
+                  ref
+                      .read(workoutTemplateRepositoryProvider)
+                      .generateExerciseSlotId(),
+              notes: notes,
+              title: widget.existing?.title,
+            )
+          : _isCircuit
+              ? ClimbingCircuitBlock(
+                  blockId: widget.blockId,
+                  sortOrder: widget.existing?.sortOrder ?? 0,
+                  exercise: _route!,
+                  rows: _rows.map((r) => r.toRow()).toList(),
+                  notes: notes,
+                  title: widget.existing?.title,
+                )
+              : ClimbingRouteBlock(
+                  blockId: widget.blockId,
+                  sortOrder: widget.existing?.sortOrder ?? 0,
+                  route: _route!,
+                  grade: _grade,
+                  gradingSystem: _system,
+                  targetAttempts: _targetAttemptsController.text.trim().isEmpty
+                      ? null
+                      : int.parse(_targetAttemptsController.text.trim()),
+                  notes: notes,
+                  title: widget.existing?.title,
+                );
+      block.validate();
+      Navigator.of(context).pop(block);
+    } catch (error) {
+      setState(() => _error = error.toString());
+    }
+  }
+
+  void _addRow() {
+    _rows.add(_ClimbingRowInput(
+      ref.read(workoutTemplateRepositoryProvider).generateExerciseSlotId(),
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
     final route = _route;
-    final canSave = route != null &&
-        _gradeController.text.trim().isNotEmpty &&
-        _colorController.text.trim().isNotEmpty;
-    return _EditorScaffold(
-      title: 'Climbing Route',
-      saveEnabled: canSave,
-      onSave: _save,
-      children: [
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(route?.exerciseName ?? 'No exercise selected'),
-          trailing: TextButton(
-            onPressed: _pickRoute,
-            child: Text(route == null ? 'Choose exercise' : 'Change'),
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _gradeController,
-          decoration: const InputDecoration(labelText: 'Grade (e.g. V4)'),
-          onChanged: (_) => setState(() {}),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _colorController,
-          decoration: const InputDecoration(labelText: 'Color'),
-          onChanged: (_) => setState(() {}),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _targetAttemptsController,
-          decoration:
-              const InputDecoration(labelText: 'Target attempts (optional)'),
-          keyboardType: TextInputType.number,
-        ),
-      ],
-    );
+    return Form(
+        key: _formKey,
+        child: _EditorScaffold(
+          title: _isFree
+              ? 'Free Climbing'
+              : _isCircuit
+                  ? 'Climbing Circuit'
+                  : 'Climbing Route',
+          saveEnabled: true,
+          onSave: _save,
+          children: [
+            if (_error != null)
+              Text(_error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            if (!_isFree)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(route?.exerciseName ?? 'No exercise selected'),
+                trailing: TextButton(
+                  onPressed: _pickRoute,
+                  child: Text(route == null ? 'Choose exercise' : 'Change'),
+                ),
+              ),
+            const SizedBox(height: 8),
+            if (!_isFree && !_isCircuit) ...[
+              if (!_gradeChosen)
+                const Text(
+                    'Legacy grade/color remains in published history. Select a canonical grade for this edit.'),
+              ClimbingGradeField(
+                system: _system,
+                grade: _grade,
+                onChanged: (system, grade) => setState(() {
+                  _system = system;
+                  _grade = grade;
+                  _gradeChosen = true;
+                }),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _targetAttemptsController,
+                decoration: const InputDecoration(
+                    labelText: 'Target attempts (optional)'),
+                keyboardType: TextInputType.number,
+                validator: (value) => _positiveInteger(value, optional: true),
+              ),
+            ],
+            if (_isCircuit) ...[
+              for (final row in _rows)
+                Card(
+                  key: ValueKey(row.rowId),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ClimbingGradeField(
+                          system: row.system,
+                          grade: row.grade,
+                          onChanged: (system, grade) => setState(() {
+                            row.system = system;
+                            row.grade = grade;
+                          }),
+                        ),
+                        TextFormField(
+                          controller: row.climbs,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                              labelText: 'Number of climbs'),
+                          validator: (value) => _positiveInteger(value),
+                        ),
+                        TextFormField(
+                          controller: row.attempts,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                              labelText: 'Max attempts per climb (optional)'),
+                          validator: (value) =>
+                              _positiveInteger(value, optional: true),
+                        ),
+                        TextFormField(
+                          controller: row.notes,
+                          decoration: const InputDecoration(
+                              labelText: 'Row note (optional)'),
+                          maxLength: 4000,
+                        ),
+                        TextButton(
+                          onPressed: () => setState(() {
+                            _rows.remove(row);
+                            row.dispose();
+                          }),
+                          child: const Text('Remove climbing row'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              TextButton.icon(
+                onPressed: _rows.length < maxClimbingRows
+                    ? () => setState(_addRow)
+                    : null,
+                icon: const Icon(Icons.add),
+                label: const Text('Add climbing row'),
+              ),
+              const Text(
+                  'Max attempts applies to each climb, not the whole row. Up to 9 rows share one exercise slot.'),
+            ],
+            TextFormField(
+              controller: _notesController,
+              decoration:
+                  const InputDecoration(labelText: 'Trainer note (optional)'),
+              maxLength: 4000,
+            ),
+          ],
+        ));
+  }
+}
+
+String? _positiveInteger(String? value, {bool optional = false}) {
+  final text = value?.trim() ?? '';
+  if (optional && text.isEmpty) return null;
+  final parsed = int.tryParse(text);
+  return parsed == null || parsed < 1 ? 'Enter a positive whole number' : null;
+}
+
+class _ClimbingRowInput {
+  _ClimbingRowInput(this.rowId);
+  factory _ClimbingRowInput.fromRow(ClimbingCircuitRow row) {
+    return _ClimbingRowInput(row.rowId)
+      ..system = row.gradingSystem
+      ..grade = row.grade
+      ..climbs.text = row.climbs.toString()
+      ..attempts.text = row.maxAttemptsPerClimb?.toString() ?? ''
+      ..notes.text = row.notes ?? '';
+  }
+  final String rowId;
+  ClimbingGradingSystem system = ClimbingGradingSystem.vScale;
+  String grade = 'V0';
+  final climbs = TextEditingController();
+  final attempts = TextEditingController();
+  final notes = TextEditingController();
+  ClimbingCircuitRow toRow() => ClimbingCircuitRow(
+        rowId: rowId,
+        gradingSystem: system,
+        grade: grade,
+        climbs: int.parse(climbs.text.trim()),
+        maxAttemptsPerClimb: attempts.text.trim().isEmpty
+            ? null
+            : int.parse(attempts.text.trim()),
+        notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
+      );
+  void dispose() {
+    climbs.dispose();
+    attempts.dispose();
+    notes.dispose();
   }
 }

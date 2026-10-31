@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:stage5/features/workouts/domain/climbing_completion_input.dart';
 
 const workoutCompletionDraftSchemaVersion = 1;
 
@@ -68,7 +69,12 @@ class WorkoutCompletionDraft {
       'durationMinutes': durationMinutes,
       'athleteNotes': athleteNotes,
       'currentStep': currentStep,
-      'slotInputs': slotInputs,
+      'slotInputs': {
+        for (final entry in slotInputs.entries)
+          entry.key: entry.value.containsKey('climbingType')
+              ? climbingInputForStorage(entry.value)
+              : entry.value,
+      },
       'revision': revision,
       'clientId': clientId,
       'updatedAt': Timestamp.fromDate(updatedAt.toUtc()),
@@ -142,6 +148,23 @@ class WorkoutCompletionDraft {
     }
     if (!sourceRoute.startsWith('/athlete/workouts/')) {
       throw const FormatException('Workout draft source route is invalid');
+    }
+    if (slotInputs.length > 9) {
+      throw const FormatException('Workout draft has too many exercise slots');
+    }
+    for (final entry in slotInputs.entries) {
+      if (entry.key.isEmpty || entry.key.contains('/')) {
+        throw const FormatException('Workout draft slot ID is invalid');
+      }
+      if (entry.value.containsKey('climbingType')) {
+        try {
+          validateClimbingInput(entry.value);
+        } on ArgumentError catch (error) {
+          throw FormatException('Invalid climbing draft: $error');
+        } on TypeError catch (error) {
+          throw FormatException('Invalid climbing draft: $error');
+        }
+      }
     }
   }
 }

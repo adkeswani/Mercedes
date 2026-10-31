@@ -28,6 +28,8 @@ void main() {
     expect(find.text('Circuit'), findsOneWidget);
     expect(find.text('Climbing Route'), findsOneWidget);
     expect(find.text('AMRAP'), findsOneWidget);
+    expect(find.text('Climbing Circuit'), findsOneWidget);
+    expect(find.text('Free Climbing'), findsOneWidget);
   });
 
   testWidgets('creates a timed interval block with exercises', (tester) async {
@@ -116,16 +118,87 @@ void main() {
     await tester.tap(find.text('Overhang Route'));
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-        find.widgetWithText(TextField, 'Grade (e.g. V4)'), 'V4');
-    await tester.enterText(find.widgetWithText(TextField, 'Color'), 'Red');
-    await tester.pump();
+    await tester
+        .tap(find.widgetWithText(DropdownButtonFormField<String>, 'Grade'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('V4').last);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, 'Color'), findsNothing);
 
+    await tester.ensureVisible(find.widgetWithText(FilledButton, 'Save'));
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pumpAndSettle();
 
     expect(find.text('Overhang Route'), findsOneWidget);
-    expect(find.textContaining('V4 · Red'), findsOneWidget);
+    expect(find.textContaining('Climbing Route · V4'), findsOneWidget);
+  });
+
+  testWidgets(
+      'creates a climbing circuit, surfaces invalid counts, and edits stable rows',
+      (tester) async {
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Climbing Circuit'));
+    await tester.tap(find.text('Climbing Circuit'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Choose exercise'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Overhang Route'));
+    await tester.pumpAndSettle();
+    final save = find.widgetWithText(FilledButton, 'Save');
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a positive whole number'), findsOneWidget);
+    final count = find.widgetWithText(TextFormField, 'Number of climbs');
+    await tester.ensureVisible(count);
+    await tester.enterText(count, '3');
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Max attempts per climb (optional)'),
+        '2');
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('3 × V0 (max 2/climb)'), findsOneWidget);
+    final container = ProviderScope.containerOf(
+        tester.element(find.byType(WorkoutBuilderScreen)));
+    final original =
+        container.read(workoutDraftProvider).single as ClimbingCircuitBlock;
+    await tester.tap(find.byTooltip('Edit prescription'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(count);
+    await tester.enterText(count, '4');
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    final edited =
+        container.read(workoutDraftProvider).single as ClimbingCircuitBlock;
+    expect(edited.rows.single.rowId, original.rows.single.rowId);
+    expect(edited.exercise.slotId, original.exercise.slotId);
+    expect(edited.rows.single.climbs, 4);
+  });
+
+  testWidgets('free climbing trainer editor only asks for a note',
+      (tester) async {
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Free Climbing'));
+    await tester.tap(find.text('Free Climbing'));
+    await tester.pumpAndSettle();
+    expect(find.text('Choose exercise'), findsNothing);
+    expect(find.text('Grade'), findsNothing);
+    expect(find.text('Number of climbs'), findsNothing);
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Trainer note (optional)'),
+        'Explore routes');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    expect(find.text('Free Climbing'), findsOneWidget);
+    expect(find.text('Explore routes'), findsOneWidget);
   });
 
   testWidgets('edits an existing circuit block via the edit icon',

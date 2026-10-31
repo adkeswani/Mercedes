@@ -42,6 +42,150 @@ void main() {
     );
   }
 
+  Future<WorkoutCompletionDraft> climbingDraft({
+    int revision = 1,
+    String clientId = 'client-a',
+  }) async {
+    final ids = [for (var i = 0; i < 9; i++) 'row-$i'];
+    final slotIds = [for (var i = 0; i < 9; i++) 'slot-$i'];
+    await firestore.collection('workoutInstances').doc('instance-1').update({
+      'workoutTemplateId': 'workout',
+      'workoutTemplateVersion': 1,
+    });
+    await firestore
+        .collection('workoutTemplates')
+        .doc('workout')
+        .collection('workoutTemplateVersions')
+        .doc('1')
+        .set({
+      'storageFormat': 'typedWorkoutBlocksV1',
+      'publishState': 'published',
+      'slotIds': slotIds,
+      'slots': [
+        for (var i = 0; i < 9; i++) {'slotId': slotIds[i], 'blockSortOrder': i},
+      ],
+      'blocks': [
+        for (var i = 0; i < 9; i++) {'type': 'climbingCircuit', 'rowIds': ids},
+      ],
+    });
+    return draft(revision: revision, clientId: clientId).copyWith(slotInputs: {
+      for (final slotId in slotIds)
+        slotId: {
+          'climbingType': 'climbingCircuit',
+          'notes': 'Circuit note',
+          'rpe': null,
+          'circuitRows': [
+            for (final id in ids)
+              {
+                'rowId': id,
+                'completed': true,
+                'notes': 'Controlled',
+                'rpe': 7,
+              },
+          ],
+        },
+    });
+  }
+
+  test('rejects climbing recovery against an unpublished pinned version',
+      () async {
+    final value = await climbingDraft(revision: 2);
+    await firestore
+        .collection('workoutTemplates')
+        .doc('workout')
+        .collection('workoutTemplateVersions')
+        .doc('1')
+        .update({'publishState': 'draft'});
+    await expectLater(repository.save(value), throwsFormatException);
+    expect(
+        (await firestore
+                .collection('workoutInstances')
+                .doc('instance-1')
+                .collection('completionDrafts')
+                .doc('current')
+                .get())
+            .exists,
+        isFalse);
+  });
+
+  test('atomically stores and restores nine slots with nine climbing rows each',
+      () async {
+    final value = await climbingDraft(revision: 2);
+    expect((await repository.save(value)).status, WorkoutDraftSaveStatus.saved);
+    final ref = firestore
+        .collection('workoutInstances')
+        .doc('instance-1')
+        .collection('completionDrafts')
+        .doc('current');
+    final primary = (await ref.get()).data()!;
+    expect(primary['climbingSlotIds'], value.slotInputs.keys.toList());
+    expect(primary['slotInputs'], isEmpty);
+    expect((await ref.collection('climbingInputs').get()).docs.length, 9);
+    localStore.value = null;
+    final restored = await repository.load(
+      instanceId: 'instance-1',
+      athleteId: 'athlete-1',
+      currentClientId: 'client-a',
+    );
+    expect(restored.kind, WorkoutDraftRestoreKind.server);
+    expect(restored.draft!.slotInputs.length, 9);
+    expect(restored.draft!.slotInputs['slot-8']!['circuitRows'],
+        value.slotInputs['slot-8']!['circuitRows']);
+  });
+
+  test('sharded conflict retains authoritative climbing inputs', () async {
+    final current = await climbingDraft(revision: 4, clientId: 'other-tab');
+    await repository.save(current);
+    final stale = current.copyWith(rpe: 2);
+    final incoming = WorkoutCompletionDraft(
+      instanceId: stale.instanceId,
+      athleteId: stale.athleteId,
+      rpe: stale.rpe,
+      durationMinutes: stale.durationMinutes,
+      revision: 4,
+      clientId: 'current-tab',
+      updatedAt: stale.updatedAt,
+      sourceRoute: stale.sourceRoute,
+      slotInputs: stale.slotInputs,
+    );
+    final result = await repository.save(incoming);
+    expect(result.status, WorkoutDraftSaveStatus.conflict);
+    expect(result.authoritativeDraft!.clientId, 'other-tab');
+    expect(result.authoritativeDraft!.rpe, current.rpe);
+    expect(result.authoritativeDraft!.slotInputs['slot-8']!['circuitRows'],
+        current.slotInputs['slot-8']!['circuitRows']);
+  });
+
+  test('rejects missing or mismatched climbing draft generations', () async {
+    await repository.save(await climbingDraft(revision: 2));
+    final child = firestore
+        .collection('workoutInstances')
+        .doc('instance-1')
+        .collection('completionDrafts')
+        .doc('current')
+        .collection('climbingInputs')
+        .doc('slot-8');
+    localStore.value = null;
+    await child.update({'revision': 1});
+    await expectLater(
+      repository.load(
+        instanceId: 'instance-1',
+        athleteId: 'athlete-1',
+        currentClientId: 'client-a',
+      ),
+      throwsFormatException,
+    );
+    await child.delete();
+    await expectLater(
+      repository.load(
+        instanceId: 'instance-1',
+        athleteId: 'athlete-1',
+        currentClientId: 'client-a',
+      ),
+      throwsFormatException,
+    );
+  });
+
   test('saves locally and on the server', () async {
     final result = await repository.save(draft());
 

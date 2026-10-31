@@ -17,6 +17,8 @@ import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 import 'package:stage5/features/workouts/presentation/workout_timer_widget.dart';
+import 'package:stage5/features/workouts/domain/climbing_completion_input.dart';
+import 'package:stage5/features/workouts/presentation/climbing_completion_card.dart';
 
 /// Screen for completing a scheduled workout.
 ///
@@ -42,6 +44,8 @@ class _WorkoutCompletionScreenState
   bool _isAthlete = false;
   List<WorkoutBlock> _blocks = [];
   final Map<String, ExerciseActual> _actuals = {};
+  final Map<String, Map<String, dynamic>> _slotInputs = {};
+  int _climbingRestoreRevision = 0;
   _WorkoutLoadState _loadState = _WorkoutLoadState.loading;
   _DraftSaveState _saveState = _DraftSaveState.saved;
   Timer? _saveDebounce;
@@ -125,6 +129,8 @@ class _WorkoutCompletionScreenState
         _blocks = workoutVersion?.blocks ?? [];
         _isAthlete = isAthlete;
         final draft = restore?.draft;
+        _actuals.addAll(instance.actualsBySlot);
+        _restoreClimbingInputs(draft);
         if (draft != null) {
           _rpe = draft.rpe;
           _durationMinutes = draft.durationMinutes;
@@ -167,6 +173,22 @@ class _WorkoutCompletionScreenState
     _saveDebounce = Timer(const Duration(milliseconds: 700), _saveDraft);
   }
 
+  void _restoreClimbingInputs(WorkoutCompletionDraft? draft) {
+    final inputs = <String, Map<String, dynamic>>{};
+    for (final block in _blocks) {
+      if (block is ClimbingCircuitBlock || block is FreeClimbingBlock) {
+        final slotId = block.slots.single.slotId;
+        final input = draft?.slotInputs[slotId] ?? initialClimbingInput(block);
+        validateClimbingInputForBlock(block, input);
+        inputs[slotId] = climbingInputForStorage(input);
+      }
+    }
+    _slotInputs
+      ..clear()
+      ..addAll(inputs);
+    _climbingRestoreRevision++;
+  }
+
   Future<void> _saveDraft() async {
     final instance = _instance;
     final athleteId = ref.read(authStateProvider).value?.uid;
@@ -192,6 +214,10 @@ class _WorkoutCompletionScreenState
         clientId: ref.read(workoutDraftClientIdProvider),
         updatedAt: DateTime.now().toUtc(),
         sourceRoute: route,
+        slotInputs: {
+          for (final entry in _slotInputs.entries)
+            entry.key: climbingInputForStorage(entry.value),
+        },
       );
       final result =
           await ref.read(workoutCompletionDraftRepositoryProvider).save(draft);
@@ -209,6 +235,7 @@ class _WorkoutCompletionScreenState
             if (authoritative != null &&
                 authoritative.clientId == draft.clientId &&
                 compareWorkoutDrafts(authoritative, draft) > 0) {
+              _restoreClimbingInputs(authoritative);
               _restoring = true;
               _revision = authoritative.revision;
               _rpe = authoritative.rpe;
@@ -223,6 +250,7 @@ class _WorkoutCompletionScreenState
             _saveState = _DraftSaveState.conflict;
             final authoritative = result.authoritativeDraft;
             if (authoritative != null) {
+              _restoreClimbingInputs(authoritative);
               _restoring = true;
               _revision = authoritative.revision;
               _rpe = authoritative.rpe;
@@ -262,7 +290,13 @@ class _WorkoutCompletionScreenState
         athleteId: athleteId,
         rpe: _rpe,
         durationMinutes: _durationMinutes,
-        actuals: _actuals.values.toList(),
+        actuals: [
+          ..._actuals.values.where((a) => !_slotInputs.containsKey(a.slotId)),
+          for (final block in _blocks)
+            if (block is ClimbingCircuitBlock || block is FreeClimbingBlock)
+              climbingActualFromInput(
+                  block, _slotInputs[block.slots.single.slotId]!),
+        ],
         athleteNotes: _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
@@ -358,16 +392,31 @@ class _WorkoutCompletionScreenState
                 ),
                 const SizedBox(height: 4),
               ],
-              for (final slot in block.slots)
-                _ExerciseEntryCard(
-                  key: ValueKey(slot.slotId),
-                  slot: slot,
+              if (block is ClimbingCircuitBlock || block is FreeClimbingBlock)
+                ClimbingCompletionCard(
+                  key: ValueKey('${block.blockId}-$_climbingRestoreRevision'),
                   block: block,
-                  isAthlete: _isAthlete,
-                  recordingEnabled:
-                      _isAthlete && !instance.isCompleted,
-                  onActualChanged: _onActualChanged,
-                ),
+                  recordingEnabled: _isAthlete && !instance.isCompleted,
+                  initialInput: _slotInputs[block.slots.single.slotId],
+                  actual: instance.actualsBySlot[block.slots.single.slotId],
+                  exerciseContent: block is ClimbingCircuitBlock
+                      ? _ClimbingExerciseContent(slot: block.exercise)
+                      : null,
+                  onChanged: (input) {
+                    _slotInputs[block.slots.single.slotId] = input;
+                    _scheduleSave();
+                  },
+                )
+              else
+                for (final slot in block.slots)
+                  _ExerciseEntryCard(
+                    key: ValueKey(slot.slotId),
+                    slot: slot,
+                    block: block,
+                    isAthlete: _isAthlete,
+                    recordingEnabled: _isAthlete && !instance.isCompleted,
+                    onActualChanged: _onActualChanged,
+                  ),
             ],
             const SizedBox(height: 24),
           ] else
@@ -632,15 +681,20 @@ class _WorkoutCompletionScreenState
   String? _blockSummary(WorkoutBlock block) {
     return switch (block) {
       ClimbingRouteBlock(:final grade, :final color, :final targetAttempts) =>
-        'Climbing route · Grade $grade · $color'
+        'Climbing route · Grade $grade${color.isEmpty ? '' : ' · $color'}'
             '${targetAttempts != null ? ' · Target $targetAttempts attempts' : ''}',
-      TimedIntervalBlock(:final rounds, :final workSeconds, :final restSeconds) =>
+      TimedIntervalBlock(
+        :final rounds,
+        :final workSeconds,
+        :final restSeconds
+      ) =>
         '$rounds rounds · ${workSeconds}s work / ${restSeconds}s rest',
       CircuitBlock(:final rounds, :final restBetweenRoundsSeconds) =>
         '$rounds rounds · ${restBetweenRoundsSeconds}s rest between rounds',
       AmrapBlock(:final timeCapSeconds) =>
         'AMRAP · ${timeCapSeconds}s time cap',
       StandardExerciseBlock() => null,
+      ClimbingCircuitBlock() || FreeClimbingBlock() => null,
     };
   }
 }
@@ -665,7 +719,6 @@ String _prescriptionSummary(ExerciseSlot exercise) {
 }
 
 enum _WorkoutLoadState { loading, ready, notFound, unauthorized, error }
-
 
 enum _DraftSaveState { saving, saved, offline, failed, conflict }
 
@@ -743,8 +796,7 @@ class _ExerciseEntryCard extends ConsumerStatefulWidget {
   final ValueChanged<ExerciseActual> onActualChanged;
 
   @override
-  ConsumerState<_ExerciseEntryCard> createState() =>
-      _ExerciseEntryCardState();
+  ConsumerState<_ExerciseEntryCard> createState() => _ExerciseEntryCardState();
 }
 
 class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
@@ -858,8 +910,7 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
                 : _weightController.text.trim()),
         attempts: _isClimbing ? int.tryParse(_attemptsController.text) : null,
         sent: _isClimbing ? _sent : null,
-        roundsCompleted:
-            _isAmrap ? int.tryParse(_roundsController.text) : null,
+        roundsCompleted: _isAmrap ? int.tryParse(_roundsController.text) : null,
         restSeconds: _restElapsedSeconds,
       ),
     );
@@ -1085,6 +1136,40 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
   }
 }
 
+class _ClimbingExerciseContent extends ConsumerWidget {
+  const _ClimbingExerciseContent({required this.slot});
+
+  final ExerciseSlot slot;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final version = ref.watch(exerciseVersionByIdProvider(
+      ExerciseVersionKey(slot.exerciseId, slot.exerciseVersion),
+    ));
+    return ExpansionTile(
+      title: const Text('Exercise details'),
+      initiallyExpanded: true,
+      trailing: IconButton(
+        tooltip: 'View full exercise details',
+        icon: const Icon(Icons.open_in_new, size: 18),
+        onPressed: () => context.push(
+          '/exercises/${slot.exerciseId}?version=${slot.exerciseVersion}',
+        ),
+      ),
+      children: [
+        version.when(
+          data: (value) => _ExerciseContent(version: value),
+          loading: () => const Padding(
+            padding: EdgeInsets.all(8),
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          error: (_, __) => const Text('Exercise details could not be loaded'),
+        ),
+      ],
+    );
+  }
+}
+
 /// Renders an exercise version's video, description, and (length-limited,
 /// scrollable) instructions.
 class _ExerciseContent extends StatelessWidget {
@@ -1123,4 +1208,3 @@ class _ExerciseContent extends StatelessWidget {
     );
   }
 }
-

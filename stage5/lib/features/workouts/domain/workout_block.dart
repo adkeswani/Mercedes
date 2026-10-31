@@ -1,4 +1,5 @@
 import 'package:stage5/core/enums.dart';
+import 'package:stage5/features/workouts/domain/climbing.dart';
 
 const maxWorkoutBlocksPerVersion = 9;
 const maxExerciseSlotsPerWorkoutVersion = 9;
@@ -9,6 +10,8 @@ enum WorkoutBlockType {
   circuit,
   climbingRoute,
   amrap,
+  climbingCircuit,
+  freeClimbing,
 }
 
 String legacyExerciseSlotId(int sortOrder) => 'legacy-slot-$sortOrder';
@@ -335,7 +338,8 @@ class ClimbingRouteBlock extends WorkoutBlock {
     required super.sortOrder,
     required ExerciseSlot route,
     required this.grade,
-    required this.color,
+    this.color = '',
+    this.gradingSystem,
     this.targetAttempts,
     super.title,
     super.notes,
@@ -343,6 +347,8 @@ class ClimbingRouteBlock extends WorkoutBlock {
 
   final String grade;
   final String color;
+  // Null identifies an unchanged legacy grade/color prescription.
+  final ClimbingGradingSystem? gradingSystem;
   final int? targetAttempts;
 
   @override
@@ -358,6 +364,7 @@ class ClimbingRouteBlock extends WorkoutBlock {
       route: route,
       grade: grade,
       color: color,
+      gradingSystem: gradingSystem,
       targetAttempts: targetAttempts,
       title: title,
       notes: notes,
@@ -373,12 +380,100 @@ class ClimbingRouteBlock extends WorkoutBlock {
     if (grade.trim().isEmpty) {
       throw ArgumentError('grade cannot be empty');
     }
-    if (color.trim().isEmpty) {
+    if (gradingSystem != null) {
+      validateClimbingGrade(gradingSystem!, grade);
+      if (color.isNotEmpty) {
+        throw ArgumentError('New climbing authoring uses grades, not colors');
+      }
+    } else if (color.trim().isEmpty) {
       throw ArgumentError('color cannot be empty');
     }
+
     if (targetAttempts != null && targetAttempts! < 1) {
       throw ArgumentError('targetAttempts must be >= 1 when provided');
     }
+  }
+}
+
+class ClimbingCircuitBlock extends WorkoutBlock {
+  ClimbingCircuitBlock({
+    required super.blockId,
+    required super.sortOrder,
+    required ExerciseSlot exercise,
+    required List<ClimbingCircuitRow> rows,
+    super.title,
+    super.notes,
+  })  : rows = List.unmodifiable(rows),
+        super(slots: [exercise]);
+
+  final List<ClimbingCircuitRow> rows;
+  ExerciseSlot get exercise => slots.single;
+  @override
+  WorkoutBlockType get type => WorkoutBlockType.climbingCircuit;
+
+  @override
+  ClimbingCircuitBlock copyWithSortOrder(int sortOrder) => ClimbingCircuitBlock(
+        blockId: blockId,
+        sortOrder: sortOrder,
+        exercise: exercise,
+        rows: rows,
+        title: title,
+        notes: notes,
+      );
+
+  @override
+  void validate() {
+    super.validate();
+    if (slots.length != 1 || exercise.mode != ExerciseMode.reps) {
+      throw ArgumentError(
+          'Climbing circuit requires one climbing exercise slot');
+    }
+    if (rows.isEmpty || rows.length > maxClimbingRows) {
+      throw ArgumentError('Climbing circuit requires 1–$maxClimbingRows rows');
+    }
+    final ids = <String>{};
+    for (final row in rows) {
+      row.validate();
+      if (!ids.add(row.rowId))
+        throw ArgumentError('Climbing row IDs must be unique');
+    }
+    validateClimbingNote(notes);
+  }
+}
+
+class FreeClimbingBlock extends WorkoutBlock {
+  FreeClimbingBlock({
+    required super.blockId,
+    required super.sortOrder,
+    required String slotId,
+    super.title,
+    super.notes,
+  }) : super(slots: [
+          ExerciseSlot(
+            slotId: slotId,
+            exerciseId: freeClimbingExerciseId,
+            exerciseName: 'Free Climbing',
+            sortOrder: 0,
+            mode: ExerciseMode.reps,
+          ),
+        ]);
+
+  @override
+  WorkoutBlockType get type => WorkoutBlockType.freeClimbing;
+
+  @override
+  FreeClimbingBlock copyWithSortOrder(int sortOrder) => FreeClimbingBlock(
+        blockId: blockId,
+        sortOrder: sortOrder,
+        slotId: slots.single.slotId,
+        title: title,
+        notes: notes,
+      );
+
+  @override
+  void validate() {
+    super.validate();
+    validateClimbingNote(notes);
   }
 }
 

@@ -417,9 +417,10 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
   }
 
   Widget _buildFolderSelector() {
-    final folders =
-        ref.watch(libraryFoldersProvider(LibraryItemType.workout)).valueOrNull ??
-            const [];
+    final folders = ref
+            .watch(libraryFoldersProvider(LibraryItemType.workout))
+            .valueOrNull ??
+        const [];
     final value = folders.any((f) => f.id == _folderId) ? _folderId : null;
     return DropdownButtonFormField<String?>(
       key: ValueKey('folder-picker-$value'),
@@ -513,7 +514,16 @@ class _WorkoutBlockCard extends ConsumerWidget {
     }
     if (block is ClimbingRouteBlock) {
       final route = block as ClimbingRouteBlock;
-      return '${route.grade} · ${route.color}';
+      return route.color.isEmpty
+          ? 'Climbing Route · ${route.grade}'
+          : '${route.grade} · ${route.color}';
+    }
+    if (block is ClimbingCircuitBlock) {
+      final circuit = block as ClimbingCircuitBlock;
+      return 'Climbing Circuit · ${circuit.rows.map((r) => '${r.climbs} × ${r.grade}${r.maxAttemptsPerClimb == null ? '' : ' (max ${r.maxAttemptsPerClimb}/climb)'}').join(' · ')}';
+    }
+    if (block is FreeClimbingBlock) {
+      return block.notes ?? 'Optional grade results at completion';
     }
     if (block is AmrapBlock) {
       final amrap = block as AmrapBlock;
@@ -533,6 +543,11 @@ class _WorkoutBlockCard extends ConsumerWidget {
   }
 
   String get _titleText {
+    if (block is FreeClimbingBlock) return 'Free Climbing';
+    if (block is ClimbingCircuitBlock) {
+      final exercise = (block as ClimbingCircuitBlock).exercise;
+      return 'Climbing Circuit · ${exercise.exerciseName ?? exercise.exerciseId}';
+    }
     if (block is ClimbingRouteBlock) {
       final route = (block as ClimbingRouteBlock).route;
       return route.exerciseName ?? route.exerciseId;

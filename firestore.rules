@@ -423,12 +423,196 @@ service cloud.firestore {
                      && versionNumber <= templateVersion(exercise)));
     }
 
+    function climbingGrades() {
+      return {
+        'vScale': [
+                'VB', 'V0', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8',
+                'V9', 'V10', 'V11', 'V12', 'V13', 'V14', 'V15', 'V16', 'V17'
+              ],
+        'yds': [
+                   '5.0', '5.1', '5.2', '5.3', '5.4', '5.5', '5.6', '5.7',
+                   '5.8', '5.9', '5.10a', '5.10b', '5.10c', '5.10d',
+                   '5.11a', '5.11b', '5.11c', '5.11d',
+                   '5.12a', '5.12b', '5.12c', '5.12d',
+                   '5.13a', '5.13b', '5.13c', '5.13d',
+                   '5.14a', '5.14b', '5.14c', '5.14d',
+                   '5.15a', '5.15b', '5.15c', '5.15d'
+                 ]
+      };
+    }
+
+    function validClimbingGrade(data) {
+      return data.gradingSystem in ['vScale', 'yds']
+             && data.grade in climbingGrades()[data.gradingSystem];
+    }
+
+    function validClimbingNote(data) {
+      let notes = data.get('notes', null);
+      return notes == null || (notes is string && notes.size() <= 4000);
+    }
+
+    function validClimbingRpe(data) {
+      let rpe = data.get('rpe', null);
+      return rpe == null || (rpe is int && rpe >= 1 && rpe <= 10);
+    }
+
+    function validClimbingId(row) {
+      return row.rowId is string && row.rowId.size() > 0
+             && !row.rowId.matches('.*[/].*');
+    }
+
+    // Equivalent to climbingGrades(); avoids rebuilding both grade lists for
+    // every row under Firestore's 1,000-expression per-write budget.
+    function climbingGradePatterns() {
+      return {
+        'vScale': '^(VB|V[0-9]|V1[0-7])$',
+        'yds': '^5[.]([0-9]|1[0-5][a-d])$'
+      };
+    }
+
+    function validClimbingGradeRow(rawRow, rowId, prescribed, draft, keys, patterns) {
+      let row = rawRow;
+      let notes = row.get('notes', null);
+      let attempts = row.get('maxAttemptsPerClimb', null);
+      let climbs = row.climbs;
+      return row.keys().hasOnly(keys)
+                 && row.rowId == rowId
+                 && row.rowId.matches('^[^/]+$')
+                 && row.grade.matches(patterns[row.gradingSystem])
+                 && ((draft && climbs is string && climbs.size() <= 20)
+                     || (!draft && climbs is int && climbs >= 1))
+                 && (notes == null || (notes is string && notes.size() <= 4000))
+                 && (!prescribed || attempts == null
+                      || (attempts is int && attempts >= 1));
+    }
+
+    function validClimbingGradeRows(rawRows, rawIds, prescribed, draft) {
+      return (draft && validFreeClimbingDraftRows(rawRows, rawIds))
+             || (!draft && validFreeClimbingActualRows(rawRows, rawIds));
+    }
+
+    function validFreeClimbingRowsManifest(rows, rowIds) {
+      return rows is list && rows.size() <= 9
+             && rowIds is list && rowIds.size() == rows.size()
+             && rowIds.toSet().size() == rows.size();
+    }
+
+    function validFreeClimbingActualRows(rawRows, rawIds) {
+      let rows = rawRows;
+      let rowIds = rawIds;
+      let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'notes'];
+      let patterns = climbingGradePatterns();
+      return validFreeClimbingRowsManifest(rows, rowIds)
+             && (rows.size() < 1 || validFreeClimbingRow(rows[0], rowIds[0], keys, patterns))
+             && (rows.size() < 2 || validFreeClimbingRow(rows[1], rowIds[1], keys, patterns))
+             && (rows.size() < 3 || validFreeClimbingRow(rows[2], rowIds[2], keys, patterns))
+             && (rows.size() < 4 || validFreeClimbingRow(rows[3], rowIds[3], keys, patterns))
+             && (rows.size() < 5 || validFreeClimbingRow(rows[4], rowIds[4], keys, patterns))
+             && (rows.size() < 6 || validFreeClimbingRow(rows[5], rowIds[5], keys, patterns))
+             && (rows.size() < 7 || validFreeClimbingRow(rows[6], rowIds[6], keys, patterns))
+             && (rows.size() < 8 || validFreeClimbingRow(rows[7], rowIds[7], keys, patterns))
+             && (rows.size() < 9 || validFreeClimbingRow(rows[8], rowIds[8], keys, patterns));
+    }
+
+    function validFreeClimbingRow(row, rowId, keys, patterns) {
+      let notes = row.get('notes', null);
+      let climbs = row.climbs;
+      return row.keys().hasOnly(keys) && row.rowId == rowId
+             && row.rowId.matches('^[^/]+$')
+             && row.grade.matches(patterns[row.gradingSystem])
+             && climbs is int && climbs >= 1
+             && (notes == null || notes.matches('(?s)^(?:.{0,1000}){0,4}$'));
+    }
+
+    function validFreeClimbingDraftRow(row, rowId, keys, patterns) {
+      let notes = row.get('notes', null);
+      let climbs = row.climbs;
+      return row.keys().hasOnly(keys) && row.rowId == rowId
+             && row.rowId.matches('^[^/]+$')
+             && row.grade.matches(patterns[row.gradingSystem])
+             && climbs.matches('(?s)^.{0,20}$')
+             && (notes == null || notes.matches('(?s)^(?:.{0,1000}){0,4}$'));
+    }
+
+    function validFreeClimbingDraftRows(rawRows, rawIds) {
+      let rows = rawRows;
+      let rowIds = rawIds;
+      let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'notes'];
+      let patterns = climbingGradePatterns();
+      return validFreeClimbingRowsManifest(rows, rowIds)
+             && (rows.size() < 1 || validFreeClimbingDraftRow(rows[0], rowIds[0], keys, patterns))
+             && (rows.size() < 2 || validFreeClimbingDraftRow(rows[1], rowIds[1], keys, patterns))
+             && (rows.size() < 3 || validFreeClimbingDraftRow(rows[2], rowIds[2], keys, patterns))
+             && (rows.size() < 4 || validFreeClimbingDraftRow(rows[3], rowIds[3], keys, patterns))
+             && (rows.size() < 5 || validFreeClimbingDraftRow(rows[4], rowIds[4], keys, patterns))
+             && (rows.size() < 6 || validFreeClimbingDraftRow(rows[5], rowIds[5], keys, patterns))
+             && (rows.size() < 7 || validFreeClimbingDraftRow(rows[6], rowIds[6], keys, patterns))
+             && (rows.size() < 8 || validFreeClimbingDraftRow(rows[7], rowIds[7], keys, patterns))
+             && (rows.size() < 9 || validFreeClimbingDraftRow(rows[8], rowIds[8], keys, patterns));
+    }
+
+    // Both immutable children are mandatory before sealing. Split the circuit
+    // row checks across the block and its one slot to stay within the per-write
+    // expression budget without reducing the nine-row authoring limit.
+    function validClimbingCircuitHead(data) {
+      let rows = data.rows;
+      let ids = data.rowIds;
+      let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'maxAttemptsPerClimb', 'notes'];
+      let patterns = climbingGradePatterns();
+      return rows is list && rows.size() >= 1 && rows.size() <= 9
+             && ids is list && ids.size() == rows.size()
+             && ids.toSet().size() == rows.size()
+             && validClimbingGradeRow(rows[0], ids[0], true, false, keys, patterns)
+             && (rows.size() < 2 || validClimbingGradeRow(rows[1], ids[1], true, false, keys, patterns))
+             && (rows.size() < 3 || validClimbingGradeRow(rows[2], ids[2], true, false, keys, patterns))
+             && (rows.size() < 4 || validClimbingGradeRow(rows[3], ids[3], true, false, keys, patterns));
+    }
+
+    function validClimbingCircuitTail(data) {
+      let rows = data.rows;
+      let ids = data.rowIds;
+      let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'maxAttemptsPerClimb', 'notes'];
+      let patterns = climbingGradePatterns();
+      return (rows.size() < 5 || validClimbingGradeRow(rows[4], ids[4], true, false, keys, patterns))
+             && (rows.size() < 6 || validClimbingGradeRow(rows[5], ids[5], true, false, keys, patterns))
+             && (rows.size() < 7 || validClimbingGradeRow(rows[6], ids[6], true, false, keys, patterns))
+             && (rows.size() < 8 || validClimbingGradeRow(rows[7], ids[7], true, false, keys, patterns))
+             && (rows.size() < 9 || validClimbingGradeRow(rows[8], ids[8], true, false, keys, patterns));
+    }
+
+    function validCircuitResultRow(rawRow, prescribedId, keys) {
+      let row = rawRow;
+      let notes = row.get('notes', null);
+      let rpe = row.get('rpe', null);
+      return row.keys().hasOnly(keys)
+             && row.rowId == prescribedId && row.completed is bool
+             && (notes == null || notes.matches('(?s)^(?:.{0,1000}){0,4}$'))
+             && (rpe == null || (rpe is int && rpe >= 1 && rpe <= 10));
+    }
+
+    function validCircuitResultRows(rawRows, rawIds) {
+      let rows = rawRows;
+      let ids = rawIds;
+      let keys = ['rowId', 'completed', 'notes', 'rpe'];
+      return rows is list && rows.size() == ids.size()
+             && rows.size() >= 1 && rows.size() <= 9
+             && validCircuitResultRow(rows[0], ids[0], keys)
+             && (rows.size() < 2 || validCircuitResultRow(rows[1], ids[1], keys))
+             && (rows.size() < 3 || validCircuitResultRow(rows[2], ids[2], keys))
+             && (rows.size() < 4 || validCircuitResultRow(rows[3], ids[3], keys))
+             && (rows.size() < 5 || validCircuitResultRow(rows[4], ids[4], keys))
+             && (rows.size() < 6 || validCircuitResultRow(rows[5], ids[5], keys))
+             && (rows.size() < 7 || validCircuitResultRow(rows[6], ids[6], keys))
+             && (rows.size() < 8 || validCircuitResultRow(rows[7], ids[7], keys))
+             && (rows.size() < 9 || validCircuitResultRow(rows[8], ids[8], keys));
+    }
+
     function hasValidWorkoutBlock(data) {
       return data.keys().hasOnly([
                'blockId', 'type', 'sortOrder', 'title', 'notes', 'rounds',
                'workSeconds', 'restSeconds', 'restBetweenRoundsSeconds',
                'grade', 'color', 'targetAttempts', 'timeCapSeconds',
-               'slotIds', 'slotStartOrder', 'slotCount'
+               'slotIds', 'slotStartOrder', 'slotCount', 'gradingSystem', 'rows', 'rowIds'
              ])
              && data.blockId is string
              && data.blockId.size() > 0
@@ -443,9 +627,9 @@ service cloud.firestore {
              && data.slotCount == data.slotIds.size()
              && data.type in [
                   'standardExercise', 'timedInterval', 'circuit',
-                  'climbingRoute', 'amrap'
+                  'climbingRoute', 'amrap', 'climbingCircuit', 'freeClimbing'
                 ]
-             && (!(data.type in ['standardExercise', 'climbingRoute'])
+             && (!(data.type in ['standardExercise', 'climbingRoute', 'climbingCircuit', 'freeClimbing'])
                  || data.slotCount == 1)
              && (data.type != 'timedInterval'
                  || (data.rounds is int
@@ -462,12 +646,23 @@ service cloud.firestore {
              && (data.type != 'climbingRoute'
                  || (data.grade is string
                      && data.grade.size() > 0
-                     && data.color is string
-                     && data.color.size() > 0
+                     && ((('gradingSystem' in data) && validClimbingGrade(data) && data.color == '')
+                         || (!('gradingSystem' in data) && data.color is string && data.color.size() > 0))
                      && (!('targetAttempts' in data)
                          || data.targetAttempts == null
                          || (data.targetAttempts is int
                              && data.targetAttempts >= 1))))
+             && (data.type != 'climbingCircuit'
+                 || (data.keys().hasOnly([
+                      'blockId', 'type', 'sortOrder', 'title', 'notes',
+                      'slotIds', 'slotStartOrder', 'slotCount', 'rows', 'rowIds'
+                    ]) && validClimbingCircuitHead(data)
+                    && validClimbingNote(data)))
+             && (data.type != 'freeClimbing'
+                 || (data.keys().hasOnly([
+                      'blockId', 'type', 'sortOrder', 'title', 'notes',
+                      'slotIds', 'slotStartOrder', 'slotCount'
+                    ]) && validClimbingNote(data)))
              && (data.type != 'amrap'
                  || (data.timeCapSeconds is int
                      && data.timeCapSeconds >= 1));
@@ -496,6 +691,66 @@ service cloud.firestore {
              && data.prescription is map;
     }
 
+    function hasOwnedWorkoutSlot(version, data) {
+      let block = version.blocks[data.blockSortOrder];
+      let climbing = block.type in ['climbingCircuit', 'freeClimbing'];
+      return ((('climbingSlotIds' in version)
+                && version.climbingSlotIds.hasAny([data.slotId]) == climbing)
+               || (!('climbingSlotIds' in version) && !climbing))
+             && ((block.type == 'freeClimbing'
+                && data.exerciseId == 'builtin-free-climbing'
+                && data.exerciseVersion == 1 && data.sortOrder == 0
+                && data.exerciseName == 'Free Climbing'
+                && data.prescription == {
+                  'mode': 'reps', 'sets': null, 'reps': null,
+                  'durationSeconds': null, 'weight': null,
+                  'restSeconds': null, 'notes': null
+                })
+             || (block.type != 'freeClimbing'
+                && data.exerciseId != 'builtin-free-climbing'
+                && (block.type != 'climbingCircuit'
+                    || (data.prescription.mode == 'reps'
+                        && validClimbingCircuitTail(block)))
+                && isOwnedExerciseVersion(data.exerciseId, data.exerciseVersion)));
+    }
+
+    function canCreateTypedBlock(templateId, versionNumber, data) {
+      let version = getAfter(
+        /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+      ).data;
+      return !exists(
+               /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+             )
+             && version.storageFormat == 'typedWorkoutBlocksV1'
+             && version.publishState == 'draft'
+             && version.ownerId == request.auth.uid
+             && data == version.blocks[data.sortOrder]
+             && hasValidBlockManifestRange(version, data)
+             && hasValidWorkoutBlock(data);
+    }
+
+    function canCreateTypedSlot(templateId, versionNumber, data) {
+      let version = getAfter(
+        /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+      ).data;
+      let block = version.blocks[data.blockSortOrder];
+      return !exists(
+               /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
+             )
+             && version.storageFormat == 'typedWorkoutBlocksV1'
+             && version.publishState == 'draft'
+             && version.ownerId == request.auth.uid
+             && data == version.slots[data.slotOrder]
+             && version.slotIds[data.slotOrder] == data.slotId
+             && data.blockSortOrder < version.blockCount
+             && block.blockId == data.blockId
+             && data.sortOrder < block.slotCount
+             && block.slotIds[data.sortOrder] == data.slotId
+             && data.slotOrder == block.slotStartOrder + data.sortOrder
+             && hasValidWorkoutSlot(data)
+             && hasOwnedWorkoutSlot(version, data);
+    }
+
     function hasValidTypedWorkoutVersion(data) {
       return data.blockCount is int
              && data.blockCount >= 0
@@ -513,6 +768,10 @@ service cloud.firestore {
              && data.blocks.size() == data.blockCount
              && data.slots is list
              && data.slots.size() == data.slotCount
+             && (!('climbingSlotIds' in data)
+                 || (data.climbingSlotIds is list
+                     && data.climbingSlotIds.toSet().size() == data.climbingSlotIds.size()
+                     && data.climbingSlotIds.hasOnly(data.slotIds)))
              && (data.blockCount != 0 || data.slotCount == 0);
     }
 
@@ -611,14 +870,14 @@ service cloud.firestore {
                  || block.slotStartOrder + block.slotCount
                     == version.slotCount)
              && blockSlotMatchesManifest(version, block, 0)
-             && blockSlotMatchesManifest(version, block, 1)
-             && blockSlotMatchesManifest(version, block, 2)
-             && blockSlotMatchesManifest(version, block, 3)
-             && blockSlotMatchesManifest(version, block, 4)
-             && blockSlotMatchesManifest(version, block, 5)
-             && blockSlotMatchesManifest(version, block, 6)
-             && blockSlotMatchesManifest(version, block, 7)
-             && blockSlotMatchesManifest(version, block, 8);
+             && (block.slotCount < 2 || blockSlotMatchesManifest(version, block, 1))
+             && (block.slotCount < 3 || blockSlotMatchesManifest(version, block, 2))
+             && (block.slotCount < 4 || blockSlotMatchesManifest(version, block, 3))
+             && (block.slotCount < 5 || blockSlotMatchesManifest(version, block, 4))
+             && (block.slotCount < 6 || blockSlotMatchesManifest(version, block, 5))
+             && (block.slotCount < 7 || blockSlotMatchesManifest(version, block, 6))
+             && (block.slotCount < 8 || blockSlotMatchesManifest(version, block, 7))
+             && (block.slotCount < 9 || blockSlotMatchesManifest(version, block, 8));
     }
 
     function canReadWorkoutVersionChild(templateId, versionNumber) {
@@ -652,16 +911,13 @@ service cloud.firestore {
       ).data;
     }
 
-    function workoutVersionData(instanceId) {
-      let instance = workoutInstanceData(instanceId);
+    function workoutVersionData(instance) {
       return get(
         /databases/$(database)/documents/workoutTemplates/$(instance.workoutTemplateId)/workoutTemplateVersions/$(instance.workoutTemplateVersion)
       ).data;
     }
 
-    function hasValidResultSlot(instanceId, slotId, data) {
-      let instance = workoutInstanceData(instanceId);
-      let version = workoutVersionData(instanceId);
+    function hasValidResultSlot(instance, version, slotId, data) {
       return (version.storageFormat == 'typedWorkoutBlocksV1'
               && version.slots is list
               && data.slotOrder < version.slots.size()
@@ -678,8 +934,7 @@ service cloud.firestore {
               && get(
                    /databases/$(database)/documents/workoutTemplates/$(instance.workoutTemplateId)/workoutTemplateVersions/$(instance.workoutTemplateVersion)/exerciseSlots/$(data.slotOrder)
                  ).data.exerciseId == data.exerciseId)
-             || (version.storageFormat
-                    == 'exercisePrescriptionSubcollection'
+             || (version.storageFormat == 'exercisePrescriptionSubcollection'
                  && exists(
                       /databases/$(database)/documents/workoutTemplates/$(instance.workoutTemplateId)/workoutTemplateVersions/$(instance.workoutTemplateVersion)/exercisePrescriptions/$(data.slotOrder)
                     )
@@ -687,8 +942,7 @@ service cloud.firestore {
                  && get(
                       /databases/$(database)/documents/workoutTemplates/$(instance.workoutTemplateId)/workoutTemplateVersions/$(instance.workoutTemplateVersion)/exercisePrescriptions/$(data.slotOrder)
                     ).data.exerciseId == data.exerciseId)
-             || (!('storageFormat' in version)
-                 && version.exercises is list
+             || (!('storageFormat' in version) && version.exercises is list
                  && data.slotOrder < version.exercises.size()
                  && slotId == 'legacy-slot-' + string(data.slotOrder)
                  && version.exercises[data.slotOrder].exerciseId
@@ -699,7 +953,8 @@ service cloud.firestore {
       return data.keys().hasOnly([
                'exerciseId', 'mode', 'sets', 'reps', 'durationSeconds',
                'weight', 'restSeconds', 'attempts', 'sent',
-               'roundsCompleted', 'notes', 'slotOrder'
+               'roundsCompleted', 'notes', 'slotOrder', 'climbingType', 'rpe',
+               'circuitRows', 'freeRows', 'rowIds'
              ])
              && data.exerciseId is string
              && data.exerciseId.size() > 0
@@ -737,6 +992,170 @@ service cloud.firestore {
                  || data.notes is string);
     }
 
+    function validClimbingResultForBlock(rawBlock, rawData, draft, sharded) {
+      let block = rawBlock;
+      let data = rawData;
+      return ((block.type in ['climbingCircuit', 'freeClimbing'])
+                && data.climbingType == block.type
+                && validClimbingNote(data)
+                && (!draft || (data.keys().hasOnly([
+                      'climbingType', 'notes', 'rpe', 'circuitRows', 'freeRows', 'rowIds',
+                      'slotOrder', 'revision', 'clientId'
+                    ]) && (sharded || !data.keys().hasAny(['slotOrder', 'revision', 'clientId']))
+                       && data.notes is string))
+                && (draft || data.mode == 'reps')
+                && ((block.type == 'climbingCircuit'
+                    && data.get('rpe', null) == null && !('freeRows' in data)
+                       && data.rowIds == block.rowIds
+                       && validCircuitResultRows(data.circuitRows, data.rowIds))
+                    || (block.type == 'freeClimbing'
+                       && validClimbingRpe(data) && !('circuitRows' in data)
+                       && validClimbingGradeRows(data.freeRows, data.rowIds, false, draft))))
+             || (!(block.type in ['climbingCircuit', 'freeClimbing'])
+                && !('climbingType' in data) && !('rpe' in data)
+                && !('circuitRows' in data) && !('freeRows' in data) && !('rowIds' in data));
+    }
+
+    function validTypedResult(version, data) {
+      return ((version.get('storageFormat', '') != 'typedWorkoutBlocksV1'
+              || !('blocks' in version) || !('slots' in version)
+              || !('slotCount' in version))
+                && !('climbingType' in data) && !('rpe' in data)
+                && !('circuitRows' in data) && !('freeRows' in data) && !('rowIds' in data))
+             || (version.storageFormat == 'typedWorkoutBlocksV1'
+                && 'blocks' in version && 'slots' in version && 'slotCount' in version
+                && validClimbingResultForBlock(
+                    version.blocks[version.slots[data.slotOrder].blockSortOrder], data, false, false
+                  ));
+    }
+
+    function canWriteClimbingSlotResult(instanceId, slotId, data, type) {
+      let instance = workoutInstanceData(instanceId);
+      let after = getAfter(
+        /databases/$(database)/documents/workoutInstances/$(instanceId)
+      ).data;
+      let version = workoutVersionData(instance);
+      return instance.athleteId == request.auth.uid && instance.status == 'scheduled'
+             && after.status == 'completed' && after.updatedAt == request.time
+             && after.actualsStorageFormat == 'slotResultsSubcollection'
+             && after.actualSlotIds.hasAny([slotId])
+             && data.keys().hasOnly([
+                  'exerciseId', 'mode', 'notes', 'slotOrder',
+                  'climbingType', 'rpe', 'circuitRows', 'freeRows', 'rowIds'
+                ])
+             && data.climbingType == type && data.mode == 'reps'
+             && validClimbingNote(data)
+             && version.storageFormat == 'typedWorkoutBlocksV1'
+             && version.publishState == 'published'
+             && data.slotOrder is int && data.slotOrder >= 0
+             && data.slotOrder < version.slotCount
+             && version.slots[data.slotOrder].slotId == slotId
+             && version.slots[data.slotOrder].exerciseId == data.exerciseId
+             && version.blocks[version.slots[data.slotOrder].blockSortOrder].type == type
+             && (type != 'climbingCircuit'
+                 || data.rowIds == version.blocks[version.slots[data.slotOrder].blockSortOrder].rowIds);
+    }
+
+    function validCircuitClimbingPayload(data) {
+      return data.get('rpe', null) == null && !('freeRows' in data)
+             && validCircuitResultRows(data.circuitRows, data.rowIds);
+    }
+
+    function validFreeClimbingPayload(data) {
+      return validClimbingRpe(data) && !('circuitRows' in data)
+             && validFreeClimbingActualRows(data.freeRows, data.rowIds);
+    }
+
+    function validFreeClimbingDraftPayload(data) {
+      return validClimbingRpe(data) && !('circuitRows' in data)
+             && validFreeClimbingDraftRows(data.freeRows, data.rowIds);
+    }
+
+    function canWriteSlotResult(instanceId, slotId, data) {
+      let instance = workoutInstanceData(instanceId);
+      let after = getAfter(
+        /databases/$(database)/documents/workoutInstances/$(instanceId)
+      ).data;
+      let version = workoutVersionData(instance);
+      return after.athleteId == request.auth.uid && instance.status == 'scheduled'
+             && after.status == 'completed'
+             && after.actualsStorageFormat == 'slotResultsSubcollection'
+             && after.actualSlotIds.hasAny([slotId]) && after.updatedAt == request.time
+             && hasValidSlotResult(data)
+             && validTypedResult(version, data)
+             && hasValidResultSlot(instance, version, slotId, data);
+    }
+
+    function hasNoInlineClimbingInput(inputs, index) {
+      return inputs.size() <= index
+             || (inputs.values()[index] is map
+                 && !inputs.values()[index].keys().hasAny([
+                      'climbingType', 'circuitRows', 'freeRows', 'rowIds'
+                    ]));
+    }
+
+    function climbingDraftChildMatches(instanceId, ids, index) {
+      return ids.size() <= index || getAfter(
+        /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current/climbingInputs/$(ids[index])
+      ).data.serverUpdatedAt == request.time;
+    }
+
+    function validClimbingDraftManifest(instanceId, instance, data) {
+      let ids = data.get('climbingSlotIds', []);
+      return ids is list && ids.size() <= 9 && ids.toSet().size() == ids.size()
+             && ids.size() + data.slotInputs.size() <= 9
+             && !data.slotInputs.keys().hasAny(ids)
+             && climbingDraftChildMatches(instanceId, ids, 0)
+             && climbingDraftChildMatches(instanceId, ids, 1)
+             && climbingDraftChildMatches(instanceId, ids, 2)
+             && climbingDraftChildMatches(instanceId, ids, 3)
+             && climbingDraftChildMatches(instanceId, ids, 4)
+             && climbingDraftChildMatches(instanceId, ids, 5)
+             && climbingDraftChildMatches(instanceId, ids, 6)
+             && climbingDraftChildMatches(instanceId, ids, 7)
+             && climbingDraftChildMatches(instanceId, ids, 8);
+    }
+
+    // Timestamp checks force every declared child to be written in this batch.
+    // Children verify pinned slot/row identities and the primary generation.
+    function validClimbingDraftChild(instanceId, slotId, data) {
+      let instance = workoutInstanceData(instanceId);
+      let version = workoutVersionData(instance);
+      let draft = getAfter(
+        /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current
+      ).data;
+      return instance.athleteId == request.auth.uid && instance.status == 'scheduled'
+             && version.storageFormat == 'typedWorkoutBlocksV1'
+             && version.publishState == 'published'
+             && data.slotOrder is int && data.slotOrder >= 0 && data.slotOrder < version.slotCount
+             && version.slots[data.slotOrder].slotId == slotId
+             && data.revision == draft.revision && data.clientId == draft.clientId
+             && draft.climbingSlotIds.hasAny([slotId])
+             && data.keys().hasOnly([
+                  'climbingType', 'notes', 'rpe', 'circuitRows', 'freeRows', 'rowIds',
+                  'slotOrder', 'revision', 'clientId', 'serverUpdatedAt'
+                ])
+             && data.serverUpdatedAt == request.time
+             && data.notes is string && data.notes.size() <= 4000
+             && data.climbingType == version.blocks[version.slots[data.slotOrder].blockSortOrder].type
+             && ((data.climbingType == 'climbingCircuit'
+                  && data.rowIds == version.blocks[version.slots[data.slotOrder].blockSortOrder].rowIds
+                  && validCircuitClimbingPayload(data))
+                 || (data.climbingType == 'freeClimbing' && validFreeClimbingDraftPayload(data)));
+    }
+
+    function validClimbingDraftInputs(inputs) {
+      return hasNoInlineClimbingInput(inputs, 0)
+             && hasNoInlineClimbingInput(inputs, 1)
+             && hasNoInlineClimbingInput(inputs, 2)
+             && hasNoInlineClimbingInput(inputs, 3)
+             && hasNoInlineClimbingInput(inputs, 4)
+             && hasNoInlineClimbingInput(inputs, 5)
+             && hasNoInlineClimbingInput(inputs, 6)
+             && hasNoInlineClimbingInput(inputs, 7)
+             && hasNoInlineClimbingInput(inputs, 8);
+    }
+
     function isValidCompletionDraft(instanceId, data) {
       let instance = workoutInstanceData(instanceId);
       return isSignedIn()
@@ -745,7 +1164,7 @@ service cloud.firestore {
                  'schemaVersion', 'instanceId', 'athleteId', 'rpe',
                  'durationMinutes', 'athleteNotes', 'currentStep',
                  'slotInputs', 'revision', 'clientId', 'updatedAt',
-                 'serverUpdatedAt', 'sourceRoute'
+                 'serverUpdatedAt', 'sourceRoute', 'climbingSlotIds'
                ])
              && data.schemaVersion == 1
              && data.instanceId == instanceId
@@ -763,7 +1182,9 @@ service cloud.firestore {
              && data.currentStep is int
              && data.currentStep >= 0
              && data.slotInputs is map
-             && data.slotInputs.size() <= 100
+             && data.slotInputs.size() <= 9
+             && validClimbingDraftInputs(data.slotInputs)
+             && validClimbingDraftManifest(instanceId, instance, data)
              && data.revision is int
              && data.revision >= 1
              && data.clientId is string
@@ -1027,6 +1448,7 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys();
       return request.resource.data.status == 'completed'
              && resource.data.status == 'scheduled'
+             && hasRequiredClimbingResults(instanceId, request.resource.data)
              && (!exists(
                    /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current
                  )
@@ -1039,6 +1461,17 @@ service cloud.firestore {
                   'actualsStorageFormat', 'actualSlotIds',
                   'actualsBySlot', 'actuals', 'updatedAt'
                 ]);
+    }
+
+    function hasRequiredClimbingResults(instanceId, data) {
+      let path = /databases/$(database)/documents/workoutTemplates/$(resource.data.workoutTemplateId)/workoutTemplateVersions/$(resource.data.workoutTemplateVersion);
+      // Mandatory immutable slot children enforce this manifest for both new
+      // types. Legacy versions predate them and retain their completion rules.
+      return !exists(path)
+             || !('climbingSlotIds' in get(path).data)
+             || get(path).data.climbingSlotIds.size() == 0
+             || (data.get('actualsStorageFormat', '') == 'slotResultsSubcollection'
+                && data.get('actualSlotIds', []).hasAll(get(path).data.climbingSlotIds));
     }
 
     function isOwnerSchedulingUpdate() {
@@ -1572,29 +2005,7 @@ service cloud.firestore {
                          );
           allow create: if isSignedIn()
                          && blockId == request.resource.data.blockId
-                         && hasValidWorkoutBlock(request.resource.data)
-                         && !exists(
-                             /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                           )
-                         && getAfter(
-                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                            ).data.storageFormat == 'typedWorkoutBlocksV1'
-                         && getAfter(
-                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                            ).data.publishState == 'draft'
-                         && getAfter(
-                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                            ).data.ownerId == request.auth.uid
-                         && request.resource.data
-                            == getAfter(
-                                /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                              ).data.blocks[request.resource.data.sortOrder]
-                         && hasValidBlockManifestRange(
-                              getAfter(
-                                /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                              ).data,
-                              request.resource.data
-                            );
+                         && canCreateTypedBlock(templateId, versionNumber, request.resource.data);
           allow update: if false;
           allow delete: if canDeleteDraftWorkoutVersionChild(
                              templateId,
@@ -1609,59 +2020,7 @@ service cloud.firestore {
                          );
           allow create: if isSignedIn()
                          && slotId == request.resource.data.slotId
-                         && hasValidWorkoutSlot(request.resource.data)
-                         && isOwnedExerciseVersion(
-                              request.resource.data.exerciseId,
-                              request.resource.data.exerciseVersion
-                            )
-                         && !exists(
-                             /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                           )
-                         && getAfter(
-                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                            ).data.storageFormat == 'typedWorkoutBlocksV1'
-                         && getAfter(
-                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                            ).data.publishState == 'draft'
-                         && getAfter(
-                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                            ).data.ownerId == request.auth.uid
-                         && request.resource.data
-                            == getAfter(
-                                /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                              ).data.slots[request.resource.data.slotOrder]
-                         && getAfter(
-                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                            ).data.slotIds[request.resource.data.slotOrder]
-                            == slotId
-                         && request.resource.data.blockSortOrder
-                            < getAfter(
-                                /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                              ).data.blockCount
-                         && getAfter(
-                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                            ).data.blocks[
-                              request.resource.data.blockSortOrder
-                            ].blockId == request.resource.data.blockId
-                         && request.resource.data.sortOrder
-                            < getAfter(
-                                /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                              ).data.blocks[
-                                request.resource.data.blockSortOrder
-                              ].slotCount
-                         && getAfter(
-                              /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                            ).data.blocks[
-                              request.resource.data.blockSortOrder
-                            ].slotIds[request.resource.data.sortOrder]
-                            == slotId
-                         && request.resource.data.slotOrder
-                            == getAfter(
-                                 /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-                               ).data.blocks[
-                                 request.resource.data.blockSortOrder
-                               ].slotStartOrder
-                               + request.resource.data.sortOrder;
+                         && canCreateTypedSlot(templateId, versionNumber, request.resource.data);
           allow update: if false;
           allow delete: if canDeleteDraftWorkoutVersionChild(
                              templateId,
@@ -2173,36 +2532,36 @@ service cloud.firestore {
                               && getAfter(
                                    /databases/$(database)/documents/workoutInstances/$(instanceId)
                                  ).data.status == 'completed'));
+
+        match /climbingInputs/{slotId} {
+          allow read: if draftId == 'current' && isSignedIn()
+                      && workoutInstanceData(instanceId).athleteId == request.auth.uid;
+          allow create, update: if draftId == 'current' && isSignedIn()
+                                && validClimbingDraftChild(instanceId, slotId, request.resource.data)
+                                && (resource == null || request.resource.data.revision > resource.data.revision);
+          allow delete: if draftId == 'current' && isSignedIn()
+                        && workoutInstanceData(instanceId).athleteId == request.auth.uid
+                        && (!existsAfter(
+                             /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current
+                            )
+                            || !getAfter(
+                             /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current
+                            ).data.get('climbingSlotIds', []).hasAny([slotId]));
+        }
       }
 
       match /slotResults/{slotId} {
         allow read: if isSignedIn()
                     && canReadWorkout(workoutInstanceData(instanceId));
         allow create, update: if isSignedIn()
-                              && getAfter(
-                                   /databases/$(database)/documents/workoutInstances/$(instanceId)
-                                 ).data.athleteId == request.auth.uid
-                              && workoutInstanceData(instanceId).status
-                                 == 'scheduled'
-                              && getAfter(
-                                   /databases/$(database)/documents/workoutInstances/$(instanceId)
-                                 ).data.status == 'completed'
-                              && getAfter(
-                                   /databases/$(database)/documents/workoutInstances/$(instanceId)
-                                 ).data.actualsStorageFormat
-                                 == 'slotResultsSubcollection'
-                              && getAfter(
-                                   /databases/$(database)/documents/workoutInstances/$(instanceId)
-                                 ).data.actualSlotIds.hasAny([slotId])
-                              && getAfter(
-                                   /databases/$(database)/documents/workoutInstances/$(instanceId)
-                                 ).data.updatedAt == request.time
-                              && hasValidSlotResult(request.resource.data)
-                              && hasValidResultSlot(
-                                   instanceId,
-                                   slotId,
-                                   request.resource.data
-                                 );
+                              && ((request.resource.data.get('climbingType', '') == 'climbingCircuit'
+                                    && canWriteClimbingSlotResult(instanceId, slotId, request.resource.data, 'climbingCircuit')
+                                    && validCircuitClimbingPayload(request.resource.data))
+                                  || (request.resource.data.get('climbingType', '') == 'freeClimbing'
+                                    && canWriteClimbingSlotResult(instanceId, slotId, request.resource.data, 'freeClimbing')
+                                    && validFreeClimbingPayload(request.resource.data))
+                                  || (!('climbingType' in request.resource.data)
+                                    && canWriteSlotResult(instanceId, slotId, request.resource.data)));
         allow delete: if isSignedIn()
                       && canManageWorkoutSchedule(
                            workoutInstanceData(instanceId)

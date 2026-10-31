@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:stage5/features/workouts/data/workout_draft_local_store.dart';
+import 'package:stage5/features/workouts/domain/climbing.dart';
+import 'package:stage5/features/workouts/domain/climbing_completion_input.dart';
 import 'package:stage5/features/workouts/domain/workout_completion_draft.dart';
 
 enum WorkoutDraftSaveStatus { saved, offline, conflict }
@@ -58,6 +60,42 @@ class WorkoutCompletionDraftRepository {
   DocumentReference<Map<String, dynamic>> _draft(String instanceId) =>
       _instance(instanceId).collection('completionDrafts').doc('current');
 
+  Future<WorkoutCompletionDraft?> _readServerDraft(
+    Transaction transaction,
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
+  ) async {
+    final data = snapshot.data();
+    if (!snapshot.exists || data == null) return null;
+    final ids = data['climbingSlotIds'];
+    if (ids == null) return WorkoutCompletionDraft.fromMap(data);
+    if (ids is! List ||
+        ids.length > 9 ||
+        ids.toSet().length != ids.length ||
+        ids.any((id) => id is! String || id.isEmpty || id.contains('/'))) {
+      throw const FormatException('Invalid climbing draft slot manifest');
+    }
+    final inputs = Map<String, dynamic>.from(data['slotInputs'] as Map);
+    for (final id in ids.cast<String>()) {
+      final child = await transaction.get(
+        snapshot.reference.collection('climbingInputs').doc(id),
+      );
+      final input = child.data();
+      if (!child.exists ||
+          input == null ||
+          input['revision'] != data['revision'] ||
+          input['clientId'] != data['clientId'] ||
+          inputs.containsKey(id)) {
+        throw const FormatException('Incomplete climbing draft generation');
+      }
+      inputs[id] = Map<String, dynamic>.from(input)
+        ..remove('slotOrder')
+        ..remove('revision')
+        ..remove('clientId')
+        ..remove('serverUpdatedAt');
+    }
+    return WorkoutCompletionDraft.fromMap({...data, 'slotInputs': inputs});
+  }
+
   Future<WorkoutDraftRestoreResult> load({
     required String instanceId,
     required String athleteId,
@@ -100,9 +138,11 @@ class WorkoutCompletionDraftRepository {
 
     WorkoutCompletionDraft? server;
     try {
-      final snapshot = await _draft(instanceId).get();
-      if (snapshot.exists && snapshot.data() != null) {
-        server = WorkoutCompletionDraft.fromMap(snapshot.data()!);
+      server = await _firestore.runTransaction((transaction) async {
+        final snapshot = await transaction.get(_draft(instanceId));
+        return _readServerDraft(transaction, snapshot);
+      });
+      if (server != null) {
         _verifyIdentity(server, instanceId, athleteId);
       }
     } on FirebaseException {
@@ -190,9 +230,8 @@ class WorkoutCompletionDraftRepository {
         );
         final draftRef = _draft(draft.instanceId);
         final serverSnapshot = await transaction.get(draftRef);
-        WorkoutCompletionDraft? server;
-        if (serverSnapshot.exists && serverSnapshot.data() != null) {
-          server = WorkoutCompletionDraft.fromMap(serverSnapshot.data()!);
+        final server = await _readServerDraft(transaction, serverSnapshot);
+        if (server != null) {
           _verifyIdentity(server, draft.instanceId, draft.athleteId);
         }
         final decision = decideWorkoutDraftSaveAttempt(
@@ -202,7 +241,76 @@ class WorkoutCompletionDraftRepository {
         if (!decision.shouldWrite) {
           return decision.result;
         }
-        transaction.set(draftRef, draft.toMap(includeServerTimestamp: true));
+        final climbing = {
+          for (final entry in draft.slotInputs.entries)
+            if (entry.value.containsKey('climbingType'))
+              entry.key: climbingInputForStorage(entry.value),
+        };
+        final slotOrders = <String, int>{};
+        if (climbing.isNotEmpty) {
+          final instance = instanceSnapshot.data()!;
+          final version = (await transaction.get(
+            _firestore
+                .collection('workoutTemplates')
+                .doc(instance['workoutTemplateId'] as String)
+                .collection('workoutTemplateVersions')
+                .doc('${instance['workoutTemplateVersion']}'),
+          ))
+              .data();
+          if (version == null ||
+              version['storageFormat'] != 'typedWorkoutBlocksV1' ||
+              version['publishState'] != 'published') {
+            throw const FormatException(
+                'Climbing draft needs a pinned workout');
+          }
+          final slots = version['slots'] as List;
+          final blocks = version['blocks'] as List;
+          for (final entry in climbing.entries) {
+            final order = slots.indexWhere((s) => s['slotId'] == entry.key);
+            if (order < 0) {
+              throw const FormatException('Unknown climbing draft slot');
+            }
+            final block = blocks[slots[order]['blockSortOrder'] as int] as Map;
+            if (block['type'] != entry.value['climbingType']) {
+              throw const FormatException('Climbing draft type changed');
+            }
+            if (block['type'] == 'climbingCircuit') {
+              validateClimbingRowManifest(
+                entry.value['rowIds'],
+                (block['rowIds'] as List).cast<String>(),
+              );
+            }
+            slotOrders[entry.key] = order;
+          }
+        }
+        final previousIds =
+            serverSnapshot.data()?['climbingSlotIds'] as List? ?? const [];
+        for (final id in previousIds.cast<String>()) {
+          if (!climbing.containsKey(id)) {
+            transaction.delete(draftRef.collection('climbingInputs').doc(id));
+          }
+        }
+        for (final entry in climbing.entries) {
+          transaction.set(
+            draftRef.collection('climbingInputs').doc(entry.key),
+            {
+              ...entry.value,
+              'slotOrder': slotOrders[entry.key],
+              'revision': draft.revision,
+              'clientId': draft.clientId,
+              'serverUpdatedAt': FieldValue.serverTimestamp(),
+            },
+          );
+        }
+        final data = draft.toMap(includeServerTimestamp: true);
+        if (climbing.isNotEmpty || previousIds.isNotEmpty) {
+          data['climbingSlotIds'] = climbing.keys.toList();
+          data['slotInputs'] = {
+            for (final entry in draft.slotInputs.entries)
+              if (!climbing.containsKey(entry.key)) entry.key: entry.value,
+          };
+        }
+        transaction.set(draftRef, data);
         return decision.result;
       });
       final authoritative = result.authoritativeDraft;
