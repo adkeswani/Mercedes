@@ -6,7 +6,10 @@ import 'package:go_router/go_router.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:stage5/app.dart';
 import 'package:stage5/core/browser_smoke_config.dart';
+import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/exercises/presentation/exercise_media_widgets.dart';
+import 'package:stage5/features/programs/data/program_repository.dart';
+import 'package:stage5/features/programs/domain/program.dart';
 import 'package:stage5/features/workouts/data/workout_completion_draft_repository.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
 import 'package:stage5/features/workouts/presentation/climbing_completion_card.dart';
@@ -235,6 +238,46 @@ void main() {
     expect(second.data()!['blocks'][0]['rows'][0]['workSeconds'], 3);
     expect(second.data()!['blocks'][1]['restSeconds'], 2);
     expect((await versionRef.get(_server)).data(), data);
+    final userId = data['ownerId'] as String;
+    final programRepo = ProgramRepository();
+    final programId = await waits.runStep(
+        'create recurring climbing program',
+        () => programRepo.create(
+              name: 'Browser Recurring Climbing',
+              type: ProgramType.assignable,
+              userId: userId,
+            ));
+    final programVersion = await waits.runStep(
+        'publish recurring climbing program with server propagation timestamp',
+        () => programRepo.publishVersion(
+              programId: programId,
+              userId: userId,
+              entries: [
+                for (var i = 0; i < 4; i++)
+                  ProgramScheduleEntry(
+                    entryId: 'weekly-$i',
+                    workoutTemplateId: workoutId,
+                    workoutTemplateVersion: 1,
+                    dayOffset: i * 7,
+                    sortOrder: i,
+                  ),
+              ],
+            ));
+    expect(programVersion, 1);
+    final publishedProgram = await waits.runStep(
+        'verify recurring program persisted in emulator',
+        () => FirebaseFirestore.instance
+            .collection('programs')
+            .doc(programId)
+            .collection('programVersions')
+            .doc('1')
+            .get(_server));
+    final programData = publishedProgram.data()!;
+    expect(programData['entries'], hasLength(4));
+    expect((programData['entries'] as List).map((entry) => entry['dayOffset']),
+        [0, 7, 14, 21]);
+    expect(programData['propagationState'], 'pending');
+    expect(programData['propagationRequestedAt'], isA<Timestamp>());
     await waits.captureAfterAssertions('capture trainer climbing authoring',
         () async {
       await binding.takeScreenshot('trainer-climbing-authoring');

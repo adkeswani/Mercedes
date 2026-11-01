@@ -356,6 +356,57 @@ void main() {
       expect(version2.changeNote, 'Added second workout');
     });
 
+    test(
+        'publishVersion preserves recurring workout pins and requests propagation',
+        () async {
+      final id = await repo.create(
+        name: 'Recurring Climbing',
+        type: ProgramType.assignable,
+        userId: 'coach1',
+      );
+      final entries = [
+        for (var i = 0; i < 4; i++)
+          ProgramScheduleEntry(
+            entryId: 'weekly-$i',
+            workoutTemplateId: 'wt1',
+            workoutTemplateVersion: 1,
+            dayOffset: i * 7,
+            sortOrder: i,
+          ),
+      ];
+
+      expect(
+        await repo.publishVersion(
+          programId: id,
+          entries: entries,
+          userId: 'coach1',
+        ),
+        1,
+      );
+      final version = (await repo.getVersion(id, 1))!;
+      expect(version.entries.map((entry) => entry.dayOffset), [0, 7, 14, 21]);
+      expect(version.entries.map((entry) => entry.resolvedEntryId),
+          ['weekly-0', 'weekly-1', 'weekly-2', 'weekly-3']);
+      expect(
+          version.entries.every((entry) =>
+              entry.workoutTemplateId == 'wt1' &&
+              entry.workoutTemplateVersion == 1),
+          isTrue);
+      expect(version.propagationState, ProgramPropagationState.pending);
+      final rawVersion = await fakeFirestore
+          .collection('programs')
+          .doc(id)
+          .collection('programVersions')
+          .doc('1')
+          .get();
+      expect(rawVersion.data()!['propagationRequestedAt'], isNotNull);
+      expect(version.propagationAttempt, 0);
+      expect(version.propagationStartedAt, isNull);
+      expect(version.propagationCompletedAt, isNull);
+      expect(version.propagationFailedAt, isNull);
+      expect(version.propagationError, isNull);
+    });
+
     test('publishVersion rejects foreign or unpublished workout pins',
         () async {
       final id = await repo.create(

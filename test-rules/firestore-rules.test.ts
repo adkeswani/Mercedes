@@ -336,6 +336,40 @@ describe('climbing circuit and free climbing', () => {
       { ...block('freeClimbing'), workSeconds: 30, restSeconds: 15 }, slot('freeClimbing')));
   });
 
+  it.each([true, false])('publishes and seals editor-shaped free climbing followed by circuit: linked=%s', async linked => {
+    await seedAuthoring();
+    const blocks = ['freeClimbing', 'climbingCircuit'].map((type, i) => ({
+      ...block(type), blockId: `block-${i}`, sortOrder: i, slotStartOrder: i,
+      slotIds: [`slot-${i}`], title: null, notes: null,
+      ...(type === 'climbingCircuit'
+        ? { rowIds: rows.map(r => r.rowId) }
+        : { workSeconds: 30, restSeconds: 15 }),
+    }));
+    const slots = blocks.map((b, i) => ({
+      ...slot(b.type, linked), slotId: b.slotIds[0], blockId: b.blockId,
+      blockSortOrder: i, slotOrder: i,
+    }));
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('climbing-workout');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const batch = db.batch();
+    batch.set(version, {
+      ...versionMap(blocks[0], slots[0]), publishedAt: new Date(), childWorkouts: [],
+      blocks, slots, blockCount: 2, slotCount: 2,
+      blockIds: blocks.map(b => b.blockId), slotIds: slots.map(s => s.slotId),
+      climbingSlotIds: slots.map(s => s.slotId),
+    });
+    for (const b of blocks) batch.set(version.collection('workoutBlocks').doc(b.blockId), b);
+    for (const s of slots) batch.set(version.collection('exerciseSlots').doc(s.slotId), s);
+    await assertSucceeds(batch.commit());
+    await assertSucceeds(db.runTransaction(async transaction => {
+      await transaction.get(header);
+      await transaction.get(version);
+      transaction.update(version, { publishState: 'published' });
+      transaction.update(header, { currentVersion: 1, updatedBy: OWNER });
+    }));
+  });
+
   it.each([true, false])('publishes nine timed circuits with nine rows each and seals: linked=%s', async linked => {
     await seedAuthoring();
     const blocks = Array.from({ length: 9 }, (_, i) => ({
@@ -2856,6 +2890,48 @@ describe('programs', () => {
       updatedBy: OWNER,
     });
     await assertFails(batch.commit());
+  });
+
+  it.each([false, true])('requires server time when publishing a recurring program: serverTimestamp=%s', async useServerTime => {
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      await ctx.firestore().collection('programs').doc('recurring-program').set({
+        ownerId: OWNER, createdBy: OWNER, currentVersion: 0,
+        type: 'assignable', status: 'draft', tags: [], folderId: null,
+        provenance: null,
+      });
+    });
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('programs').doc('recurring-program');
+    const version = header.collection('programVersions').doc('1');
+    const write = db.runTransaction(async transaction => {
+      await transaction.get(header);
+      transaction.set(version, {
+        versionNumber: 1, publishedAt: new Date(), changeNote: null,
+        entries: [0, 7, 14, 21].map((dayOffset, i) => ({
+          entryId: `entry-${i}`, workoutTemplateId: 'climbing-workout',
+          workoutTemplateVersion: 1, dayOffset, sortOrder: i,
+          workoutName: 'Sunday Climbing',
+        })),
+        propagationState: 'pending',
+        propagationRequestedAt: useServerTime
+          ? serverTimestamp() : new Date('2026-01-01T00:00:00Z'),
+        propagationAttempt: 0, propagationStartedAt: null,
+        propagationCompletedAt: null, propagationFailedAt: null,
+        propagationError: null,
+      });
+      transaction.update(header, {
+        currentVersion: 1, status: 'published', updatedBy: OWNER,
+      });
+    });
+    if (useServerTime) {
+      await assertSucceeds(write);
+      const saved = await version.get();
+      expect(saved.data().propagationRequestedAt).toBeTruthy();
+      expect(saved.data().entries.map(e => e.dayOffset)).toEqual([0, 7, 14, 21]);
+    } else {
+      await assertFails(write);
+      expect((await header.get()).data().currentVersion).toBe(0);
+    }
   });
 
   it('denies stranger from reading program versions', async () => {

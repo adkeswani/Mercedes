@@ -6,6 +6,12 @@ no project IDs in `config/firebase-environments.json` until they are
 provisioned. Every release command requires both an environment and a project
 ID or matching CLI alias; there is no default alias.
 
+Program publishing must write `propagationRequestedAt` with
+`FieldValue.serverTimestamp()`: the rules require equality with `request.time`,
+so a client-clock timestamp is rejected. The climbing browser canary publishes
+a recurring program through the real repository to exercise this contract,
+in addition to the rules tests that reject client timestamps.
+
 ## Stage 5 browser validation timeouts
 
 `scripts/run-stage-validation.ps1` gives Flutter/web compilation and emulator

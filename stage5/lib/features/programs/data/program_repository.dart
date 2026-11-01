@@ -265,7 +265,7 @@ class ProgramRepository {
         'entries': entries.map(_entryToMap).toList(),
         'changeNote': changeNote,
         'propagationState': ProgramPropagationState.pending.name,
-        'propagationRequestedAt': Timestamp.fromDate(now),
+        'propagationRequestedAt': FieldValue.serverTimestamp(),
         'propagationAttempt': 0,
         'propagationStartedAt': null,
         'propagationCompletedAt': null,
