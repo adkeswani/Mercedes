@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:stage5/app.dart';
 import 'package:stage5/core/browser_smoke_config.dart';
+import 'package:stage5/core/web_workspace/web_workspace_mode.dart';
+import 'package:stage5/features/auth/presentation/web_workspace_shell.dart';
 import 'package:stage5/main.dart' as app;
 
 import 'support/browser_test_wait.dart';
@@ -60,6 +62,19 @@ void main() {
       () => find.byKey(browserSmokeLoginButtonKey).evaluate().isNotEmpty,
     );
     await tester.tap(find.byKey(browserSmokeLoginButtonKey));
+    await wait(
+      'authenticated application',
+      () => find.byKey(authenticatedAppEntryKey).evaluate().isNotEmpty,
+    );
+    final mode = role == BrowserSmokeIdentityRole.trainer
+        ? WebWorkspaceMode.trainer
+        : WebWorkspaceMode.athlete;
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(webWorkspaceModeSwitcherKey),
+        matching: find.text(mode.label),
+      ),
+    );
     await wait('authenticated workspace identity', () {
       final body = html.document.body;
       return find.byKey(authenticatedAppEntryKey).evaluate().isNotEmpty &&
@@ -71,7 +86,7 @@ void main() {
     });
     expect(
       mountedAppRouter(tester).routeInformationProvider.value.uri.path,
-      '/$identity',
+      mode.initialLocation,
     );
 
     final semantics = tester.ensureSemantics();
@@ -141,7 +156,7 @@ void main() {
     // Capture only after all functional checks, so a screenshot handshake
     // cannot strand an unfinished scenario.
     await waits.captureAfterAssertions('workspace screenshots', () async {
-      mountedAppRouter(tester).go('/$identity');
+      mountedAppRouter(tester).go(mode.initialLocation);
       await tester.pump(const Duration(milliseconds: 500));
       await binding.takeScreenshot('$identity-header-identity');
       for (final surface in surfaces) {
