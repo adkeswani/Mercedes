@@ -7,9 +7,13 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:stage5/app.dart';
 import 'package:stage5/core/browser_smoke_config.dart';
+import 'package:stage5/features/workouts/presentation/workout_completion_screen.dart';
 import 'package:stage5/main.dart' as app;
 
 import 'support/browser_test_wait.dart';
+import 'support/exercise_type_screenshots.dart';
+import 'support/list_test_utils.dart';
+import 'support/router_test_utils.dart';
 
 const _testFile = 'integration_test/workout_exercise_types_canary_test.dart';
 const _artifactPath = String.fromEnvironment(
@@ -24,7 +28,7 @@ const _artifactPath = String.fromEnvironment(
 const _workoutInstanceId = 'browser-exercise-types-workout';
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
     'athlete fills in and completes a workout covering all exercise types',
@@ -226,6 +230,46 @@ void main() {
             .get(),
       );
       expect(instance.data()?['status'], 'completed');
+
+      mountedAppRouter(tester).go('/athlete/workouts/$_workoutInstanceId');
+      await _waitFor(
+        tester,
+        waits,
+        find.text('Workout Details'),
+        step: 'immutable exercise-types completion details',
+      );
+      await waits.captureAfterAssertions('capture exercise-type screenshots',
+          () async {
+        final scrollable = find
+            .descendant(
+              of: find.byKey(WorkoutCompletionScreen.listKey),
+              matching: find.byType(Scrollable),
+            )
+            .first;
+        for (final target in exerciseTypeScreenshotTargets) {
+          await revealListTarget(
+            tester,
+            find.descendant(
+              of: find.byKey(ValueKey(target.slotId)),
+              matching: find.text(target.title),
+            ),
+            scrollable: scrollable,
+          );
+          await Scrollable.ensureVisible(
+            tester.element(find.byKey(ValueKey(target.slotId))),
+            alignment: 1,
+          );
+          await tester.pumpAndSettle();
+          await binding.takeScreenshot(target.name);
+        }
+        await revealListTarget(
+          tester,
+          find.text('Completion Details'),
+          scrollable: scrollable,
+        );
+        await tester.pumpAndSettle();
+        await binding.takeScreenshot(exerciseTypesCompletionScreenshot);
+      });
     },
     skip: browserSmokeConfig.identityRole != BrowserSmokeIdentityRole.athlete,
   );

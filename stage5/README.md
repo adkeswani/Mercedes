@@ -262,6 +262,11 @@ control-state, and collapse/expand checks. After functional assertions pass,
 it captures the 14 legacy expanded/collapsed workspace screenshots alongside
 the climbing screenshots in the same validation artifact directory. Both
 browser paths use headless Chrome; no visible test window is expected.
+The exercise-types integration scenario also captures the standard, timed,
+legacy climbing-route, and AMRAP cards plus completion details after verifying
+the persisted results. Together the suite produces 21 PNGs. These captures use
+the completed workout's real read-only UI and settled frames, not synthetic
+screens or an additional browser execution.
 Surface diagnostics are enabled by the debug/emulator login seam for both
 manual and automatic login; enabling them does not enable automatic login.
 The dashboard's seven-day program-ending window uses calendar dates, not
