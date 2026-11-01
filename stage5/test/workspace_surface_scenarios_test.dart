@@ -35,7 +35,8 @@ void main() {
     expect(athleteWorkspaceSurfaces.length, 3);
     for (final surface in trainerWorkspaceSurfaces) {
       expect(surface.route, startsWith('/trainer/'));
-      expect(surface.content, isNotEmpty);
+      expect(
+          surface.content != null || surface.visibleContent.isNotEmpty, isTrue);
     }
     for (final surface in athleteWorkspaceSurfaces) {
       expect(surface.route, startsWith('/athlete/'));
@@ -51,6 +52,22 @@ void main() {
       'Reactions filter': false,
       'Programs filter': false,
       'Personal bests': true,
+    });
+
+    test(
+        'workout library checks real fixture content rather than first-item order',
+        () {
+      final workout = trainerWorkspaceSurfaces.singleWhere(
+        (surface) => surface.route == '/trainer/workouts',
+      );
+      expect(workout.visibleContent, [
+        'Browser Calendar Workout',
+        'Client',
+        'Full Body',
+        'Browser workouts',
+        'Clients',
+        'Unfiled',
+      ]);
     });
   });
 }

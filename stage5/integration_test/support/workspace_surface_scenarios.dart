@@ -6,12 +6,14 @@ class WorkspaceSurfaceScenario {
     required this.content,
     this.collapseControl,
     this.controls = const {},
+    this.visibleContent = const [],
   });
 
   final String route;
   final String marker;
   final String screenshot;
-  final String content;
+  final String? content;
+  final List<String> visibleContent;
   final String? collapseControl;
   final Map<String, bool> controls;
 }
@@ -72,8 +74,15 @@ const trainerWorkspaceSurfaces = [
     route: '/trainer/workouts',
     marker: 'trainer-workouts',
     screenshot: 'trainer-workout-library',
-    content: 'Browser Calendar Workout | Client | Full Body | '
-        'Browser workouts | Clients | Unfiled',
+    content: null,
+    visibleContent: [
+      'Browser Calendar Workout',
+      'Client',
+      'Full Body',
+      'Browser workouts',
+      'Clients',
+      'Unfiled',
+    ],
     collapseControl: 'Collapse Browser Smoke Athlete',
   ),
   WorkspaceSurfaceScenario(

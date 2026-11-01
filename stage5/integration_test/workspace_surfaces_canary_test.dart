@@ -47,9 +47,10 @@ void main() {
           condition: label,
           isSatisfied: ready,
           pump: () => tester.pump(const Duration(milliseconds: 100)),
-          details: () => '$surfaceStatus Visible: ${find.byType(Text).evaluate().map(
-                (element) => (element.widget as Text).data,
-              ).whereType<String>().take(25).join(' | ')}',
+          details: () =>
+              '$surfaceStatus Visible: ${find.byType(Text).evaluate().map(
+                    (element) => (element.widget as Text).data,
+                  ).whereType<String>().take(25).join(' | ')}',
         );
 
     await waits.runStep(
@@ -115,8 +116,12 @@ void main() {
                     .path ==
                 surface.route &&
             state == 'ready' &&
-            content == surface.content;
+            (surface.content == null || content == surface.content);
       });
+      for (final text in surface.visibleContent) {
+        await wait('visible $text on ${surface.route}',
+            () => find.textContaining(text).evaluate().isNotEmpty);
+      }
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.textContaining('permission-denied'), findsNothing);
       expect(find.textContaining('Something went wrong'), findsNothing);
