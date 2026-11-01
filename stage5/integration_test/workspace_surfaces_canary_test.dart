@@ -69,12 +69,12 @@ void main() {
     final mode = role == BrowserSmokeIdentityRole.trainer
         ? WebWorkspaceMode.trainer
         : WebWorkspaceMode.athlete;
-    await tester.tap(
-      find.descendant(
-        of: find.byKey(webWorkspaceModeSwitcherKey),
-        matching: find.text(mode.label),
-      ),
+    final modeControl = find.descendant(
+      of: find.byKey(webWorkspaceModeSwitcherKey),
+      matching: find.text(mode.label),
     );
+    await wait('workspace switcher', () => modeControl.evaluate().isNotEmpty);
+    await tester.tap(modeControl);
     await wait('authenticated workspace identity', () {
       final body = html.document.body;
       return find.byKey(authenticatedAppEntryKey).evaluate().isNotEmpty &&
