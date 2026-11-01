@@ -25,6 +25,7 @@ complete.
    - the root Firestore emulator rules suite, when `test-rules/` exists
    - every `integration_test/*_test.dart` file in the stage, once as the
      deterministic trainer and once as the deterministic athlete
+     (including the Stage 5 workspace surfaces and legacy screenshot coverage)
 
    Browser runs have a four-minute process timeout and one explicit retry for
    a transient ChromeDriver screenshot-handshake timeout after the test

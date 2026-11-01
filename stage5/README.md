@@ -256,6 +256,13 @@ app, and only the WebDriver-controlled browser executes it. Do not switch
 to `-d chrome`, which also launches a resident test app and can create
 competing draft writers against the same emulator fixtures.
 
+The unified integration suite includes `workspace_surfaces_canary_test.dart`.
+It retains the legacy identity, populated dashboard/library/calendar, dashboard
+control-state, and collapse/expand checks. After functional assertions pass,
+it captures the 14 legacy expanded/collapsed workspace screenshots alongside
+the climbing screenshots in the same validation artifact directory. Both
+browser paths use headless Chrome; no visible test window is expected.
+
 Stage 5 has browser integration coverage that starts the Flutter web app in
 Chrome against local Firebase Auth and Firestore emulators and signs in through
 the real login and bootstrap path. Both identities verify their accessible
@@ -496,7 +503,7 @@ match the client query contract.
 Copilot's repository-local stage completion skill lives at
 `.github/skills/stage-completion-testing/SKILL.md`. Its validation entry point
 automatically runs the full Flutter suite, analyzer, Firestore rules suite, and
-the browser login smoke for both emulator identities:
+every browser integration scenario for both emulator identities:
 
 ```powershell
 .\scripts\run-stage-validation.ps1 -Stage stage5
