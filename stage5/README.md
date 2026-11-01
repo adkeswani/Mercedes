@@ -249,6 +249,11 @@ neither cached app assets nor a local draft cannot be recovered.
 
 ## Browser login smoke test
 
+Integration targets use `flutter drive -d web-server`: Flutter serves the
+app, and only the WebDriver-controlled browser executes it. Do not switch
+to `-d chrome`, which also launches a resident test app and can create
+competing draft writers against the same emulator fixtures.
+
 Stage 5 has browser integration coverage that starts the Flutter web app in
 Chrome against local Firebase Auth and Firestore emulators and signs in through
 the real login and bootstrap path. Both identities verify their accessible

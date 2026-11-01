@@ -23,6 +23,12 @@ $browserSmokeSource = Get-Content -Raw -LiteralPath (
     Join-Path $repoRoot 'stage5\tool\run-browser-login-smoke.ps1'
 )
 Assert-True `
+    -Condition $browserSmokeSource.Contains("'-d', 'web-server'") `
+    -Message 'Integration tests must serve the app without launching a second Chrome execution.'
+Assert-True `
+    -Condition (-not $browserSmokeSource.Contains("'-d', 'chrome'")) `
+    -Message 'Resident Chrome would execute the test in parallel with WebDriver.'
+Assert-True `
     -Condition $browserSmokeSource.Contains(
         'materializationKey = @{ nullValue = $null }'
     ) `
