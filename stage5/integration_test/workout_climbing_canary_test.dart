@@ -31,6 +31,7 @@ const _server = GetOptions(source: Source.server);
 WorkoutDraftDiagnostics _draftDiagnostics = WorkoutDraftDiagnostics();
 
 void main() {
+  _draftDiagnostics.record({'phase': 'execution-start'});
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('trainer creates and edits both climbing block types via real UI',

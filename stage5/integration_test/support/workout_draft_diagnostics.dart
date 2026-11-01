@@ -1,9 +1,16 @@
+import 'dart:math';
+
 class WorkoutDraftConflictFailure extends StateError {
   WorkoutDraftConflictFailure(super.message);
 }
 
 /// Browser-canary metadata only; never records draft contents or athlete IDs.
 class WorkoutDraftDiagnostics {
+  static final executionId =
+      '${DateTime.now().toUtc().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
+
+  static final executionStartedAt = DateTime.now().toUtc().toIso8601String();
+
   WorkoutDraftDiagnostics({void Function(String)? write})
       : _write = write ?? _print;
 
@@ -41,6 +48,10 @@ class WorkoutDraftDiagnostics {
     }
     _write('BROWSER_WORKOUT_DRAFT|${{
       'sequence': ++_sequence,
+      'executionId': executionId,
+      'executionStartedAt': executionStartedAt,
+      'pageUrl':
+          '${Uri.base.scheme}://${Uri.base.host}:${Uri.base.port}${Uri.base.path}',
       'elapsedMs': _elapsed.elapsedMilliseconds,
       ...metadata,
     }.entries.map((e) => '${e.key}=${Uri.encodeComponent('${e.value}')}').join('|')}');

@@ -21,6 +21,11 @@ void main() {
     });
     diagnostics.record({'operation': 1, 'phase': 'save-return'});
     expect(logs.first, contains('sequence=1'));
+    expect(logs.first,
+        contains('executionId=${WorkoutDraftDiagnostics.executionId}'));
+    expect(logs.last,
+        contains('executionId=${WorkoutDraftDiagnostics.executionId}'));
+    expect(logs.first, contains('pageUrl='));
     expect(logs.first, contains('editorId=101'));
     expect(logs.first, contains('repositoryId=202'));
     expect(logs.last, contains('sequence=2'));

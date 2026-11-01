@@ -1212,12 +1212,14 @@ try {
             $stagePath.Length
         ).TrimStart('\')
         $driverPort = Get-FreeTcpPort
+        Write-Output "BROWSER_RUNNER|pid=$PID|target=$relativeTestTarget|identity=$Identity|driverPort=$driverPort"
         $chromeDriverProcess = Start-Process `
             -FilePath $ChromeDriverPath `
             -ArgumentList "--port=$driverPort" `
             -PassThru `
             -WindowStyle Hidden
         Start-Sleep -Seconds 1
+        Write-Output "BROWSER_CHROMEDRIVER|pid=$($chromeDriverProcess.Id)|port=$driverPort"
         if ($chromeDriverProcess.HasExited) {
             throw 'ChromeDriver exited before the browser test started.'
         }
