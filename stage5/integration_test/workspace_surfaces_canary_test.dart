@@ -119,10 +119,15 @@ void main() {
               (surface.content == null || content == surface.content);
         });
         for (final text in surface.visibleContent) {
-          await wait('visible $text on ${surface.route}',
-              () => find.textContaining(text).evaluate().isNotEmpty);
+          await wait(
+            'visible $text on ${surface.route}',
+            () => find.textContaining(text).evaluate().isNotEmpty,
+          );
         }
-        await tester.pump(const Duration(milliseconds: 500));
+        await waits.runStep(
+          'render ${surface.route}',
+          () => tester.pumpAndSettle(),
+        );
         expect(find.textContaining('permission-denied'), findsNothing);
         expect(find.textContaining('Something went wrong'), findsNothing);
       }
@@ -130,7 +135,7 @@ void main() {
       Future<void> toggle(String label) async {
         await wait('accessible $label', () => _control(label) != null);
         _control(label)!.click();
-        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
         final replacement = label.startsWith('Collapse ')
             ? label.replaceFirst('Collapse ', 'Expand ')
             : label.replaceFirst('Expand ', 'Collapse ');
@@ -166,7 +171,7 @@ void main() {
       // cannot strand an unfinished scenario.
       await waits.captureAfterAssertions('workspace screenshots', () async {
         mountedAppRouter(tester).go(mode.initialLocation);
-        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
         await binding.takeScreenshot('$identity-header-identity');
         for (final surface in surfaces) {
           await openSurface(surface);

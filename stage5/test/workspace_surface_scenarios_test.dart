@@ -36,7 +36,9 @@ void main() {
     for (final surface in trainerWorkspaceSurfaces) {
       expect(surface.route, startsWith('/trainer/'));
       expect(
-          surface.content != null || surface.visibleContent.isNotEmpty, isTrue);
+        surface.content != null || surface.visibleContent.isNotEmpty,
+        isTrue,
+      );
     }
     for (final surface in athleteWorkspaceSurfaces) {
       expect(surface.route, startsWith('/athlete/'));
