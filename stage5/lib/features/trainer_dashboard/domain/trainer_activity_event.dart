@@ -177,8 +177,8 @@ List<TrainerActivityEvent> filterTrainerActivityEvents(
 }
 
 int calendarDaysRemaining(DateTime now, DateTime endDate) {
-  final today = DateTime(now.year, now.month, now.day);
-  final end = DateTime(endDate.year, endDate.month, endDate.day);
+  final today = DateTime.utc(now.year, now.month, now.day);
+  final end = DateTime.utc(endDate.year, endDate.month, endDate.day);
   return end.difference(today).inDays;
 }
 

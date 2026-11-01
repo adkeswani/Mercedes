@@ -35,6 +35,16 @@ void main() {
   });
 
   group('activity domain', () {
+    test('calendar-day counts ignore daylight-saving hour changes', () {
+      expect(calendarDaysRemaining(DateTime(2026, 3, 8), DateTime(2026, 3, 15)),
+          7);
+      expect(
+          calendarDaysRemaining(DateTime(2026, 11, 1), DateTime(2026, 11, 8)),
+          7);
+      expect(calendarDaysRemaining(DateTime(2026, 3, 9), DateTime(2026, 3, 8)),
+          -1);
+    });
+
     test('centralizes ending boundary and filter behavior', () {
       expect(trainerProgramEndingSoonDays, 7);
       expect(
@@ -121,6 +131,28 @@ void main() {
         'Reaction: 🎉 1 | Comment: Release Canary dashboard comment | '
         'Completion: Release Canary Workout',
       );
+    });
+
+    test('seven-day program query boundary survives daylight-saving changes',
+        () async {
+      for (final start in [DateTime(2026, 3, 8), DateTime(2026, 11, 1)]) {
+        final boundary = DateTime(start.year, start.month, start.day + 7);
+        final outside = DateTime(start.year, start.month, start.day + 8);
+        String date(DateTime value) =>
+            '${value.year}-${value.month.toString().padLeft(2, '0')}-'
+            '${value.day.toString().padLeft(2, '0')}';
+        await _programInstance(firestore,
+            id: 'boundary', endDate: date(boundary));
+        await _programInstance(firestore,
+            id: 'outside', endDate: date(outside));
+        final page = await TrainerDashboardRepository(
+          firestore: firestore,
+          now: () => start,
+        ).loadInitialPage('trainer-1');
+        final events = page.events.whereType<ProgramEndingSoonActivityEvent>();
+        expect(events.map((event) => event.id), ['program-ending:boundary']);
+        expect(events.single.daysRemaining, 7);
+      }
     });
 
     test('targets the latest comment when discussion exists', () async {

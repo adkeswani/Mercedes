@@ -264,6 +264,8 @@ the climbing screenshots in the same validation artifact directory. Both
 browser paths use headless Chrome; no visible test window is expected.
 Surface diagnostics are enabled by the debug/emulator login seam for both
 manual and automatic login; enabling them does not enable automatic login.
+The dashboard's seven-day program-ending window uses calendar dates, not
+168 elapsed hours, so daylight-saving changes do not hide boundary-day programs.
 
 Stage 5 has browser integration coverage that starts the Flutter web app in
 Chrome against local Firebase Auth and Firestore emulators and signs in through

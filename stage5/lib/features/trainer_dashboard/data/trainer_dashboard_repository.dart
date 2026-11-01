@@ -36,8 +36,10 @@ class TrainerDashboardRepository {
     }
 
     final today = _dateOnly(_now());
-    final endingBoundary = today.add(
-      const Duration(days: trainerProgramEndingSoonDays),
+    final endingBoundary = DateTime(
+      today.year,
+      today.month,
+      today.day + trainerProgramEndingSoonDays,
     );
     final profileNames = await _loadNames(athleteIds);
     final completionsFuture = _loadCompletions(trainerId, athleteIds);
