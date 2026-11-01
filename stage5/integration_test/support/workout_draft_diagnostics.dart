@@ -21,6 +21,8 @@ class WorkoutDraftDiagnostics {
     final metadata = {
       for (final key in const [
         'operation',
+        'editorId',
+        'repositoryId',
         'phase',
         'workoutId',
         'clientId',

@@ -9,6 +9,8 @@ void main() {
     final diagnostics = WorkoutDraftDiagnostics(write: logs.add);
     diagnostics.record({
       'operation': 1,
+      'editorId': 101,
+      'repositoryId': 202,
       'phase': 'save-start',
       'workoutId': 'instance-1',
       'clientId': 'current',
@@ -19,6 +21,8 @@ void main() {
     });
     diagnostics.record({'operation': 1, 'phase': 'save-return'});
     expect(logs.first, contains('sequence=1'));
+    expect(logs.first, contains('editorId=101'));
+    expect(logs.first, contains('repositoryId=202'));
     expect(logs.last, contains('sequence=2'));
     expect(logs.join(), isNot(contains('PRIVATE')));
     expect(logs.join(), isNot(contains('notes')));

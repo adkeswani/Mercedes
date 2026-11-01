@@ -482,23 +482,14 @@ Future<void> _login(WidgetTester tester, BrowserTestWaitContext waits) async {
       timeout: const Duration(seconds: 30));
   final diagnostics = WorkoutDraftDiagnostics();
   _draftDiagnostics = diagnostics;
-  await waits.runStep(
-      'mount application',
-      () => tester.pumpWidget(ProviderScope(
-            overrides: [
-              workoutCompletionDraftRepositoryProvider.overrideWith((ref) {
-                final currentClientId = ref.read(workoutDraftClientIdProvider);
-                return WorkoutCompletionDraftRepository(
-                  localStore: ref.watch(workoutDraftLocalStoreProvider),
-                  onDiagnostic: (event) => diagnostics.record({
-                    ...event,
-                    'currentClientId': currentClientId,
-                  }),
-                );
-              }),
-            ],
-            child: const MercedesApp(),
-          )));
+  WorkoutCompletionDraftRepository.diagnosticObserver = diagnostics.record;
+  WorkoutCompletionScreen.diagnosticObserver = diagnostics.record;
+  addTearDown(() {
+    WorkoutCompletionDraftRepository.diagnosticObserver = null;
+    WorkoutCompletionScreen.diagnosticObserver = null;
+  });
+  await waits.runStep('mount application',
+      () => tester.pumpWidget(const ProviderScope(child: MercedesApp())));
   await _wait(
       tester, waits, find.byKey(browserSmokeLoginButtonKey), 'emulator login');
   await _tap(

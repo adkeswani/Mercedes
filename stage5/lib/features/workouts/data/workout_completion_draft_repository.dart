@@ -46,6 +46,9 @@ WorkoutDraftSaveAttemptDecision decideWorkoutDraftSaveAttempt({
 }
 
 class WorkoutCompletionDraftRepository {
+  @visibleForTesting
+  static void Function(Map<String, Object?> event)? diagnosticObserver;
+
   WorkoutCompletionDraftRepository({
     FirebaseFirestore? firestore,
     WorkoutDraftLocalStore? localStore,
@@ -70,7 +73,8 @@ class WorkoutCompletionDraftRepository {
     int? transactionAttempt,
     WorkoutDraftSaveStatus? status,
   }) {
-    onDiagnostic?.call({
+    final event = <String, Object?>{
+      'repositoryId': identityHashCode(this),
       'operation': operation,
       'phase': phase,
       'workoutId': instanceId,
@@ -81,7 +85,9 @@ class WorkoutCompletionDraftRepository {
       if (currentClientId != null) 'currentClientId': currentClientId,
       if (transactionAttempt != null) 'transactionAttempt': transactionAttempt,
       if (status != null) 'status': status.name,
-    });
+    };
+    onDiagnostic?.call(event);
+    diagnosticObserver?.call(event);
   }
 
   DocumentReference<Map<String, dynamic>> _instance(String instanceId) =>

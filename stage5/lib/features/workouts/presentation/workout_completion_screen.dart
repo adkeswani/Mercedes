@@ -29,6 +29,9 @@ class WorkoutCompletionScreen extends ConsumerStatefulWidget {
 
   static const listKey = ValueKey<String>('workout-completion-list');
 
+  @visibleForTesting
+  static void Function(Map<String, Object?> event)? diagnosticObserver;
+
   final String instanceId;
 
   @override
@@ -60,9 +63,22 @@ class _WorkoutCompletionScreenState
   WorkoutCompletionDraftRepository? _draftRepository;
   String? _draftClientId;
 
+  void _diagnoseEditor(String phase) {
+    WorkoutCompletionScreen.diagnosticObserver?.call({
+      'phase': phase,
+      'editorId': identityHashCode(this),
+      'workoutId': widget.instanceId,
+      'revision': _revision,
+      if (_draftClientId != null) 'clientId': _draftClientId,
+      if (_draftRepository != null)
+        'repositoryId': identityHashCode(_draftRepository!),
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    _diagnoseEditor('editor-created');
     WidgetsBinding.instance.addObserver(this);
     _notesController.addListener(_scheduleSave);
     _loadInstance();
@@ -72,6 +88,7 @@ class _WorkoutCompletionScreenState
   void didUpdateWidget(WorkoutCompletionScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.instanceId == widget.instanceId) return;
+    _diagnoseEditor('editor-workout-changed');
     _saveDebounce?.cancel();
     _restoring = true;
     _notesController.clear();
@@ -97,6 +114,7 @@ class _WorkoutCompletionScreenState
 
   @override
   void dispose() {
+    _diagnoseEditor('editor-disposed');
     WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
     _notesController.removeListener(_scheduleSave);
@@ -255,6 +273,7 @@ class _WorkoutCompletionScreenState
       return;
     }
     final revision = ++_revision;
+    _diagnoseEditor('editor-save');
     final route = '/athlete/workouts/${instance.id}';
     try {
       final draft = WorkoutCompletionDraft(
