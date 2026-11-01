@@ -39,10 +39,13 @@ valid saved progress is the guarantee. Recovery uses origin-scoped
 
 Climbing Circuit and Free Climbing now have typed authoring, completion,
 recovery, and immutable completed-detail surfaces. Circuit rows share one
-exercise slot and record completed/not-completed, optional notes, and optional
+result slot with an optional Exercise Library link and record
+completed/not-completed, optional notes, and optional
 RPE (1–10), without inferred partial counts or attempts. Free Climbing asks
 the trainer for a note and optional drill video; athlete canonical-grade/count
-rows are optional. Both new block kinds reuse HTTPS video links, canonical
+rows are optional. Optional work/rest countdowns are prescribed per circuit
+row or overall for Free Climbing, without automatic completion or timing
+actuals. Both new block kinds reuse HTTPS video links, canonical
 YouTube links, and the existing library picker/preview. Media is retained in
 immutable versions and shown in recovered completion and pinned history.
 New climbing authoring, including single routes, uses ordered canonical

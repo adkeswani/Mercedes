@@ -485,9 +485,10 @@ class _WorkoutCompletionScreenState
                   recordingEnabled: _isAthlete && !instance.isCompleted,
                   initialInput: _slotInputs[block.slots.single.slotId],
                   actual: instance.actualsBySlot[block.slots.single.slotId],
-                  exerciseContent: block is ClimbingCircuitBlock
-                      ? _ClimbingExerciseContent(slot: block.exercise)
-                      : null,
+                  exerciseContent:
+                      block is ClimbingCircuitBlock && block.hasExercise
+                          ? _ClimbingExerciseContent(slot: block.exercise)
+                          : null,
                   onChanged: (input) {
                     _slotInputs[block.slots.single.slotId] = input;
                     _scheduleSave();

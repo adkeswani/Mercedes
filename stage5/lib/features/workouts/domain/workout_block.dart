@@ -401,18 +401,35 @@ class ClimbingCircuitBlock extends WorkoutBlock {
   ClimbingCircuitBlock({
     required super.blockId,
     required super.sortOrder,
-    required ExerciseSlot exercise,
+    ExerciseSlot? exercise,
+    String? slotId,
     required List<ClimbingCircuitRow> rows,
     this.videoUrl,
     super.title,
     super.notes,
   })  : rows = List.unmodifiable(rows),
-        super(slots: [exercise]);
+        super(slots: [
+          exercise ??
+              ExerciseSlot(
+                slotId: slotId ??
+                    (throw ArgumentError(
+                        'A circuit result slotId is required')),
+                exerciseId: climbingCircuitExerciseId,
+                exerciseName: 'Climbing Circuit',
+                sortOrder: 0,
+                mode: ExerciseMode.reps,
+              ),
+        ]) {
+    if (exercise != null && slotId != null && exercise.slotId != slotId) {
+      throw ArgumentError('Circuit exercise and result slot IDs must match');
+    }
+  }
 
   final List<ClimbingCircuitRow> rows;
   @override
   final String? videoUrl;
   ExerciseSlot get exercise => slots.single;
+  bool get hasExercise => exercise.exerciseId != climbingCircuitExerciseId;
   @override
   WorkoutBlockType get type => WorkoutBlockType.climbingCircuit;
 
@@ -434,6 +451,19 @@ class ClimbingCircuitBlock extends WorkoutBlock {
       throw ArgumentError(
           'Climbing circuit requires one climbing exercise slot');
     }
+    if (!hasExercise &&
+        (exercise.exerciseVersion != 1 ||
+            exercise.sortOrder != 0 ||
+            exercise.exerciseName != 'Climbing Circuit' ||
+            exercise.sets != null ||
+            exercise.reps != null ||
+            exercise.durationSeconds != null ||
+            exercise.weight != null ||
+            exercise.restSeconds != null ||
+            exercise.notes != null)) {
+      throw ArgumentError(
+          'An unlinked circuit requires its built-in result slot');
+    }
     if (rows.isEmpty || rows.length > maxClimbingRows) {
       throw ArgumentError('Climbing circuit requires 1–$maxClimbingRows rows');
     }
@@ -454,6 +484,8 @@ class FreeClimbingBlock extends WorkoutBlock {
     required super.sortOrder,
     required String slotId,
     this.videoUrl,
+    this.workSeconds,
+    this.restSeconds,
     super.title,
     super.notes,
   }) : super(slots: [
@@ -470,6 +502,8 @@ class FreeClimbingBlock extends WorkoutBlock {
   WorkoutBlockType get type => WorkoutBlockType.freeClimbing;
   @override
   final String? videoUrl;
+  final int? workSeconds;
+  final int? restSeconds;
 
   @override
   FreeClimbingBlock copyWithSortOrder(int sortOrder) => FreeClimbingBlock(
@@ -479,6 +513,8 @@ class FreeClimbingBlock extends WorkoutBlock {
         title: title,
         notes: notes,
         videoUrl: videoUrl,
+        workSeconds: workSeconds,
+        restSeconds: restSeconds,
       );
 
   @override
@@ -486,6 +522,8 @@ class FreeClimbingBlock extends WorkoutBlock {
     super.validate();
     validateClimbingNote(notes);
     validateClimbingVideoUrl(videoUrl);
+    validateClimbingTimerSeconds(workSeconds);
+    validateClimbingTimerSeconds(restSeconds);
   }
 }
 

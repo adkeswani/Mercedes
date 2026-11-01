@@ -44,6 +44,7 @@ function Get-ClimbingBrowserFixtureWrites {
                 @{
                     rowId = 'row-boulder'; gradingSystem = 'vScale'; grade = 'V2'
                     climbs = 3; maxAttemptsPerClimb = 2; notes = 'Controlled feet'
+                    workSeconds = 3; restSeconds = 2
                 },
                 @{
                     rowId = 'row-rope'; gradingSystem = 'yds'; grade = '5.13a'
@@ -56,6 +57,7 @@ function Get-ClimbingBrowserFixtureWrites {
             sortOrder = 1; slotStartOrder = 1; slotCount = 1
             slotIds = @('slot-free-climbing'); title = $null; notes = 'Explore routes'
             videoUrl = 'https://example.test/free-climbing-drill.mp4'
+            workSeconds = 3; restSeconds = 2
         },
         @{
             blockId = 'block-free-climbing-optional'; type = 'freeClimbing'
@@ -69,9 +71,9 @@ function Get-ClimbingBrowserFixtureWrites {
             @{
                 slotId = $blocks[$i].slotIds[0]; blockId = $blocks[$i].blockId
                 blockSortOrder = $i; slotOrder = $i; sortOrder = 0
-                exerciseId = $(if ($i -eq 0) { $ExerciseId } else { 'builtin-free-climbing' })
+                exerciseId = $(if ($i -eq 0) { 'builtin-climbing-circuit' } else { 'builtin-free-climbing' })
                 exerciseVersion = 1
-                exerciseName = $(if ($i -eq 0) { 'Boulder Problem' } else { 'Free Climbing' })
+                exerciseName = $(if ($i -eq 0) { 'Climbing Circuit' } else { 'Free Climbing' })
                 prescription = @{
                     mode = 'reps'; sets = $null; reps = $null; weight = $null
                     durationSeconds = $null; restSeconds = $null; notes = $null

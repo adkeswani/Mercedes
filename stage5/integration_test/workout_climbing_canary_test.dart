@@ -50,12 +50,7 @@ void main() {
     await _wait(tester, waits, find.text('Publish'), 'builder ready');
 
     await _addBlock(tester, waits, 'Climbing Circuit');
-    await _tap(tester, waits, find.text('Choose exercise'),
-        'choose climbing exercise');
-    await _wait(tester, waits, find.text('Boulder Problem'),
-        'climbing exercise picker');
-    await _tap(tester, waits, find.text('Boulder Problem').last,
-        'select climbing exercise');
+    expect(find.text('Choose exercise (optional)'), findsOneWidget);
     await selectClimbingGrade(
         tester, waits, find.byType(DropdownButtonFormField<String>).last, 'V2');
     await _enter(
@@ -96,10 +91,25 @@ void main() {
         find.widgetWithText(TextFormField, 'Video URL (optional)'),
         _circuitDrill,
         'attach optional circuit drill video');
+    await _enter(
+        tester,
+        waits,
+        find
+            .widgetWithText(TextFormField, 'Work duration (seconds, optional)')
+            .first,
+        '3',
+        'circuit row work countdown');
+    await _enter(
+        tester,
+        waits,
+        find
+            .widgetWithText(TextFormField, 'Rest duration (seconds, optional)')
+            .first,
+        '2',
+        'circuit row rest countdown');
     await _tap(tester, waits, find.widgetWithText(FilledButton, 'Save'),
         'save circuit');
-    await _wait(tester, waits, find.text('Climbing Circuit · Boulder Problem'),
-        'circuit card');
+    await _wait(tester, waits, find.text('Climbing Circuit'), 'circuit card');
 
     await _addBlock(tester, waits, 'Free Climbing');
     expect(find.text('Choose exercise'), findsNothing);
@@ -118,6 +128,18 @@ void main() {
         find.widgetWithText(TextFormField, 'Video URL (optional)'),
         _freeDrill,
         'attach optional free climbing drill video');
+    await _enter(
+        tester,
+        waits,
+        find.widgetWithText(TextFormField, 'Work duration (seconds, optional)'),
+        '3',
+        'overall free climbing work countdown');
+    await _enter(
+        tester,
+        waits,
+        find.widgetWithText(TextFormField, 'Rest duration (seconds, optional)'),
+        '2',
+        'overall free climbing rest countdown');
     await _tap(tester, waits, find.widgetWithText(FilledButton, 'Save'),
         'save free climbing');
     await _tap(
@@ -147,9 +169,14 @@ void main() {
     expect(circuit['rows'][1]['gradingSystem'], 'yds');
     expect(circuit['rows'][1]['grade'], '5.13a');
     expect(circuit['videoUrl'], _circuitDrill);
+    expect(circuit['rows'][0]['workSeconds'], 3);
+    expect(circuit['rows'][0]['restSeconds'], 2);
+    expect(data['slots'][0]['exerciseId'], climbingCircuitExerciseId);
     expect(free['type'], 'freeClimbing');
     expect(free['notes'], 'Free trainer note');
     expect(free['videoUrl'], _freeDrill);
+    expect(free['workSeconds'], 3);
+    expect(free['restSeconds'], 2);
     expect(free.containsKey('rows'), isFalse);
     for (final block in blocks) {
       final child = await waits.runStep(
@@ -163,6 +190,11 @@ void main() {
 
     await _tap(tester, waits, find.byTooltip('Edit prescription').first,
         'edit circuit prescription');
+    await _tap(tester, waits, find.text('Choose exercise (optional)'),
+        'link an optional drill exercise');
+    await _wait(tester, waits, find.text('Boulder Problem'), 'exercise picker');
+    await _tap(
+        tester, waits, find.text('Boulder Problem').last, 'link exercise');
     expect(
         tester
             .widget<TextFormField>(
@@ -196,6 +228,11 @@ void main() {
     expect(second.data()!['blocks'][1]['videoUrl'], _freeDrill);
     expect(second.data()!['blocks'][0]['rowIds'], circuit['rowIds']);
     expect(second.data()!['slotIds'], data['slotIds']);
+    expect(second.data()!['slots'][0]['exerciseName'], 'Boulder Problem');
+    expect(second.data()!['slots'][0]['exerciseId'],
+        isNot(climbingCircuitExerciseId));
+    expect(second.data()!['blocks'][0]['rows'][0]['workSeconds'], 3);
+    expect(second.data()!['blocks'][1]['restSeconds'], 2);
     expect((await versionRef.get(_server)).data(), data);
     await waits.captureAfterAssertions('capture trainer climbing authoring',
         () async {
@@ -229,6 +266,17 @@ void main() {
     await _expectDrillVideo(
         tester, waits, 'block-climbing-circuit', _circuitDrill);
     expect(find.text('Attempts'), findsNothing);
+    await _runCountdown(tester, waits,
+        'climbing-work-timer-block-climbing-circuit-row-boulder', 'work', 3);
+    await _runCountdown(tester, waits,
+        'climbing-rest-timer-block-climbing-circuit-row-boulder', 'rest', 2);
+    expect(
+        tester
+            .widget<Checkbox>(find.descendant(
+                of: find.byKey(const ValueKey<String>('row-boulder')),
+                matching: find.byType(Checkbox)))
+            .value,
+        isFalse);
 
     for (final row in ['row-boulder', 'row-rope']) {
       final scope = find.byKey(ValueKey(row));
@@ -257,6 +305,10 @@ void main() {
     await _scroll(tester, waits, find.text('Trainer note: Explore routes'), 250,
         'reveal free climbing card');
     await _expectDrillVideo(tester, waits, 'block-free-climbing', _freeDrill);
+    await _runCountdown(
+        tester, waits, 'climbing-work-timer-block-free-climbing', 'work', 3);
+    await _runCountdown(
+        tester, waits, 'climbing-rest-timer-block-free-climbing', 'rest', 2);
     final freeCard = find.ancestor(
         of: find.text('Trainer note: Explore routes'),
         matching: find.byType(ClimbingCompletionCard));
@@ -497,6 +549,34 @@ Future<void> _login(WidgetTester tester, BrowserTestWaitContext waits) async {
       tester, waits, find.byKey(browserSmokeLoginButtonKey), 'submit login');
   await _wait(tester, waits, find.byKey(authenticatedAppEntryKey),
       'authenticated workspace');
+}
+
+Future<void> _runCountdown(WidgetTester tester, BrowserTestWaitContext waits,
+    String key, String label, int seconds) async {
+  final timer = find.byKey(ValueKey<String>(key));
+  await _wait(tester, waits, timer, '$key visible', reveal: true);
+  await _tap(
+      tester,
+      waits,
+      find.descendant(
+          of: timer, matching: find.byTooltip('Start $label timer')),
+      'start $key');
+  await _wait(
+      tester,
+      waits,
+      find.descendant(of: timer, matching: find.text('Time!')),
+      '$key finished');
+  await _tap(
+      tester,
+      waits,
+      find.descendant(
+          of: timer, matching: find.byTooltip('Reset $label timer')),
+      'reset $key');
+  expect(
+      find.descendant(
+          of: timer,
+          matching: find.text('0:${seconds.toString().padLeft(2, '0')}')),
+      findsOneWidget);
 }
 
 Future<void> _wait(WidgetTester tester, BrowserTestWaitContext waits,

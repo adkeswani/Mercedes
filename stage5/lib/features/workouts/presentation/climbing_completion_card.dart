@@ -7,6 +7,7 @@ import 'package:stage5/features/workouts/domain/workout_block.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/presentation/climbing_grade_field.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
+import 'package:stage5/features/workouts/presentation/workout_timer_widget.dart';
 
 class ClimbingCompletionCard extends ConsumerStatefulWidget {
   const ClimbingCompletionCard({
@@ -30,12 +31,14 @@ class ClimbingCompletionCard extends ConsumerStatefulWidget {
       _ClimbingCompletionCardState();
 }
 
-class _ClimbingCompletionCardState
-    extends ConsumerState<ClimbingCompletionCard> {
+class _ClimbingCompletionCardState extends ConsumerState<ClimbingCompletionCard>
+    with AutomaticKeepAliveClientMixin {
   late Map<String, dynamic> _input;
   bool get _isCircuit => widget.block is ClimbingCircuitBlock;
   String get _rowsKey => _isCircuit ? 'circuitRows' : 'freeRows';
   List<dynamic> get _rows => _input[_rowsKey] as List;
+  @override
+  bool get wantKeepAlive => widget.recordingEnabled;
 
   @override
   void initState() {
@@ -47,6 +50,9 @@ class _ClimbingCompletionCardState
   void didUpdateWidget(ClimbingCompletionCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialInput != widget.initialInput) _restore();
+    if (oldWidget.recordingEnabled != widget.recordingEnabled) {
+      updateKeepAlive();
+    }
   }
 
   void _restore() {
@@ -92,6 +98,7 @@ class _ClimbingCompletionCardState
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final block = widget.block;
     return Card(
       child: Padding(
@@ -101,7 +108,7 @@ class _ClimbingCompletionCardState
           children: [
             Text(_isCircuit ? 'Climbing Circuit' : 'Free Climbing',
                 style: Theme.of(context).textTheme.titleMedium),
-            if (_isCircuit)
+            if (block is ClimbingCircuitBlock && block.hasExercise)
               Text(block.slots.single.exerciseName ??
                   block.slots.single.exerciseId),
             if (widget.exerciseContent != null) widget.exerciseContent!,
@@ -113,6 +120,12 @@ class _ClimbingCompletionCardState
                 url: url,
               ),
             ],
+            if (block is FreeClimbingBlock)
+              ..._timers(
+                block.blockId,
+                block.workSeconds,
+                block.restSeconds,
+              ),
             if (widget.recordingEnabled) ...[
               if (!_isCircuit)
                 const Text(
@@ -171,6 +184,11 @@ class _ClimbingCompletionCardState
             Text('${prescription.climbs} × ${prescription.grade}'
                 '${prescription.maxAttemptsPerClimb == null ? '' : ' · Max ${prescription.maxAttemptsPerClimb} attempts per climb'}'),
             if (prescription.notes != null) Text(prescription.notes!),
+            ..._timers(
+              '${widget.block.blockId}-${prescription.rowId}',
+              prescription.workSeconds,
+              prescription.restSeconds,
+            ),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Completed prescribed row'),
@@ -237,6 +255,11 @@ class _ClimbingCompletionCardState
               '${prescription.maxAttemptsPerClimb == null ? '' : ' · Max ${prescription.maxAttemptsPerClimb} attempts per climb'}'),
           if (prescription.notes != null)
             Text('Prescribed note: ${prescription.notes}'),
+          ..._timers(
+            '${widget.block.blockId}-${prescription.rowId}',
+            prescription.workSeconds,
+            prescription.restSeconds,
+          ),
           for (final row in actual?.circuitRows ?? <ClimbingCircuitResultRow>[])
             if (row.rowId == prescription.rowId)
               Text(
@@ -254,4 +277,23 @@ class _ClimbingCompletionCardState
       if (actual == null) const Text('No result recorded'),
     ];
   }
+
+  List<Widget> _timers(String scope, int? workSeconds, int? restSeconds) => [
+        if (workSeconds != null)
+          widget.recordingEnabled
+              ? WorkoutTimerWidget(
+                  key: ValueKey('climbing-work-timer-$scope'),
+                  label: 'Work',
+                  targetSeconds: workSeconds,
+                )
+              : Text('Work: ${workSeconds}s'),
+        if (restSeconds != null)
+          widget.recordingEnabled
+              ? WorkoutTimerWidget(
+                  key: ValueKey('climbing-rest-timer-$scope'),
+                  label: 'Rest',
+                  targetSeconds: restSeconds,
+                )
+              : Text('Rest: ${restSeconds}s'),
+      ];
 }

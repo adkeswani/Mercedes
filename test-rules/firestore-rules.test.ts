@@ -98,11 +98,13 @@ describe('climbing circuit and free climbing', () => {
     slotIds: ['climbing-slot'], slotStartOrder: 0, slotCount: 1,
     notes: 'Trainer note', ...(type === 'climbingCircuit' ? { rows } : {}),
   });
-  const slot = (type = 'climbingCircuit') => ({
+  const slot = (type = 'climbingCircuit', linked = true) => ({
     slotId: 'climbing-slot', blockId: 'climbing-block', blockSortOrder: 0,
     slotOrder: 0, sortOrder: 0, exerciseVersion: 1,
-    exerciseId: type === 'freeClimbing' ? 'builtin-free-climbing' : 'climb-exercise',
-    exerciseName: type === 'freeClimbing' ? 'Free Climbing' : 'Climbing',
+    exerciseId: type === 'freeClimbing' ? 'builtin-free-climbing'
+      : linked ? 'climb-exercise' : 'builtin-climbing-circuit',
+    exerciseName: type === 'freeClimbing' ? 'Free Climbing'
+      : linked ? 'Climbing' : 'Climbing Circuit',
     prescription: { mode: 'reps', sets: null, reps: null, durationSeconds: null,
       weight: null, restSeconds: null, notes: null },
   });
@@ -140,7 +142,7 @@ describe('climbing circuit and free climbing', () => {
     return batch.commit();
   }
 
-  async function seedCompletion(type = 'climbingCircuit', count = 2, slots = 1) {
+  async function seedCompletion(type = 'climbingCircuit', count = 2, slots = 1, linked = true) {
     await seedProgramWithEnrollment();
     await seedAuthoring();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -153,14 +155,14 @@ describe('climbing circuit and free climbing', () => {
           ...rows[i % rows.length], rowId: count === 2 ? rows[i].rowId : `row-${i}`,
         }));
       }
-      const base = versionMap(b, slot(type));
+      const base = versionMap(b, slot(type, linked));
       const blocks = Array.from({ length: slots }, (_, i) => ({
         ...base.blocks[0], blockId: i === 0 ? 'climbing-block' : `climbing-block-${i}`,
         sortOrder: i, slotStartOrder: i,
         slotIds: [i === 0 ? 'climbing-slot' : `climbing-slot-${i}`],
       }));
       const exerciseSlots = blocks.map((block, i) => ({
-        ...slot(type), slotId: block.slotIds[0], blockId: block.blockId,
+        ...slot(type, linked), slotId: block.slotIds[0], blockId: block.blockId,
         blockSortOrder: i, slotOrder: i,
       }));
       await version.set({
@@ -179,9 +181,9 @@ describe('climbing circuit and free climbing', () => {
     });
   }
 
-  function result(type = 'climbingCircuit') {
+  function result(type = 'climbingCircuit', linked = true) {
     return {
-      exerciseId: slot(type).exerciseId, mode: 'reps', slotOrder: 0,
+      exerciseId: slot(type, linked).exerciseId, mode: 'reps', slotOrder: 0,
       climbingType: type, notes: 'Athlete note', rpe: type === 'freeClimbing' ? 7 : null,
       ...(type === 'climbingCircuit'
         ? { circuitRows: rows.map(r => ({ rowId: r.rowId, completed: true, rpe: 8, notes: 'Good' })) }
@@ -317,6 +319,106 @@ describe('climbing circuit and free climbing', () => {
     await assertFails(testEnv.authenticatedContext(STRANGER).firestore()
       .collection('workoutInstances').doc('climbing-instance').collection('completionDrafts')
       .doc('current').collection('climbingInputs').doc('climbing-slot').get());
+  });
+
+  it.each([true, false])('publishes nine timed circuit rows within the expression budget: linked=%s', async linked => {
+    await seedAuthoring();
+    const b = { ...block(), rows: Array.from({ length: 9 }, (_, i) => ({
+      ...rows[i % rows.length], rowId: `timed-${i}`, workSeconds: 30, restSeconds: 15,
+    })) };
+    await assertSucceeds(publish(b, slot('climbingCircuit', linked)));
+    await assertFails(publish(b, slot('climbingCircuit', linked), ATHLETE));
+  });
+
+  it('publishes optional overall free climbing countdowns', async () => {
+    await seedAuthoring();
+    await assertSucceeds(publish(
+      { ...block('freeClimbing'), workSeconds: 30, restSeconds: 15 }, slot('freeClimbing')));
+  });
+
+  it.each([true, false])('publishes nine timed circuits with nine rows each and seals: linked=%s', async linked => {
+    await seedAuthoring();
+    const blocks = Array.from({ length: 9 }, (_, i) => ({
+      ...block(), blockId: `block-${i}`, sortOrder: i, slotStartOrder: i,
+      slotIds: [`slot-${i}`],
+      rows: Array.from({ length: 9 }, (_, j) => ({
+        ...rows[j % rows.length], rowId: `row-${j}`,
+        workSeconds: 30, restSeconds: 15,
+      })),
+      rowIds: Array.from({ length: 9 }, (_, j) => `row-${j}`),
+    }));
+    const slots = blocks.map((b, i) => ({
+      ...slot('climbingCircuit', linked), slotId: b.slotIds[0],
+      blockId: b.blockId, blockSortOrder: i, slotOrder: i,
+    }));
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('climbing-workout');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const batch = db.batch();
+    batch.set(version, {
+      ...versionMap(blocks[0], slots[0]), blocks, slots,
+      blockCount: 9, slotCount: 9, blockIds: blocks.map(b => b.blockId),
+      slotIds: slots.map(s => s.slotId), climbingSlotIds: slots.map(s => s.slotId),
+    });
+    for (const b of blocks) batch.set(version.collection('workoutBlocks').doc(b.blockId), b);
+    for (const s of slots) batch.set(version.collection('exerciseSlots').doc(s.slotId), s);
+    await assertSucceeds(batch.commit());
+    const seal = db.batch();
+    seal.update(version, { publishState: 'published' });
+    seal.update(header, { currentVersion: 1, updatedBy: OWNER });
+    await assertSucceeds(seal.commit());
+  });
+
+  it.each(['workSeconds', 'restSeconds'])('rejects invalid prescribed %s in every circuit row and free climbing', async field => {
+    await seedAuthoring();
+    for (const invalid of [0, -1, 1.5, '30']) {
+      for (const index of Array.from({ length: 9 }, (_, i) => i)) {
+        const timedRows = Array.from({ length: 9 }, (_, i) => ({
+          ...rows[i % rows.length], rowId: `timed-${i}`, [field]: i === index ? invalid : 30,
+        }));
+        await assertFails(publish({ ...block(), rows: timedRows }, slot('climbingCircuit', false)));
+      }
+      await assertFails(publish({ ...block('freeClimbing'), [field]: invalid }, slot('freeClimbing')));
+    }
+  });
+
+  it('rejects malformed or misplaced reserved result slots', async () => {
+    await seedAuthoring();
+    const s = slot('climbingCircuit', false);
+    for (const invalid of [
+      { ...s, exerciseName: 'Climbing' },
+      { ...s, exerciseVersion: 2 },
+      { ...s, sortOrder: 1 },
+      { ...s, prescription: { ...s.prescription, reps: 3 } },
+      { ...s, exerciseId: 'builtin-free-climbing', exerciseName: 'Free Climbing' },
+    ]) {
+      await assertFails(publish(block(), invalid));
+    }
+    await assertFails(publish(block('standardExercise'), s));
+    await assertFails(publish(block('freeClimbing'), s));
+  });
+
+  it.each([null, 0, 2])('preserves owned pinned-version bounds with currentVersion=%s', async current => {
+    await seedAuthoring();
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      await ctx.firestore().collection('exerciseTemplates').doc('climb-exercise')
+        .update({ currentVersion: current === null ? deleteField() : current });
+    });
+    for (const version of [0, (current ?? 1) + 1]) {
+      await assertFails(publish(block(), { ...slot(), exerciseVersion: version }));
+    }
+    if (current === 0) await assertFails(publish(block(), slot()));
+    else await assertSucceeds(publish(block(), slot()));
+  });
+
+  it('accepts unlinked circuit completion without timing actuals', async () => {
+    await seedCompletion('climbingCircuit', 2, 1, false);
+    for (const field of ['workSeconds', 'restSeconds']) {
+      const actual = result('climbingCircuit', false);
+      actual.circuitRows[0][field] = 30;
+      await assertFails(complete(actual));
+    }
+    await assertSucceeds(complete(result('climbingCircuit', false)));
   });
 
   it.each(['climbingCircuit', 'freeClimbing'])('allows owner publish and immutable seal: %s', async type => {

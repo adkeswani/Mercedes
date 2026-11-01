@@ -415,12 +415,9 @@ service cloud.firestore {
       let exercise = get(
         /databases/$(database)/documents/exerciseTemplates/$(exerciseId)
       ).data;
+      let current = exercise.get('currentVersion', 1);
       return templateOwner(exercise) == request.auth.uid
-             && ((!('currentVersion' in exercise) && versionNumber == 1)
-                 || ('currentVersion' in exercise
-                     && exercise.currentVersion >= 1
-                     && versionNumber >= 1
-                     && versionNumber <= templateVersion(exercise)));
+             && versionNumber >= 1 && versionNumber <= current;
     }
 
     function climbingGrades() {
@@ -470,20 +467,29 @@ service cloud.firestore {
       };
     }
 
-    function validClimbingGradeRow(rawRow, rowId, prescribed, draft, keys, patterns) {
-      let row = rawRow;
+    function validClimbingCircuitRow(row, rowId, keys, patterns) {
       let notes = row.get('notes', null);
       let attempts = row.get('maxAttemptsPerClimb', null);
       let climbs = row.climbs;
+      let id = row.rowId;
+      let work = row.get('workSeconds', null);
+      let rest = row.get('restSeconds', null);
       return row.keys().hasOnly(keys)
-                 && row.rowId == rowId
-                 && row.rowId.matches('^[^/]+$')
+                 && id == rowId
+                 && id.matches('^[^/]+$')
                  && row.grade.matches(patterns[row.gradingSystem])
-                 && ((draft && climbs is string && climbs.size() <= 20)
-                     || (!draft && climbs is int && climbs >= 1))
-                 && (notes == null || (notes is string && notes.size() <= 4000))
-                 && (!prescribed || attempts == null
-                      || (attempts is int && attempts >= 1));
+                 && climbs is int && climbs >= 1
+                 && (notes == null || notes.matches('(?s)^(?:.{0,1000}){0,4}$'))
+                 && (attempts == null || (attempts is int && attempts >= 1))
+                 && (work == null || (work is int && work >= 1))
+                 && (rest == null || (rest is int && rest >= 1));
+    }
+
+    function validClimbingTimers(data) {
+      let work = data.get('workSeconds', null);
+      let rest = data.get('restSeconds', null);
+      return (work == null || (work is int && work >= 1))
+             && (rest == null || (rest is int && rest >= 1));
     }
 
     function validClimbingGradeRows(rawRows, rawIds, prescribed, draft) {
@@ -552,32 +558,34 @@ service cloud.firestore {
     }
 
     // Both immutable children are mandatory before sealing. Split the circuit
-    // row checks across the block and its one slot to stay within the per-write
-    // expression budget without reducing the nine-row authoring limit.
+    // row checks 4/5 across the block and its one slot to stay within the
+    // per-write budget without reducing the nine-row authoring limit.
     function validClimbingCircuitHead(data) {
       let rows = data.rows;
       let ids = data.rowIds;
-      let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'maxAttemptsPerClimb', 'notes'];
+      let count = rows.size();
+      let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'maxAttemptsPerClimb', 'notes', 'workSeconds', 'restSeconds'];
       let patterns = climbingGradePatterns();
-      return rows is list && rows.size() >= 1 && rows.size() <= 9
-             && ids is list && ids.size() == rows.size()
-             && ids.toSet().size() == rows.size()
-             && validClimbingGradeRow(rows[0], ids[0], true, false, keys, patterns)
-             && (rows.size() < 2 || validClimbingGradeRow(rows[1], ids[1], true, false, keys, patterns))
-             && (rows.size() < 3 || validClimbingGradeRow(rows[2], ids[2], true, false, keys, patterns))
-             && (rows.size() < 4 || validClimbingGradeRow(rows[3], ids[3], true, false, keys, patterns));
+      return rows is list && count >= 1 && count <= 9
+             && ids is list && ids.size() == count
+             && ids.toSet().size() == count
+             && validClimbingCircuitRow(rows[0], ids[0], keys, patterns)
+             && (count < 2 || validClimbingCircuitRow(rows[1], ids[1], keys, patterns))
+             && (count < 3 || validClimbingCircuitRow(rows[2], ids[2], keys, patterns))
+             && (count < 4 || validClimbingCircuitRow(rows[3], ids[3], keys, patterns));
     }
 
     function validClimbingCircuitTail(data) {
       let rows = data.rows;
       let ids = data.rowIds;
-      let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'maxAttemptsPerClimb', 'notes'];
+      let count = rows.size();
+      let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'maxAttemptsPerClimb', 'notes', 'workSeconds', 'restSeconds'];
       let patterns = climbingGradePatterns();
-      return (rows.size() < 5 || validClimbingGradeRow(rows[4], ids[4], true, false, keys, patterns))
-             && (rows.size() < 6 || validClimbingGradeRow(rows[5], ids[5], true, false, keys, patterns))
-             && (rows.size() < 7 || validClimbingGradeRow(rows[6], ids[6], true, false, keys, patterns))
-             && (rows.size() < 8 || validClimbingGradeRow(rows[7], ids[7], true, false, keys, patterns))
-             && (rows.size() < 9 || validClimbingGradeRow(rows[8], ids[8], true, false, keys, patterns));
+      return (count < 5 || validClimbingCircuitRow(rows[4], ids[4], keys, patterns))
+             && (count < 6 || validClimbingCircuitRow(rows[5], ids[5], keys, patterns))
+             && (count < 7 || validClimbingCircuitRow(rows[6], ids[6], keys, patterns))
+             && (count < 8 || validClimbingCircuitRow(rows[7], ids[7], keys, patterns))
+             && (count < 9 || validClimbingCircuitRow(rows[8], ids[8], keys, patterns));
     }
 
     function validCircuitResultRow(rawRow, prescribedId, keys) {
@@ -616,6 +624,30 @@ service cloud.firestore {
     }
 
     function hasValidWorkoutBlock(data) {
+      return data.type in ['climbingCircuit', 'freeClimbing']
+             ? hasValidClimbingWorkoutBlock(data)
+             : hasValidExerciseWorkoutBlock(data);
+    }
+
+    function hasValidClimbingWorkoutBlock(data) {
+      let circuit = data.type == 'climbingCircuit';
+      let keys = circuit
+                 ? ['blockId', 'type', 'sortOrder', 'title', 'notes',
+                    'slotIds', 'slotStartOrder', 'slotCount', 'rows', 'rowIds', 'videoUrl']
+                 : ['blockId', 'type', 'sortOrder', 'title', 'notes',
+                    'slotIds', 'slotStartOrder', 'slotCount', 'videoUrl', 'workSeconds', 'restSeconds'];
+      return data.keys().hasOnly(keys)
+             && data.blockId is string && data.blockId.size() > 0
+             && data.sortOrder is int && data.sortOrder >= 0
+             && data.slotIds is list && data.slotIds.size() == 1
+             && data.slotStartOrder is int && data.slotStartOrder >= 0
+             && data.slotCount == 1
+             && validClimbingNote(data)
+             && validClimbingVideoUrl(data.get('videoUrl', null))
+             && (circuit ? validClimbingCircuitHead(data) : validClimbingTimers(data));
+    }
+
+    function hasValidExerciseWorkoutBlock(data) {
       return data.keys().hasOnly([
                'blockId', 'type', 'sortOrder', 'title', 'notes', 'rounds',
                'workSeconds', 'restSeconds', 'restBetweenRoundsSeconds',
@@ -663,17 +695,6 @@ service cloud.firestore {
                          || data.targetAttempts == null
                          || (data.targetAttempts is int
                              && data.targetAttempts >= 1))))
-             && (data.type != 'climbingCircuit'
-                 || (data.keys().hasOnly([
-                      'blockId', 'type', 'sortOrder', 'title', 'notes',
-                      'slotIds', 'slotStartOrder', 'slotCount', 'rows', 'rowIds', 'videoUrl'
-                    ]) && validClimbingCircuitHead(data)
-                    && validClimbingNote(data)))
-             && (data.type != 'freeClimbing'
-                 || (data.keys().hasOnly([
-                      'blockId', 'type', 'sortOrder', 'title', 'notes',
-                      'slotIds', 'slotStartOrder', 'slotCount', 'videoUrl'
-                    ]) && validClimbingNote(data)))
              && (data.type != 'amrap'
                  || (data.timeCapSeconds is int
                      && data.timeCapSeconds >= 1));
@@ -685,18 +706,15 @@ service cloud.firestore {
                'sortOrder', 'exerciseName', 'prescription',
                'blockSortOrder', 'slotOrder'
              ])
-             && data.slotId is string
-             && data.slotId.size() > 0
-             && data.blockId is string
-             && data.blockId.size() > 0
+             && data.slotId.matches('(?s)^.+$')
+             && data.blockId.matches('(?s)^.+$')
              && data.blockSortOrder is int
              && data.blockSortOrder >= 0
              && data.slotOrder is int
              && data.slotOrder >= 0
              && data.sortOrder is int
              && data.sortOrder >= 0
-             && data.exerciseId is string
-             && data.exerciseId.size() > 0
+             && data.exerciseId.matches('(?s)^.+$')
              && data.exerciseVersion is int
              && data.exerciseVersion >= 1
              && data.prescription is map;
@@ -705,24 +723,21 @@ service cloud.firestore {
     function hasOwnedWorkoutSlot(version, data) {
       let block = version.blocks[data.blockSortOrder];
       let climbing = block.type in ['climbingCircuit', 'freeClimbing'];
-      return ((('climbingSlotIds' in version)
-                && version.climbingSlotIds.hasAny([data.slotId]) == climbing)
-               || (!('climbingSlotIds' in version) && !climbing))
-             && ((block.type == 'freeClimbing'
-                && data.exerciseId == 'builtin-free-climbing'
-                && data.exerciseVersion == 1 && data.sortOrder == 0
-                && data.exerciseName == 'Free Climbing'
-                && data.prescription == {
-                  'mode': 'reps', 'sets': null, 'reps': null,
-                  'durationSeconds': null, 'weight': null,
-                  'restSeconds': null, 'notes': null
-                })
-             || (block.type != 'freeClimbing'
-                && data.exerciseId != 'builtin-free-climbing'
-                && (block.type != 'climbingCircuit'
-                    || (data.prescription.mode == 'reps'
-                        && validClimbingCircuitTail(block)))
-                && isOwnedExerciseVersion(data.exerciseId, data.exerciseVersion)));
+      return version.get('climbingSlotIds', []).hasAny([data.slotId]) == climbing
+             && (block.type != 'climbingCircuit'
+                 || (data.prescription.mode == 'reps' && validClimbingCircuitTail(block)))
+             && ((((block.type == 'freeClimbing' && data.exerciseId == 'builtin-free-climbing')
+                   || (block.type == 'climbingCircuit' && data.exerciseId == 'builtin-climbing-circuit'))
+                  && data.exerciseVersion == 1 && data.sortOrder == 0
+                  && data.exerciseName == (block.type == 'freeClimbing' ? 'Free Climbing' : 'Climbing Circuit')
+                  && data.prescription == {
+                    'mode': 'reps', 'sets': null, 'reps': null,
+                    'durationSeconds': null, 'weight': null,
+                    'restSeconds': null, 'notes': null
+                  })
+                 || (block.type != 'freeClimbing'
+                     && !(data.exerciseId in ['builtin-free-climbing', 'builtin-climbing-circuit'])
+                     && isOwnedExerciseVersion(data.exerciseId, data.exerciseVersion)));
     }
 
     function canCreateTypedBlock(templateId, versionNumber, data) {

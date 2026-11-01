@@ -2,6 +2,13 @@ enum ClimbingGradingSystem { vScale, yds }
 
 const maxClimbingRows = 9;
 const freeClimbingExerciseId = 'builtin-free-climbing';
+const climbingCircuitExerciseId = 'builtin-climbing-circuit';
+
+void validateClimbingTimerSeconds(int? seconds) {
+  if (seconds != null && seconds < 1) {
+    throw ArgumentError('Climbing timer durations must be positive');
+  }
+}
 
 const vScaleGrades = [
   'VB',
@@ -121,6 +128,8 @@ class ClimbingCircuitRow {
     required this.grade,
     required this.climbs,
     this.maxAttemptsPerClimb,
+    this.workSeconds,
+    this.restSeconds,
     this.notes,
   });
   final String rowId;
@@ -128,6 +137,8 @@ class ClimbingCircuitRow {
   final String grade;
   final int climbs;
   final int? maxAttemptsPerClimb;
+  final int? workSeconds;
+  final int? restSeconds;
   final String? notes;
 
   void validate() {
@@ -138,6 +149,8 @@ class ClimbingCircuitRow {
       throw ArgumentError('Max attempts per climb must be positive');
     }
     validateClimbingNote(notes);
+    validateClimbingTimerSeconds(workSeconds);
+    validateClimbingTimerSeconds(restSeconds);
   }
 
   Map<String, dynamic> toMap() => {
@@ -146,6 +159,8 @@ class ClimbingCircuitRow {
         'grade': grade,
         'climbs': climbs,
         'maxAttemptsPerClimb': maxAttemptsPerClimb,
+        if (workSeconds != null) 'workSeconds': workSeconds,
+        if (restSeconds != null) 'restSeconds': restSeconds,
         'notes': notes,
       };
 
@@ -156,6 +171,8 @@ class ClimbingCircuitRow {
       grade: map['grade'] as String,
       climbs: map['climbs'] as int,
       maxAttemptsPerClimb: map['maxAttemptsPerClimb'] as int?,
+      workSeconds: map['workSeconds'] as int?,
+      restSeconds: map['restSeconds'] as int?,
       notes: map['notes'] as String?,
     );
     row.validate();

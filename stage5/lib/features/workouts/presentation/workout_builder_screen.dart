@@ -520,10 +520,14 @@ class _WorkoutBlockCard extends ConsumerWidget {
     }
     if (block is ClimbingCircuitBlock) {
       final circuit = block as ClimbingCircuitBlock;
-      return 'Climbing Circuit · ${circuit.rows.map((r) => '${r.climbs} × ${r.grade}${r.maxAttemptsPerClimb == null ? '' : ' (max ${r.maxAttemptsPerClimb}/climb)'}').join(' · ')}${block.videoUrl == null ? '' : ' · Drill video attached'}';
+      return 'Climbing Circuit · ${circuit.rows.map((r) => '${r.climbs} × ${r.grade}${r.maxAttemptsPerClimb == null ? '' : ' (max ${r.maxAttemptsPerClimb}/climb)'}${r.workSeconds == null ? '' : ' · ${r.workSeconds}s work'}${r.restSeconds == null ? '' : ' · ${r.restSeconds}s rest'}').join(' · ')}${block.videoUrl == null ? '' : ' · Drill video attached'}';
     }
     if (block is FreeClimbingBlock) {
-      return '${block.notes ?? 'Optional grade results at completion'}${block.videoUrl == null ? '' : ' · Drill video attached'}';
+      final free = block as FreeClimbingBlock;
+      return '${block.notes ?? 'Optional grade results at completion'}'
+          '${free.workSeconds == null ? '' : ' · ${free.workSeconds}s work'}'
+          '${free.restSeconds == null ? '' : ' · ${free.restSeconds}s rest'}'
+          '${block.videoUrl == null ? '' : ' · Drill video attached'}';
     }
     if (block is AmrapBlock) {
       final amrap = block as AmrapBlock;
@@ -545,7 +549,9 @@ class _WorkoutBlockCard extends ConsumerWidget {
   String get _titleText {
     if (block is FreeClimbingBlock) return 'Free Climbing';
     if (block is ClimbingCircuitBlock) {
-      final exercise = (block as ClimbingCircuitBlock).exercise;
+      final circuit = block as ClimbingCircuitBlock;
+      if (!circuit.hasExercise) return 'Climbing Circuit';
+      final exercise = circuit.exercise;
       return 'Climbing Circuit · ${exercise.exerciseName ?? exercise.exerciseId}';
     }
     if (block is ClimbingRouteBlock) {

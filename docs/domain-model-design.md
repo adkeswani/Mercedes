@@ -645,19 +645,32 @@ deletion/anonymization plus explicit relationship/history handling.
   repeated-exercise results are rejected rather than guessed.
 - The current builder creates and edits all seven typed block kinds through
   the block-type picker and typed editors.
-- `climbingCircuit` has one exercise slot and an ordered `rows` prescription
+- `climbingCircuit` has one result slot, an optional exercise association,
+  and an ordered `rows` prescription
   plus a parallel unique `rowIds` manifest. Each row has a stable `rowId`,
   `gradingSystem` (`vScale` or `yds`), canonical `grade`, positive integer
-  `climbs`, nullable positive `maxAttemptsPerClimb`, and optional `notes`.
+  `climbs`, nullable positive `maxAttemptsPerClimb`, optional `notes`, and
+  optional positive integer `workSeconds`/`restSeconds`.
   Grade lists are explicit and difficulty-ordered, never alphabetically sorted.
-  Up to nine rows share **one** exercise prescription; the existing nine-block
+  Up to nine rows share **one** result identity; the existing nine-block
   and nine-slot workout limits remain independent of row counts.
+  An unlinked circuit uses a canonical `builtin-climbing-circuit` slot,
+  version 1, name `Climbing Circuit`, mode `reps`, with no slot prescriptions.
+  Its reserved identity bypasses exercise lookup only for a canonical circuit
+  slot. Adding/removing a real owned exercise preserves the slot and row IDs;
+  linked exercises still pin an owned immutable exercise version.
 - `freeClimbing` contains trainer notes, an optional drill video, and one
   built-in result slot
   (`exerciseId: builtin-free-climbing`, version 1, mode `reps`). This reserved
   identity is exempt from exercise-template lookup **only** for an otherwise
   canonical free-climbing slot; it cannot authorize other block kinds or
   sets/reps/count/grade prescriptions.
+- Free Climbing also supports optional positive integer block-level
+  `workSeconds`/`restSeconds`. Circuit row timers and overall Free Climbing
+  timers are independent start/pause/reset execution aids, not actual metrics
+  or automatic completion. They remain in immutable prescriptions and history,
+  not drafts/results; active clocks survive scrolling but not navigation/reload.
+  Missing timer fields preserve legacy published shapes and behavior.
 - Both climbing block kinds support nullable canonical `videoUrl` fields:
   HTTPS links, with YouTube links normalized to canonical watch URLs. Authoring
   reuses the existing YouTube library picker and exercise video preview.

@@ -176,7 +176,9 @@ class WorkoutTemplateRepository {
   ) async {
     final checked = <String>{};
     for (final slot in blocks
-        .where((b) => b is! FreeClimbingBlock)
+        .where((b) =>
+            b is! FreeClimbingBlock &&
+            !(b is ClimbingCircuitBlock && !b.hasExercise))
         .expand((b) => b.slots)) {
       slot.validate();
       final key = '${slot.exerciseId}:${slot.exerciseVersion}';
@@ -767,6 +769,8 @@ class WorkoutTemplateRepository {
         if (block.videoUrl != null) map['videoUrl'] = block.videoUrl;
       case FreeClimbingBlock():
         if (block.videoUrl != null) map['videoUrl'] = block.videoUrl;
+        if (block.workSeconds != null) map['workSeconds'] = block.workSeconds;
+        if (block.restSeconds != null) map['restSeconds'] = block.restSeconds;
     }
     return map;
   }
@@ -937,6 +941,8 @@ class WorkoutTemplateRepository {
           title: title,
           notes: notes,
           videoUrl: data['videoUrl'] as String?,
+          workSeconds: data['workSeconds'] as int?,
+          restSeconds: data['restSeconds'] as int?,
         )..validate();
       case 'standardExercise':
       default:

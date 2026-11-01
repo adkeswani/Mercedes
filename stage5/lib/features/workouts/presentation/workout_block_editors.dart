@@ -783,6 +783,9 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
   late final TextEditingController _targetAttemptsController;
   late final TextEditingController _notesController;
   late final TextEditingController _videoUrlController;
+  late final TextEditingController _workSecondsController;
+  late final TextEditingController _restSecondsController;
+  late final String _slotId;
   YoutubeVideoMetadata? _videoMetadata;
   final List<_ClimbingRowInput> _rows = [];
   ClimbingGradingSystem _system = ClimbingGradingSystem.vScale;
@@ -804,7 +807,22 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
     );
     _notesController = TextEditingController(text: existing?.notes ?? '');
     _videoUrlController = TextEditingController(text: existing?.videoUrl ?? '');
-    _route = existing?.slots.single;
+    _workSecondsController = TextEditingController(
+      text: existing is FreeClimbingBlock
+          ? existing.workSeconds?.toString() ?? ''
+          : '',
+    );
+    _restSecondsController = TextEditingController(
+      text: existing is FreeClimbingBlock
+          ? existing.restSeconds?.toString() ?? ''
+          : '',
+    );
+    _slotId = existing?.slots.single.slotId ??
+        ref.read(workoutTemplateRepositoryProvider).generateExerciseSlotId();
+    _route = existing is FreeClimbingBlock ||
+            (existing is ClimbingCircuitBlock && !existing.hasExercise)
+        ? null
+        : existing?.slots.single;
     if (existing is ClimbingRouteBlock) {
       _gradeChosen = existing.gradingSystem != null;
       if (_gradeChosen) {
@@ -824,6 +842,8 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
     _targetAttemptsController.dispose();
     _notesController.dispose();
     _videoUrlController.dispose();
+    _workSecondsController.dispose();
+    _restSecondsController.dispose();
     for (final row in _rows) {
       row.dispose();
     }
@@ -833,10 +853,9 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
   Future<void> _pickRoute() async {
     final result = await showExercisePicker(context, ref);
     if (result == null) return;
-    final repo = ref.read(workoutTemplateRepositoryProvider);
     setState(() {
       _route = ExerciseSlot(
-        slotId: _route?.slotId ?? repo.generateExerciseSlotId(),
+        slotId: _slotId,
         exerciseId: result.id,
         exerciseVersion: result.version,
         exerciseName: result.name,
@@ -848,7 +867,7 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
 
   void _save() {
     if (!_formKey.currentState!.validate()) return;
-    if (!_isFree && _route == null) {
+    if (!_isFree && !_isCircuit && _route == null) {
       setState(() => _error = 'Choose the climbing exercise');
       return;
     }
@@ -866,10 +885,9 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
           ? FreeClimbingBlock(
               blockId: widget.blockId,
               sortOrder: widget.existing?.sortOrder ?? 0,
-              slotId: _route?.slotId ??
-                  ref
-                      .read(workoutTemplateRepositoryProvider)
-                      .generateExerciseSlotId(),
+              slotId: _slotId,
+              workSeconds: _optionalTimerSeconds(_workSecondsController.text),
+              restSeconds: _optionalTimerSeconds(_restSecondsController.text),
               notes: notes,
               videoUrl: videoUrl,
               title: widget.existing?.title,
@@ -878,7 +896,8 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
               ? ClimbingCircuitBlock(
                   blockId: widget.blockId,
                   sortOrder: widget.existing?.sortOrder ?? 0,
-                  exercise: _route!,
+                  exercise: _route,
+                  slotId: _slotId,
                   rows: _rows.map((r) => r.toRow()).toList(),
                   notes: notes,
                   videoUrl: videoUrl,
@@ -981,8 +1000,17 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
                 title: Text(route?.exerciseName ?? 'No exercise selected'),
                 trailing: TextButton(
                   onPressed: _pickRoute,
-                  child: Text(route == null ? 'Choose exercise' : 'Change'),
+                  child: Text(route == null
+                      ? (_isCircuit
+                          ? 'Choose exercise (optional)'
+                          : 'Choose exercise')
+                      : 'Change'),
                 ),
+              ),
+            if (_isCircuit && route != null)
+              TextButton(
+                onPressed: () => setState(() => _route = null),
+                child: const Text('Remove exercise'),
               ),
             const SizedBox(height: 8),
             if (!_isFree && !_isCircuit) ...[
@@ -1045,6 +1073,7 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
                               labelText: 'Row note (optional)'),
                           maxLength: 4000,
                         ),
+                        ..._timerFields(row.workSeconds, row.restSeconds),
                         TextButton(
                           onPressed: () => setState(() {
                             _rows.remove(row);
@@ -1064,8 +1093,10 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
                 label: const Text('Add climbing row'),
               ),
               const Text(
-                  'Max attempts applies to each climb, not the whole row. Up to 9 rows share one exercise slot.'),
+                  'Max attempts applies to each climb, not the whole row. Exercise selection and row timers are optional.'),
             ],
+            if (_isFree)
+              ..._timerFields(_workSecondsController, _restSecondsController),
             TextFormField(
               controller: _notesController,
               decoration:
@@ -1109,6 +1140,32 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
   }
 }
 
+int? _optionalTimerSeconds(String value) =>
+    value.trim().isEmpty ? null : int.parse(value.trim());
+
+List<Widget> _timerFields(
+  TextEditingController work,
+  TextEditingController rest,
+) =>
+    [
+      TextFormField(
+        controller: work,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(
+          labelText: 'Work duration (seconds, optional)',
+        ),
+        validator: (value) => _positiveInteger(value, optional: true),
+      ),
+      TextFormField(
+        controller: rest,
+        keyboardType: TextInputType.number,
+        decoration: const InputDecoration(
+          labelText: 'Rest duration (seconds, optional)',
+        ),
+        validator: (value) => _positiveInteger(value, optional: true),
+      ),
+    ];
+
 String? _positiveInteger(String? value, {bool optional = false}) {
   final text = value?.trim() ?? '';
   if (optional && text.isEmpty) return null;
@@ -1124,6 +1181,8 @@ class _ClimbingRowInput {
       ..grade = row.grade
       ..climbs.text = row.climbs.toString()
       ..attempts.text = row.maxAttemptsPerClimb?.toString() ?? ''
+      ..workSeconds.text = row.workSeconds?.toString() ?? ''
+      ..restSeconds.text = row.restSeconds?.toString() ?? ''
       ..notes.text = row.notes ?? '';
   }
   final String rowId;
@@ -1131,6 +1190,8 @@ class _ClimbingRowInput {
   String grade = 'V0';
   final climbs = TextEditingController();
   final attempts = TextEditingController();
+  final workSeconds = TextEditingController();
+  final restSeconds = TextEditingController();
   final notes = TextEditingController();
   ClimbingCircuitRow toRow() => ClimbingCircuitRow(
         rowId: rowId,
@@ -1141,10 +1202,14 @@ class _ClimbingRowInput {
             ? null
             : int.parse(attempts.text.trim()),
         notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
+        workSeconds: _optionalTimerSeconds(workSeconds.text),
+        restSeconds: _optionalTimerSeconds(restSeconds.text),
       );
   void dispose() {
     climbs.dispose();
     attempts.dispose();
+    workSeconds.dispose();
+    restSeconds.dispose();
     notes.dispose();
   }
 }

@@ -84,14 +84,22 @@ Implemented in this slice:
 - Immutable typed workout blocks and typed authoring editors for standard
   exercises, timed intervals, circuits, climbing routes, AMRAP, climbing
   circuits, and free climbing.
-- Climbing circuits prescribe up to nine stable-ID grade/count rows for one
-  exercise slot, with optional max attempts **per climb** and notes. Athletes
+- Climbing circuits prescribe up to nine stable-ID grade/count rows, with an
+  optional Exercise Library link, max attempts **per climb**, and notes. Create
+  a grades-only circuit without choosing an exercise, or add/remove its link
+  later without changing row/result identities. Athletes
   record a completion checkbox, optional note, and optional RPE (1–10) per row;
   partial climb counts and actual attempts are not inferred.
-- Free climbing asks the trainer only for a note and optional drill video.
+- Free climbing accepts a trainer note and optional drill video.
   Athlete grade/count result rows are optional; a note and RPE (both optional)
   suffice. It uses one
   reserved built-in result slot, not a trainer-created exercise template.
+- Optional trainer-prescribed work/rest countdowns apply per circuit row and
+  overall for Free Climbing. Enter positive whole seconds or leave blank.
+  Start/pause/reset controls are independent and survive scrolling offscreen;
+  clocks are not recovered after leaving/reloading the screen. Reaching
+  `Time!` never completes a climb or writes timing actuals. Completed history
+  displays the pinned durations without interactive controls.
 - Both new climbing blocks support optional HTTPS drill video URLs and the
   existing YouTube library picker/preview. YouTube links normalize to canonical
   watch URLs. Editing, copying, publishing, recovered completion, and completed
@@ -363,6 +371,8 @@ worktree after validation; they are gitignored and must not be committed.
 `integration_test/workout_climbing_canary_test.dart` adds real-UI trainer
 creation/edit/publication of **Climbing Circuit** and **Free Climbing**, and
 athlete recovery/completion/history against deterministic emulator fixtures.
+It verifies grades-only circuit creation, optional exercise linking with stable
+row/result IDs, per-row and overall countdown controls, and pinned durations.
 Its fixture includes both grading systems, a newer published version, and a
 second free-climbing block completed without any grade rows. It verifies
 server drafts, immutable version/block documents, and stable-slot actuals.

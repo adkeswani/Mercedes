@@ -145,7 +145,7 @@ void main() {
     await tester.ensureVisible(find.text('Climbing Circuit'));
     await tester.tap(find.text('Climbing Circuit'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Choose exercise'));
+    await tester.tap(find.text('Choose exercise (optional)'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Overhang Route'));
     await tester.pumpAndSettle();
@@ -196,7 +196,72 @@ void main() {
     expect(edited.videoUrl, original.videoUrl);
   });
 
-  testWidgets('free climbing has only notes and an optional removable video',
+  testWidgets(
+      'creates a grades-only circuit and preserves IDs when linking and removing an exercise',
+      (tester) async {
+    tester.view.physicalSize = const Size(1000, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(_harness());
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Climbing Circuit'));
+    await tester.tap(find.text('Climbing Circuit'));
+    await tester.pumpAndSettle();
+    final count = find.widgetWithText(TextFormField, 'Number of climbs');
+    final work =
+        find.widgetWithText(TextFormField, 'Work duration (seconds, optional)');
+    final rest =
+        find.widgetWithText(TextFormField, 'Rest duration (seconds, optional)');
+    final save = find.widgetWithText(FilledButton, 'Save');
+    await tester.ensureVisible(count);
+    await tester.enterText(count, '3');
+    await tester.ensureVisible(work);
+    await tester.enterText(work, '0');
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a positive whole number'), findsOneWidget);
+    await tester.ensureVisible(work);
+    await tester.enterText(work, '30');
+    await tester.ensureVisible(rest);
+    await tester.enterText(rest, '15');
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+        tester.element(find.byType(WorkoutBuilderScreen)));
+    final original =
+        container.read(workoutDraftProvider).single as ClimbingCircuitBlock;
+    expect(original.hasExercise, isFalse);
+    expect(original.rows.single.workSeconds, 30);
+    expect(original.rows.single.restSeconds, 15);
+    expect(find.textContaining('30s work'), findsOneWidget);
+    for (final link in [true, false]) {
+      await tester.tap(find.byTooltip('Edit prescription'));
+      await tester.pumpAndSettle();
+      if (link) {
+        await tester.tap(find.text('Choose exercise (optional)'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Overhang Route'));
+      } else {
+        await tester.tap(find.text('Remove exercise'));
+      }
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(save);
+      await tester.tap(save);
+      await tester.pumpAndSettle();
+      final edited =
+          container.read(workoutDraftProvider).single as ClimbingCircuitBlock;
+      expect(edited.hasExercise, link);
+      expect(edited.exercise.slotId, original.exercise.slotId);
+      expect(edited.rows.single.toMap(), original.rows.single.toMap());
+    }
+  });
+
+  testWidgets('free climbing has optional notes, timers and a removable video',
       (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
@@ -224,6 +289,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Enter a valid HTTPS video URL'), findsOneWidget);
     await tester.enterText(video, 'https://example.test/free-drill.mp4');
+    final work =
+        find.widgetWithText(TextFormField, 'Work duration (seconds, optional)');
+    final rest =
+        find.widgetWithText(TextFormField, 'Rest duration (seconds, optional)');
+    await tester.ensureVisible(work);
+    await tester.enterText(work, '30');
+    await tester.ensureVisible(rest);
+    await tester.enterText(rest, '15');
     await tester.pumpAndSettle();
     expect(
         tester
@@ -247,6 +320,10 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pumpAndSettle();
     expect(container.read(workoutDraftProvider).single.videoUrl, isNull);
+    final free =
+        container.read(workoutDraftProvider).single as FreeClimbingBlock;
+    expect(free.workSeconds, 30);
+    expect(free.restSeconds, 15);
   });
 
   testWidgets('edits an existing circuit block via the edit icon',

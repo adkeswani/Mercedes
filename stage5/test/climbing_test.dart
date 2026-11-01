@@ -23,6 +23,8 @@ ClimbingCircuitRow _row({
   String grade = 'V2',
   int climbs = 3,
   int? attempts = 2,
+  int? workSeconds,
+  int? restSeconds,
   ClimbingGradingSystem system = ClimbingGradingSystem.vScale,
 }) =>
     ClimbingCircuitRow(
@@ -32,6 +34,8 @@ ClimbingCircuitRow _row({
       climbs: climbs,
       maxAttemptsPerClimb: attempts,
       notes: 'Technique',
+      workSeconds: workSeconds,
+      restSeconds: restSeconds,
     );
 ClimbingCircuitBlock _circuit(
         {List<ClimbingCircuitRow>? rows, String? videoUrl}) =>
@@ -58,6 +62,97 @@ FreeClimbingBlock _free({String? videoUrl}) => FreeClimbingBlock(
     );
 
 void main() {
+  test('unlinked circuits keep canonical result slots and reject spoofed slots',
+      () {
+    final block = ClimbingCircuitBlock(
+        blockId: 'grades-only', sortOrder: 0, slotId: 'result', rows: [_row()]);
+    expect(block.validate, returnsNormally);
+    expect(block.hasExercise, isFalse);
+    expect(block.exercise.exerciseId, climbingCircuitExerciseId);
+    expect(block.copyWithSortOrder(2).slots.single.slotId, 'result');
+    expect(
+        () => ClimbingCircuitBlock(
+            blockId: 'missing', sortOrder: 0, rows: [_row()]),
+        throwsArgumentError);
+    expect(
+        () => ClimbingCircuitBlock(
+            blockId: 'conflict',
+            sortOrder: 0,
+            slotId: 'different',
+            exercise: _slot('result'),
+            rows: [_row()]),
+        throwsArgumentError);
+    for (final slot in [
+      ExerciseSlot(
+          slotId: 'result',
+          exerciseId: climbingCircuitExerciseId,
+          exerciseName: 'Wrong name',
+          sortOrder: 0,
+          mode: ExerciseMode.reps),
+      ExerciseSlot(
+          slotId: 'result',
+          exerciseId: climbingCircuitExerciseId,
+          exerciseName: 'Climbing Circuit',
+          exerciseVersion: 2,
+          sortOrder: 0,
+          mode: ExerciseMode.reps),
+      ExerciseSlot(
+          slotId: 'result',
+          exerciseId: climbingCircuitExerciseId,
+          exerciseName: 'Climbing Circuit',
+          sortOrder: 0,
+          mode: ExerciseMode.reps,
+          reps: '3'),
+    ]) {
+      expect(
+          ClimbingCircuitBlock(
+              blockId: 'bad',
+              sortOrder: 0,
+              exercise: slot,
+              rows: [_row()]).validate,
+          throwsArgumentError);
+    }
+  });
+
+  test('climbing countdown prescriptions are optional positive seconds', () {
+    final legacy = _row().toMap();
+    expect(legacy.containsKey('workSeconds'), isFalse);
+    expect(legacy.containsKey('restSeconds'), isFalse);
+    expect(ClimbingCircuitRow.fromMap(legacy).workSeconds, isNull);
+    final row = _row(workSeconds: 30, restSeconds: 15);
+    expect(row.validate, returnsNormally);
+    expect(ClimbingCircuitRow.fromMap(row.toMap()).toMap(), row.toMap());
+    for (final invalid in [0, -1]) {
+      expect(_row(workSeconds: invalid).validate, throwsArgumentError);
+      expect(_row(restSeconds: invalid).validate, throwsArgumentError);
+      expect(
+          FreeClimbingBlock(
+                  blockId: 'free',
+                  sortOrder: 0,
+                  slotId: 'slot',
+                  workSeconds: invalid)
+              .validate,
+          throwsArgumentError);
+      expect(
+          FreeClimbingBlock(
+                  blockId: 'free',
+                  sortOrder: 0,
+                  slotId: 'slot',
+                  restSeconds: invalid)
+              .validate,
+          throwsArgumentError);
+    }
+    final free = FreeClimbingBlock(
+        blockId: 'free',
+        sortOrder: 0,
+        slotId: 'slot',
+        workSeconds: 30,
+        restSeconds: 15);
+    expect(free.validate, returnsNormally);
+    final copy = free.copyWithSortOrder(2);
+    expect(copy.workSeconds, 30);
+    expect(copy.restSeconds, 15);
+  });
   test('optional drill URLs are canonical and validated for both block types',
       () {
     const canonical = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
@@ -143,7 +238,7 @@ void main() {
     final rules = File('..\\firestore.rules').readAsStringSync();
     final patterns = rules.substring(
       rules.indexOf('function climbingGradePatterns()'),
-      rules.indexOf('function validClimbingGradeRow('),
+      rules.indexOf('function validClimbingCircuitRow('),
     );
     final candidates = {
       ...vScaleGrades,
@@ -433,6 +528,77 @@ void main() {
         'actualsStorageFormat': 'slotResultsSubcollection',
         'actualSlotIds': <String>[],
       });
+    });
+
+    test(
+        'unlinked timed circuits publish, copy and complete without an exercise',
+        () async {
+      await firestore
+          .collection('exerciseTemplates')
+          .doc('climb-exercise')
+          .delete();
+      final circuit = ClimbingCircuitBlock(
+          blockId: 'circuit',
+          sortOrder: 0,
+          slotId: 'circuit-slot',
+          rows: [_row(workSeconds: 30, restSeconds: 15)]);
+      final free = FreeClimbingBlock(
+          blockId: 'free',
+          sortOrder: 1,
+          slotId: 'free-slot',
+          workSeconds: 60,
+          restSeconds: 20);
+      await templates.publishVersion(
+          templateId: 'workout', userId: 'trainer', blocks: [circuit, free]);
+      final version = (await templates.getVersion('workout', 2))!;
+      final loaded = version.blocks.first as ClimbingCircuitBlock;
+      expect(loaded.hasExercise, isFalse);
+      expect(loaded.rows.single.workSeconds, 30);
+      expect(loaded.rows.single.restSeconds, 15);
+      expect((version.blocks.last as FreeClimbingBlock).workSeconds, 60);
+      final duplicate = await templates.duplicateTemplate(
+          sourceTemplateId: 'workout', userId: 'trainer');
+      final draft = WorkoutDraftNotifier();
+      addTearDown(draft.dispose);
+      draft.load(await templates.getLatestBlocks('workout'));
+      draft.reorder(0, 2);
+      await templates.publishVersion(
+          templateId: duplicate, userId: 'trainer', blocks: draft.state);
+      final copied = (await templates.getVersion(duplicate, 1))!;
+      expect((copied.blocks.first as FreeClimbingBlock).restSeconds, 20);
+      expect((copied.blocks.last as ClimbingCircuitBlock).hasExercise, isFalse);
+      expect((copied.blocks.last as ClimbingCircuitBlock).rows.single.toMap(),
+          circuit.rows.single.toMap());
+      expect(copied.blocks.last.slots.single.slotId, 'circuit-slot');
+      await firestore.collection('workoutInstances').doc('instance').update({
+        'workoutTemplateVersion': 2,
+      });
+      final input = initialClimbingInput(loaded);
+      (input['circuitRows'] as List).first['completed'] = true;
+      await instances.completeWorkout(
+          instanceId: 'instance',
+          athleteId: 'athlete',
+          rpe: 6,
+          durationMinutes: 20,
+          actuals: [
+            climbingActualFromInput(loaded, input),
+            climbingActualFromInput(
+                version.blocks.last, initialClimbingInput(version.blocks.last)),
+          ]);
+      final actual =
+          (await instances.getById('instance'))!.actualsBySlot['circuit-slot']!;
+      expect(actual.exerciseId, climbingCircuitExerciseId);
+      expect(actual.circuitRows!.single.completed, isTrue);
+      expect(actual.circuitRows!.single.toMap().containsKey('workSeconds'),
+          isFalse);
+      expect(
+          (await templates.getVersion('workout', 2))!
+              .blocks
+              .first
+              .slots
+              .single
+              .slotId,
+          'circuit-slot');
     });
 
     test('duplicate draft and republish retain both immutable drill videos',
