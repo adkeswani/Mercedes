@@ -53,8 +53,16 @@ bool get releaseCanaryYoutubeBridgeEnabled =>
       location: Uri.base,
     );
 
-bool get browserAutomationEnabled =>
-    browserSmokeConfig.autoLoginEnabled || releaseCanaryMode;
+bool get browserAutomationEnabled => isBrowserAutomationEnabled(
+      smokeConfig: browserSmokeConfig,
+      releaseCanary: releaseCanaryMode,
+    );
+
+bool isBrowserAutomationEnabled({
+  required BrowserSmokeConfig smokeConfig,
+  required bool releaseCanary,
+}) =>
+    smokeConfig.loginEnabled || releaseCanary;
 
 bool isReleaseCanaryEmail(String email) {
   final normalized = email.trim().toLowerCase();

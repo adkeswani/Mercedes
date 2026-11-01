@@ -262,6 +262,8 @@ control-state, and collapse/expand checks. After functional assertions pass,
 it captures the 14 legacy expanded/collapsed workspace screenshots alongside
 the climbing screenshots in the same validation artifact directory. Both
 browser paths use headless Chrome; no visible test window is expected.
+Surface diagnostics are enabled by the debug/emulator login seam for both
+manual and automatic login; enabling them does not enable automatic login.
 
 Stage 5 has browser integration coverage that starts the Flutter web app in
 Chrome against local Firebase Auth and Firestore emulators and signs in through
