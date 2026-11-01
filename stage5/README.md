@@ -18,6 +18,8 @@ Implemented in this slice:
   identity. Full paths and queries survive sign-out, profile loading, and
   onboarding redirects, so a refresh or cold start returns to the workout
   rather than home.
+- Exercise actuals remain intact when scrolling recycles an exercise card;
+  recreated cards restore recorded values rather than prescription defaults.
 - In-progress RPE, duration, and completion notes autosave after a debounce to
   both `localStorage` and the athlete-only
   `workoutInstances/{instanceId}/completionDrafts/current` document. The UI

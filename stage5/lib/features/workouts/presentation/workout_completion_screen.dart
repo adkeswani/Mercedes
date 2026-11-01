@@ -502,6 +502,7 @@ class _WorkoutCompletionScreenState
                     isAthlete: _isAthlete,
                     recordingEnabled: _isAthlete && !instance.isCompleted,
                     onActualChanged: _onActualChanged,
+                    initialActual: _actuals[slot.slotId],
                   ),
             ],
             const SizedBox(height: 24),
@@ -869,6 +870,7 @@ class _ExerciseEntryCard extends ConsumerStatefulWidget {
     required this.isAthlete,
     required this.recordingEnabled,
     required this.onActualChanged,
+    this.initialActual,
     super.key,
   });
 
@@ -880,6 +882,7 @@ class _ExerciseEntryCard extends ConsumerStatefulWidget {
   /// still-scheduled workout) rather than a read-only view.
   final bool recordingEnabled;
   final ValueChanged<ExerciseActual> onActualChanged;
+  final ExerciseActual? initialActual;
 
   @override
   ConsumerState<_ExerciseEntryCard> createState() => _ExerciseEntryCardState();
@@ -943,19 +946,29 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
   void initState() {
     super.initState();
     final slot = widget.slot;
-    _setsController = TextEditingController(text: slot.sets?.toString() ?? '');
-    _repsController = TextEditingController(text: slot.reps ?? '');
-    _weightController = TextEditingController(text: slot.weight ?? '');
+    final actual = widget.initialActual;
+    _setsController = TextEditingController(
+        text: (actual == null ? slot.sets : actual.sets)?.toString() ?? '');
+    _repsController = TextEditingController(
+        text: (actual == null ? slot.reps : actual.reps) ?? '');
+    _weightController = TextEditingController(
+        text: (actual == null ? slot.weight : actual.weight) ?? '');
     _durationController = TextEditingController(
-      text: slot.durationSeconds?.toString() ?? '',
+      text: (actual == null ? slot.durationSeconds : actual.durationSeconds)
+              ?.toString() ??
+          '',
     );
     final targetAttempts = widget.block is ClimbingRouteBlock
         ? (widget.block as ClimbingRouteBlock).targetAttempts
         : null;
     _attemptsController = TextEditingController(
-      text: targetAttempts?.toString() ?? '',
+      text:
+          (actual == null ? targetAttempts : actual.attempts)?.toString() ?? '',
     );
-    _roundsController = TextEditingController();
+    _roundsController =
+        TextEditingController(text: actual?.roundsCompleted?.toString() ?? '');
+    _sent = actual?.sent ?? false;
+    _restElapsedSeconds = actual?.restSeconds;
     if (widget.recordingEnabled) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _emitActual());
     }

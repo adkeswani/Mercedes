@@ -81,6 +81,35 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
+  testWidgets(
+      'timed actual survives card recycling instead of prescription reset',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 320);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _seedWorkoutWithExercises(firestore);
+    await pumpScreen(tester, id: 'instance-2');
+    await tester.pumpAndSettle();
+    final list = find
+        .descendant(
+          of: find.byKey(WorkoutCompletionScreen.listKey),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final duration = find.widgetWithText(TextField, 'Duration (seconds)');
+    await tester.scrollUntilVisible(duration, 150, scrollable: list);
+    await tester.enterText(duration, '35');
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Mark as Completed'), 250,
+        scrollable: list);
+    await tester.pumpAndSettle();
+    expect(duration, findsNothing);
+    await tester.scrollUntilVisible(duration, -150, scrollable: list);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(duration).controller!.text, '35');
+  });
+
   testWidgets('shows unauthorized state for another athlete', (tester) async {
     container.dispose();
     container = ProviderContainer(
