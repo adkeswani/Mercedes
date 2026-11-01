@@ -15,6 +15,17 @@ class BrowserTestWaitContext {
   final String artifactPath;
   final BrowserTestRouteReader currentRoute;
 
+  /// Call only after all functional assertions. The runner bounds the optional
+  /// driver handshake; a Dart timeout cannot cancel its screenshot request.
+  Future<void> captureAfterAssertions(
+    String condition,
+    Future<void> Function() capture,
+  ) async {
+    // ignore: avoid_print
+    print('BROWSER_SMOKE_ASSERTIONS_PASSED:$identity');
+    await runStep(condition, capture, timeout: null);
+  }
+
   Future<T> runStep<T>(
     String condition,
     Future<T> Function() operation, {

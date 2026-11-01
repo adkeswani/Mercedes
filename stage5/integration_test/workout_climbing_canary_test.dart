@@ -196,8 +196,10 @@ void main() {
     expect(second.data()!['blocks'][0]['rowIds'], circuit['rowIds']);
     expect(second.data()!['slotIds'], data['slotIds']);
     expect((await versionRef.get(_server)).data(), data);
-    await waits.runStep('capture trainer climbing authoring',
-        () => binding.takeScreenshot('trainer-climbing-authoring'));
+    await waits.captureAfterAssertions('capture trainer climbing authoring',
+        () async {
+      await binding.takeScreenshot('trainer-climbing-authoring');
+    });
   }, skip: browserSmokeConfig.identityRole != BrowserSmokeIdentityRole.trainer);
 
   testWidgets(
@@ -380,9 +382,6 @@ void main() {
       timeout: const Duration(seconds: 20),
     );
     expect(tester.widget<TextFormField>(count).initialValue, '2');
-    await waits.runStep('capture recovered climbing inputs',
-        () => binding.takeScreenshot('athlete-climbing-recovery'));
-
     await _scroll(tester, waits, find.text('Mark as Completed'), 250,
         'reveal completion button');
     await _tap(tester, waits, find.text('Mark as Completed'),
@@ -443,8 +442,10 @@ void main() {
     await _scroll(tester, waits, find.text('2 × 5.13a · Two clean climbs'), 250,
         'free climbing history');
     await _expectDrillVideo(tester, waits, 'block-free-climbing', _freeDrill);
-    await waits.runStep('capture completed climbing history',
-        () => binding.takeScreenshot('athlete-climbing-history'));
+    await waits.captureAfterAssertions('capture completed climbing history',
+        () async {
+      await binding.takeScreenshot('athlete-climbing-history');
+    });
   }, skip: browserSmokeConfig.identityRole != BrowserSmokeIdentityRole.athlete);
 }
 
@@ -542,19 +543,7 @@ Future<void> _wait(WidgetTester tester, BrowserTestWaitContext waits,
           'Visible: ${find.byType(Text).evaluate().map((e) => (e.widget as Text).data).whereType<String>().take(25).join(' | ')}',
     );
   } on WorkoutDraftConflictFailure catch (failure, stack) {
-    await waits.runStep(
-      'report contested climbing draft (supplementary screenshot)',
-      () => _draftDiagnostics.captureAndFail(
-        failure,
-        stack,
-        capture: tester.binding is IntegrationTestWidgetsFlutterBinding
-            ? () async {
-                await (tester.binding as IntegrationTestWidgetsFlutterBinding)
-                    .takeScreenshot('athlete-climbing-draft-conflict');
-              }
-            : null,
-      ),
-    );
+    _draftDiagnostics.failConflict(failure, stack);
   }
 }
 

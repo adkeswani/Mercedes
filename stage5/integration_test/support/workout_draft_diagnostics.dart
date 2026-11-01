@@ -1,5 +1,3 @@
-import 'dart:async';
-
 class WorkoutDraftConflictFailure extends StateError {
   WorkoutDraftConflictFailure(super.message);
 }
@@ -67,27 +65,13 @@ class WorkoutDraftDiagnostics {
     );
   }
 
-  /// Run outside waitForCondition's pump; capture cannot replace the conflict.
-  Future<Never> captureAndFail(
+  /// Failure reporting must never enter the driver screenshot protocol.
+  Never failConflict(
     WorkoutDraftConflictFailure failure,
-    StackTrace stack, {
-    Future<void> Function()? capture,
-    Duration artifactTimeout = const Duration(seconds: 2),
-  }) async {
-    // Emit the exact failure before even starting the optional screenshot.
+    StackTrace stack,
+  ) {
     _write('BROWSER_WORKOUT_DRAFT_CONFLICT|'
         'error=${Uri.encodeComponent(failure.message)}');
-    if (capture != null) {
-      record({'phase': 'artifact-start'});
-      try {
-        await capture().timeout(artifactTimeout);
-        record({'phase': 'artifact-saved'});
-      } on TimeoutException {
-        record({'phase': 'artifact-timeout'});
-      } catch (_) {
-        record({'phase': 'artifact-failed'});
-      }
-    }
     Error.throwWithStackTrace(failure, stack);
   }
 }

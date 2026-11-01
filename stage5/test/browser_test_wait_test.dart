@@ -5,6 +5,88 @@ import 'package:flutter_test/flutter_test.dart';
 import '../integration_test/support/browser_test_wait.dart';
 
 void main() {
+  test('post-assertion marker precedes screenshot and waits for driver ack',
+      () async {
+    final logs = <String>[];
+    final acknowledgment = Completer<void>();
+    final waits = BrowserTestWaitContext(
+      identity: 'athlete',
+      testFile: 'climbing',
+      artifactPath: 'artifacts',
+      currentRoute: () => '/athlete/workouts/one',
+    );
+    await runZoned(
+      () async {
+        var finished = false;
+        final capture = waits.captureAfterAssertions(
+          'capture completed climbing history',
+          () {
+            expect(logs.first, 'BROWSER_SMOKE_ASSERTIONS_PASSED:athlete');
+            return acknowledgment.future;
+          },
+        ).then((_) => finished = true);
+        await Future<void>.delayed(Duration.zero);
+        expect(finished, isFalse);
+        expect(logs.any((line) => line.startsWith('BROWSER_TEST_STEP_PASS')),
+            isFalse);
+        acknowledgment.complete();
+        await capture;
+        expect(finished, isTrue);
+        expect(logs.last, startsWith('BROWSER_TEST_STEP_PASS'));
+      },
+      zoneSpecification: ZoneSpecification(
+        print: (_, __, ___, line) => logs.add(line),
+      ),
+    );
+  });
+
+  test('functional failure cannot emit assertion marker or request screenshot',
+      () async {
+    final logs = <String>[];
+    final failure = StateError('functional assertion failed');
+    var captureCalled = false;
+    final waits = BrowserTestWaitContext(
+      identity: 'athlete',
+      testFile: 'climbing',
+      artifactPath: 'artifacts',
+      currentRoute: () => '/athlete/workouts/one',
+    );
+    await runZoned(
+      () async {
+        Future<void> scenario() async {
+          await Future<void>.error(failure);
+          await waits.captureAfterAssertions('final screenshot', () async {
+            captureCalled = true;
+          });
+        }
+
+        await expectLater(scenario(), throwsA(same(failure)));
+      },
+      zoneSpecification: ZoneSpecification(
+        print: (_, __, ___, line) => logs.add(line),
+      ),
+    );
+    expect(captureCalled, isFalse);
+    expect(logs, isEmpty);
+  });
+
+  test('post-assertion screenshot failure remains explicit', () async {
+    final failure = StateError('driver screenshot failed');
+    final waits = BrowserTestWaitContext(
+      identity: 'athlete',
+      testFile: 'climbing',
+      artifactPath: 'artifacts',
+      currentRoute: () => '/athlete/workouts/one',
+    );
+    await expectLater(
+      waits.captureAfterAssertions(
+        'final screenshot',
+        () => Future<void>.error(failure),
+      ),
+      throwsA(same(failure)),
+    );
+  });
+
   test('runStep reports bounded diagnostic context', () async {
     final waits = BrowserTestWaitContext(
       identity: 'athlete',
