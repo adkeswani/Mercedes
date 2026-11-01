@@ -9,7 +9,8 @@ import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
 import 'package:stage5/features/workouts/presentation/exercise_picker.dart';
 
 void main() {
-  testWidgets('exercise picker lists exercises alphabetically by name',
+  testWidgets(
+      'instruction picker keeps alphabetical ordering and pinned selection',
       (tester) async {
     final exercises = [
       _exercise(id: 'ex-pullup', name: 'Pull-up'),
@@ -18,10 +19,15 @@ void main() {
       _exercise(id: 'ex-deadlift', name: 'deadlift'),
     ];
 
-    await tester.pumpWidget(_harness(exercises: exercises));
+    ExercisePickerResult? selected;
+    await tester.pumpWidget(_harness(
+      exercises: exercises,
+      onSelected: (result) => selected = result,
+    ));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Open picker'));
     await tester.pumpAndSettle();
+    expect(find.text('Select instructions'), findsOneWidget);
 
     final titles = tester
         .widgetList<ListTile>(find.byType(ListTile))
@@ -34,10 +40,31 @@ void main() {
       'Pull-up',
       'Squat',
     ]);
+    await tester.tap(find.text('Squat'));
+    await tester.pumpAndSettle();
+    expect(selected?.id, 'ex-squat');
+    expect(selected?.version, 1);
+    expect(selected?.name, 'Squat');
+  });
+
+  testWidgets('empty instruction picker points to the Instruction library',
+      (tester) async {
+    await tester.pumpWidget(_harness(exercises: []));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open picker'));
+    await tester.pumpAndSettle();
+    expect(
+        find.text(
+          'No instructions yet. Create an entry in the Instruction library first.',
+        ),
+        findsOneWidget);
   });
 }
 
-Widget _harness({required List<ExerciseTemplate> exercises}) {
+Widget _harness({
+  required List<ExerciseTemplate> exercises,
+  ValueChanged<ExercisePickerResult?>? onSelected,
+}) {
   return ProviderScope(
     overrides: [
       authStateProvider.overrideWith(
@@ -50,7 +77,10 @@ Widget _harness({required List<ExerciseTemplate> exercises}) {
         builder: (context, ref, _) => Scaffold(
           body: Center(
             child: ElevatedButton(
-              onPressed: () => showExercisePicker(context, ref),
+              onPressed: () async {
+                final result = await showExercisePicker(context, ref);
+                onSelected?.call(result);
+              },
               child: const Text('Open picker'),
             ),
           ),

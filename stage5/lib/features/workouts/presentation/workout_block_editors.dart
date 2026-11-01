@@ -868,7 +868,7 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
   void _save() {
     if (!_formKey.currentState!.validate()) return;
     if (!_isFree && !_isCircuit && _route == null) {
-      setState(() => _error = 'Choose the climbing exercise');
+      setState(() => _error = 'Attach instructions for this climbing route');
       return;
     }
     if (!_isFree && !_isCircuit && !_gradeChosen) {
@@ -997,20 +997,20 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
             if (!_isFree)
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text(route?.exerciseName ?? 'No exercise selected'),
+                title: Text(route?.exerciseName ?? 'No instructions attached'),
                 trailing: TextButton(
                   onPressed: _pickRoute,
                   child: Text(route == null
                       ? (_isCircuit
-                          ? 'Choose exercise (optional)'
-                          : 'Choose exercise')
-                      : 'Change'),
+                          ? 'Attach instructions (optional)'
+                          : 'Attach instructions')
+                      : 'Change instructions'),
                 ),
               ),
             if (_isCircuit && route != null)
               TextButton(
                 onPressed: () => setState(() => _route = null),
-                child: const Text('Remove exercise'),
+                child: const Text('Remove instructions'),
               ),
             const SizedBox(height: 8),
             if (!_isFree && !_isCircuit) ...[
@@ -1093,7 +1093,7 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
                 label: const Text('Add climbing row'),
               ),
               const Text(
-                  'Max attempts applies to each climb, not the whole row. Exercise selection and row timers are optional.'),
+                  'Max attempts applies to each climb, not the whole row. Instructions and row timers are optional.'),
             ],
             if (_isFree)
               ..._timerFields(_workSecondsController, _restSecondsController),

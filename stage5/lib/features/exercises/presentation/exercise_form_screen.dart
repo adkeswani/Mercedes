@@ -142,7 +142,8 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEditing ? 'Edit Exercise' : 'New Exercise'),
+        title:
+            Text(widget.isEditing ? 'Edit instructions' : 'New instructions'),
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _save,
@@ -176,7 +177,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
               controller: _descriptionController,
               decoration: const InputDecoration(
                 labelText: 'Description',
-                hintText: 'Brief description of the exercise',
+                hintText: 'Brief description of these instructions',
               ),
               textCapitalization: TextCapitalization.sentences,
               maxLines: 2,

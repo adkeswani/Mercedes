@@ -115,7 +115,7 @@ void main() {
     await tester.tap(find.text('Climbing Route'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Choose exercise'));
+    await tester.tap(find.text('Attach instructions'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Overhang Route'));
     await tester.pumpAndSettle();
@@ -145,7 +145,7 @@ void main() {
     await tester.ensureVisible(find.text('Climbing Circuit'));
     await tester.tap(find.text('Climbing Circuit'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Choose exercise (optional)'));
+    await tester.tap(find.text('Attach instructions (optional)'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Overhang Route'));
     await tester.pumpAndSettle();
@@ -243,11 +243,11 @@ void main() {
       await tester.tap(find.byTooltip('Edit prescription'));
       await tester.pumpAndSettle();
       if (link) {
-        await tester.tap(find.text('Choose exercise (optional)'));
+        await tester.tap(find.text('Attach instructions (optional)'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Overhang Route'));
       } else {
-        await tester.tap(find.text('Remove exercise'));
+        await tester.tap(find.text('Remove instructions'));
       }
       await tester.pumpAndSettle();
       await tester.ensureVisible(save);
@@ -270,7 +270,8 @@ void main() {
     await tester.ensureVisible(find.text('Free Climbing'));
     await tester.tap(find.text('Free Climbing'));
     await tester.pumpAndSettle();
-    expect(find.text('Choose exercise'), findsNothing);
+    expect(find.text('Attach instructions'), findsNothing);
+    expect(find.text('Attach instructions (optional)'), findsNothing);
     expect(find.text('Grade'), findsNothing);
     expect(find.text('Number of climbs'), findsNothing);
     expect(find.text('Choose from YouTube library'), findsOneWidget);

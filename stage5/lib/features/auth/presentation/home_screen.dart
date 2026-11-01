@@ -130,8 +130,8 @@ class HomeScreenContent extends ConsumerWidget {
           const SizedBox(height: 8),
           _FeatureCard(
             icon: Icons.fitness_center,
-            title: 'Exercise Library',
-            subtitle: 'Create and manage exercise templates',
+            title: 'Instruction Library',
+            subtitle: 'Create and manage reusable instructions and videos',
             onTap: () => context.push('/exercises'),
           ),
           _FeatureCard(

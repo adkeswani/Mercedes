@@ -11,7 +11,7 @@ import 'package:stage5/features/library/domain/library_metadata.dart';
 import 'package:stage5/features/library/presentation/library_organizer.dart';
 import 'package:stage5/features/library/presentation/library_providers.dart';
 
-/// Displays the user's exercise template library.
+/// Displays reusable exercise instructions in the Instruction Library.
 ///
 /// Shows a list of templates with a FAB to create new ones.
 /// Tap to edit, swipe to soft-delete.
@@ -27,7 +27,7 @@ class ExerciseListScreen extends ConsumerWidget {
     final userId = ref.watch(authStateProvider).valueOrNull?.uid;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Exercise Library')),
+      appBar: AppBar(title: const Text('Instruction Library')),
       body: exercisesAsync.when(
         data: (exercises) {
           if (exercises.isEmpty) {
@@ -60,7 +60,7 @@ class ExerciseListScreen extends ConsumerWidget {
                 itemType: LibraryItemType.exercise,
                 items: exercises,
                 folders: folders,
-                emptyMessage: 'No exercises yet. Tap + to create one.',
+                emptyMessage: 'No instructions yet. Tap + to create an entry.',
                 nameOf: (item) => item.name,
                 tagsOf: (item) => item.tags,
                 folderIdOf: (item) => item.folderId,
@@ -118,14 +118,14 @@ class ExerciseListScreen extends ConsumerWidget {
             });
           }
           return LibraryLoadError(
-            message: 'Could not load exercises: $e',
+            message: 'Could not load instructions: $e',
             onRetry: () => ref.invalidate(exerciseTemplatesProvider),
           );
         },
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/exercises/new'),
-        tooltip: 'New exercise',
+        tooltip: 'New instructions',
         child: const Icon(Icons.add),
       ),
     );
@@ -160,7 +160,7 @@ class _ExerciseTile extends ConsumerWidget {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text(
-                  'Cannot delete — this exercise is used in a workout',
+                  'Cannot delete — these instructions are used in a workout',
                 ),
               ),
             );
@@ -170,7 +170,7 @@ class _ExerciseTile extends ConsumerWidget {
         return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Delete exercise?'),
+            title: const Text('Delete instructions?'),
             content: Text(
               'Are you sure you want to delete "${exercise.name}"?',
             ),

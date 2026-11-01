@@ -96,7 +96,7 @@ enum WebWorkspaceDestination {
   ),
   trainerExercises(
     mode: WebWorkspaceMode.trainer,
-    label: 'Exercise library',
+    label: 'Instruction library',
     path: '/trainer/exercises',
     icon: Icons.fitness_center_outlined,
     selectedIcon: Icons.fitness_center,

@@ -29,7 +29,7 @@ class ExerciseDetailScreen extends ConsumerWidget {
     final currentUid = ref.watch(authStateProvider).value?.uid;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Exercise')),
+      appBar: AppBar(title: const Text('Instructions')),
       body: FutureBuilder<ExerciseTemplate?>(
         future: versionNumber == null
             ? repo.getById(exerciseId)
@@ -43,7 +43,7 @@ class ExerciseDetailScreen extends ConsumerWidget {
           }
           final exercise = snapshot.data;
           if (exercise == null) {
-            return const Center(child: Text('Exercise not found'));
+            return const Center(child: Text('Instructions not found'));
           }
           return _ExerciseDetailBody(
             exercise: exercise,
@@ -78,7 +78,7 @@ class _ExerciseDetailBody extends StatelessWidget {
             if (canEdit)
               IconButton(
                 icon: const Icon(Icons.edit),
-                tooltip: 'Edit exercise',
+                tooltip: 'Edit instructions',
                 onPressed: () => context.push('/exercises/${exercise.id}/edit'),
               ),
           ],

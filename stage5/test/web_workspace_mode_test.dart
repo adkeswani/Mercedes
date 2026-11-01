@@ -194,7 +194,7 @@ void main() {
       expect(find.text('Progress'), findsNWidgets(2));
       expect(find.text('Messages'), findsOneWidget);
       expect(find.text('Clients'), findsNothing);
-      expect(find.text('Exercise library'), findsNothing);
+      expect(find.text('Instruction library'), findsNothing);
       expect(
         router.routeInformationProvider.value.uri.path,
         '/athlete/progress',
@@ -209,7 +209,7 @@ void main() {
       );
       expect(find.text('Trainer dashboard'), findsOneWidget);
       expect(find.text('Clients'), findsOneWidget);
-      expect(find.text('Exercise library'), findsOneWidget);
+      expect(find.text('Instruction library'), findsOneWidget);
       expect(find.text('Workout library'), findsOneWidget);
       expect(find.text('Program library'), findsOneWidget);
       expect(find.text('Calendar & assignments'), findsOneWidget);
@@ -321,6 +321,29 @@ void main() {
         find.text('Trainer and athlete conversations will be available here.'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('mobile trainer tools link to the Instruction Library',
+        (tester) async {
+      _setViewport(tester, const Size(390, 844));
+      final container = _readyContainer(_FakeWebWorkspacePreference());
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: Scaffold(body: HomeScreenContent())),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('Instruction Library'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Instruction Library'), findsOneWidget);
+      expect(find.text('Create and manage reusable instructions and videos'),
+          findsOneWidget);
+      expect(find.text('Exercise Library'), findsNothing);
     });
 
     testWidgets('mobile route keeps the existing fallback and hides the switch',

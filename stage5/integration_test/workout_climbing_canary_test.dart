@@ -50,7 +50,7 @@ void main() {
     await _wait(tester, waits, find.text('Publish'), 'builder ready');
 
     await _addBlock(tester, waits, 'Climbing Circuit');
-    expect(find.text('Choose exercise (optional)'), findsOneWidget);
+    expect(find.text('Attach instructions (optional)'), findsOneWidget);
     await selectClimbingGrade(
         tester, waits, find.byType(DropdownButtonFormField<String>).last, 'V2');
     await _enter(
@@ -112,7 +112,8 @@ void main() {
     await _wait(tester, waits, find.text('Climbing Circuit'), 'circuit card');
 
     await _addBlock(tester, waits, 'Free Climbing');
-    expect(find.text('Choose exercise'), findsNothing);
+    expect(find.text('Attach instructions'), findsNothing);
+    expect(find.text('Attach instructions (optional)'), findsNothing);
     expect(find.text('Number of climbs'), findsNothing);
     expect(find.byType(DropdownButtonFormField<ClimbingGradingSystem>),
         findsNothing);
@@ -190,7 +191,7 @@ void main() {
 
     await _tap(tester, waits, find.byTooltip('Edit prescription').first,
         'edit circuit prescription');
-    await _tap(tester, waits, find.text('Choose exercise (optional)'),
+    await _tap(tester, waits, find.text('Attach instructions (optional)'),
         'link an optional drill exercise');
     await _wait(tester, waits, find.text('Boulder Problem'), 'exercise picker');
     await _tap(

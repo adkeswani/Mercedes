@@ -39,7 +39,7 @@ valid saved progress is the guarantee. Recovery uses origin-scoped
 
 Climbing Circuit and Free Climbing now have typed authoring, completion,
 recovery, and immutable completed-detail surfaces. Circuit rows share one
-result slot with an optional Exercise Library link and record
+result slot with an optional Instruction Library link and record
 completed/not-completed, optional notes, and optional
 RPE (1–10), without inferred partial counts or attempts. Free Climbing asks
 the trainer for a note and optional drill video; athlete canonical-grade/count

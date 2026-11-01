@@ -46,7 +46,7 @@ Implemented in this slice:
   It prefers the profile display name, then username, authentication display
   name, email, and finally a non-sensitive signed-in fallback. The text is
   constrained and ellipsized so the desktop header remains responsive.
-- Trainer navigation for Dashboard, Clients, Exercise library, Workout library,
+- Trainer navigation for Dashboard, Clients, Instruction library, Workout library,
   Program library, and Calendar & assignments. Existing roster, library, and
   trainer calendar screens remain wired to their natural destinations.
 - A real Trainer Dashboard at `/trainer/dashboard` with one bounded,
@@ -84,8 +84,13 @@ Implemented in this slice:
 - Immutable typed workout blocks and typed authoring editors for standard
   exercises, timed intervals, circuits, climbing routes, AMRAP, climbing
   circuits, and free climbing.
+- The **Instruction Library** holds reusable guidance and videos. Workout
+  exercises/activities carry prescriptions and can attach those instructions;
+  climbing circuits expose **Attach instructions (optional)**. This is a
+  user-facing terminology change only: existing exercise models, routes,
+  stored IDs, version pinning, required links, and screenshot names are unchanged.
 - Climbing circuits prescribe up to nine stable-ID grade/count rows, with an
-  optional Exercise Library link, max attempts **per climb**, and notes. Create
+  optional Instruction Library link, max attempts **per climb**, and notes. Create
   a grades-only circuit without choosing an exercise, or add/remove its link
   later without changing row/result identities. Athletes
   record a completion checkbox, optional note, and optional RPE (1–10) per row;
@@ -451,7 +456,7 @@ Authorization coverage is layered:
    athlete Auth accounts plus deterministic synthetic documents in the
    reserved `release-canary-` namespace. It exercises the real deployed app's
    login and header identity; the trainer's unified Dashboard, Clients,
-   Exercise Library, Workout Library, Program Library, and
+   Instruction Library, Workout Library, Program Library, and
    Calendar/Assignments; and Athlete Calendar, My Programs, and Workout
    History. Every backend-backed surface must expose its exact seeded content;
    permission, application, missing-data, and empty-state results fail before

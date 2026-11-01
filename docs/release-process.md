@@ -391,7 +391,7 @@ avoids unreliable WebDriver typing into Flutter Web's transient semantics
 inputs; credentials are removed from DOM attributes synchronously after the
 event and authentication is never bypassed. The canary verifies the selected
 Firebase project and header
-identity, then checks backend-backed trainer Clients, Exercise Library,
+identity, then checks backend-backed trainer Clients, Instruction Library,
 Workout Library, Program Library, and Calendar/Assignments plus Athlete
 Calendar, My Programs, and Workout History. Each surface must expose the exact
 seeded synthetic record name; trainer calendar additionally proves the

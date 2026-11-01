@@ -515,7 +515,7 @@ preserving the existing mobile experience below the responsive breakpoint.
 Athlete Calendar, My Programs, and Workout History are implemented, and the
 production authorization/index drift affecting those queries has been fixed.
 History pagination remains deferred. Trainer read surfaces are wired for
-Clients, Exercise Library, Workout Library, Program Library, and
+Clients, Instruction Library, Workout Library, Program Library, and
 Calendar/Assignments. Trainer Dashboard is now a bounded unified activity feed
 for completed workouts, first-class workout-instance discussion/reaction
 events, and active programs ending within seven calendar days. It uses
@@ -645,6 +645,11 @@ deletion/anonymization plus explicit relationship/history handling.
   repeated-exercise results are rejected rather than guessed.
 - The current builder creates and edits all seven typed block kinds through
   the block-type picker and typed editors.
+- User-facing catalogue terminology is **Instruction Library**. Library
+  entries provide reusable instructions/media; workout exercises/activities
+  carry prescriptions. Existing `ExerciseTemplate`, slot IDs, `/exercises`
+  routes, and Firestore collections are unchanged. Linking controls say
+  **Attach instructions**, optionally for climbing circuits.
 - `climbingCircuit` has one result slot, an optional exercise association,
   and an ordered `rows` prescription
   plus a parallel unique `rowIds` manifest. Each row has a stable `rowId`,

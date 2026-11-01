@@ -15,7 +15,7 @@ class ExercisePickerResult {
   final String name;
 }
 
-/// Shows a modal bottom sheet to pick an exercise template.
+/// Shows a modal bottom sheet to pick reusable exercise instructions.
 ///
 /// Returns the selected exercise's ID and name, or null if cancelled.
 Future<ExercisePickerResult?> showExercisePicker(
@@ -50,7 +50,7 @@ class _ExercisePickerSheet extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Select Exercise',
+                    'Select instructions',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   IconButton(
@@ -66,7 +66,9 @@ class _ExercisePickerSheet extends ConsumerWidget {
                 data: (exercises) {
                   if (exercises.isEmpty) {
                     return const Center(
-                      child: Text('No exercises yet. Create one first.'),
+                      child: Text(
+                        'No instructions yet. Create an entry in the Instruction library first.',
+                      ),
                     );
                   }
                   final sorted = exercises.toList()
