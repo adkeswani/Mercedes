@@ -11,7 +11,9 @@ import 'package:stage5/features/exercises/presentation/exercise_media_widgets.da
 import 'package:stage5/features/programs/data/program_repository.dart';
 import 'package:stage5/features/programs/domain/program.dart';
 import 'package:stage5/features/workouts/data/workout_completion_draft_repository.dart';
+import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
+import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/presentation/climbing_completion_card.dart';
 import 'package:stage5/features/workouts/presentation/workout_completion_screen.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
@@ -278,6 +280,57 @@ void main() {
         [0, 7, 14, 21]);
     expect(programData['propagationState'], 'pending');
     expect(programData['propagationRequestedAt'], isA<Timestamp>());
+    final instanceRepo = WorkoutInstanceRepository();
+    final assignment = await waits.runStep(
+        'assign weekly climbing program across daylight-saving change',
+        () => instanceRepo.assignProgram(
+              programId: programId,
+              athleteId: userId,
+              assignedBy: userId,
+              startDate: '2026-11-01',
+              relationshipMode: ProgramRelationshipMode.copied,
+            ));
+    final assigned = await waits.runStep(
+        'verify weekly calendar dates in emulator',
+        () => FirebaseFirestore.instance
+            .collection('workoutInstances')
+            .where('programAssignmentId', isEqualTo: assignment.assignmentId)
+            .get(_server));
+    final assignedDates = assigned.docs
+        .map((doc) => doc.data()['scheduledDate'] as String)
+        .toList()
+      ..sort();
+    expect(assignedDates,
+        ['2026-11-01', '2026-11-08', '2026-11-15', '2026-11-22']);
+    final recurringCount = await waits.runStep(
+        'assign weekly workout recurrence across daylight-saving change',
+        () => instanceRepo.assignRecurringWorkouts(
+              programId: programId,
+              athleteId: userId,
+              assignedBy: userId,
+              workoutTemplateId: workoutId,
+              workoutTemplateVersion: 1,
+              workoutType: WorkoutType.limit,
+              startDate: '2026-11-01',
+              recurrence: Recurrence(
+                pattern: RecurrencePattern.weekly,
+                daysOfWeek: [7],
+                endDate: '2026-11-22',
+              ),
+            ));
+    expect(recurringCount, 4);
+    final recurring = await waits.runStep(
+        'verify recurring workout calendar dates in emulator',
+        () => FirebaseFirestore.instance
+            .collection('workoutInstances')
+            .where('programId', isEqualTo: programId)
+            .get(_server));
+    final recurringDates = recurring.docs
+        .where((doc) => doc.data()['recurrence'] != null)
+        .map((doc) => doc.data()['scheduledDate'] as String)
+        .toList()
+      ..sort();
+    expect(recurringDates, assignedDates);
     await waits.captureAfterAssertions('capture trainer climbing authoring',
         () async {
       await binding.takeScreenshot('trainer-climbing-authoring');

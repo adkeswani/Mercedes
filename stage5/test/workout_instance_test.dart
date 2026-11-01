@@ -459,6 +459,28 @@ void main() {
   });
 
   group('expandRecurrence', () {
+    for (final month in ['03', '11']) {
+      for (final pattern in RecurrencePattern.values) {
+        test('$pattern preserves Sundays across the $month clock change', () {
+          expect(
+            expandRecurrence(
+              startDate: '2026-$month-01',
+              endDate: '2026-$month-22',
+              pattern: pattern,
+              daysOfWeek: [7],
+              intervalDays: 7,
+            ),
+            [
+              '2026-$month-01',
+              if (pattern != RecurrencePattern.biweekly) '2026-$month-08',
+              '2026-$month-15',
+              if (pattern != RecurrencePattern.biweekly) '2026-$month-22',
+            ],
+          );
+        });
+      }
+    }
+
     test('weekly on Mon/Wed/Fri for 2 weeks', () {
       final dates = expandRecurrence(
         startDate: '2026-06-15', // Monday
@@ -601,6 +623,16 @@ void main() {
   });
 
   group('addDays', () {
+    test('preserves calendar dates across both daylight-saving changes', () {
+      for (final month in ['03', '11']) {
+        expect(addDays('2026-$month-01', 7), '2026-$month-08');
+        expect(addDays('2026-$month-01', 14), '2026-$month-15');
+        expect(addDays('2026-$month-01', 21), '2026-$month-22');
+        expect(addDays('2026-$month-08', -7), '2026-$month-01');
+        expect(addDays('2026-$month-15', -7), '2026-$month-08');
+      }
+    });
+
     test('adds zero days returns same date', () {
       expect(addDays('2026-06-01', 0), '2026-06-01');
     });
@@ -623,6 +655,20 @@ void main() {
   });
 
   group('expandRecurrenceOffsets', () {
+    test('keeps seven-day offsets across spring and fall clock changes', () {
+      for (final start in [63, 301]) {
+        expect(
+          expandRecurrenceOffsets(
+            startDayOffset: start,
+            horizonDays: 27,
+            pattern: RecurrencePattern.weekly,
+            daysOfWeek: [7],
+          ),
+          [start + 6, start + 13, start + 20, start + 27],
+        );
+      }
+    });
+
     test('day 0 is treated as a Monday', () {
       // Weekly on Wednesday (3), starting offset 0, one week horizon.
       final offsets = expandRecurrenceOffsets(

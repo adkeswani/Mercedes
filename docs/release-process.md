@@ -12,6 +12,14 @@ so a client-clock timestamp is rejected. The climbing browser canary publishes
 a recurring program through the real repository to exercise this contract,
 in addition to the rules tests that reject client timestamps.
 
+Workout recurrence and program day offsets are calendar-day calculations,
+independent of local daylight-saving transitions. The Dart date-only helpers
+use UTC calendar arithmetic, matching server-side program propagation; this
+does not convert the scheduled date to an athlete's local instant. Regression
+tests cover spring/fall transitions, inclusive end dates, persisted assignments,
+and seven-day program offsets. Existing materialized assignments are not
+automatically rewritten by this change; correct their dates explicitly.
+
 ## Stage 5 browser validation timeouts
 
 `scripts/run-stage-validation.ps1` gives Flutter/web compilation and emulator

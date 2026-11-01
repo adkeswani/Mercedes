@@ -1020,6 +1020,42 @@ void main() {
     });
 
     group('assignRecurringWorkouts', () {
+      for (final month in ['03', '11']) {
+        test('persists weekly Sundays across the $month clock change',
+            () async {
+          await createProgram('prog1');
+          await enrollAthlete('prog1', 'athlete1');
+
+          final count = await repo.assignRecurringWorkouts(
+            programId: 'prog1',
+            athleteId: 'athlete1',
+            workoutTemplateId: 'wt1',
+            workoutTemplateVersion: 1,
+            startDate: '2026-$month-01',
+            workoutType: WorkoutType.limit,
+            assignedBy: 'coach1',
+            recurrence: Recurrence(
+              pattern: RecurrencePattern.weekly,
+              daysOfWeek: [7],
+              endDate: '2026-$month-22',
+            ),
+          );
+          expect(count, 4);
+          final snapshot =
+              await fakeFirestore.collection('workoutInstances').get();
+          final dates = snapshot.docs
+              .map((doc) => doc.data()['scheduledDate'] as String)
+              .toList()
+            ..sort();
+          expect(dates, [
+            '2026-$month-01',
+            '2026-$month-08',
+            '2026-$month-15',
+            '2026-$month-22',
+          ]);
+        });
+      }
+
       test('creates batch of instances with recurrence fields', () async {
         await createProgram('prog1');
         await enrollAthlete('prog1', 'athlete1');
@@ -1289,6 +1325,59 @@ void main() {
     });
 
     group('assignProgram', () {
+      for (final month in ['03', '11']) {
+        test('materializes weekly offsets across the $month clock change',
+            () async {
+          await createProgram('prog1');
+          await enrollAthlete('prog1', 'athlete1');
+          await fakeFirestore
+              .collection('programs')
+              .doc('prog1')
+              .collection('programVersions')
+              .doc('1')
+              .set({
+            'versionNumber': 1,
+            'entries': [
+              for (var i = 0; i < 4; i++)
+                {
+                  'entryId': 'weekly-$i',
+                  'workoutTemplateId': 'wt1',
+                  'workoutTemplateVersion': 1,
+                  'dayOffset': i * 7,
+                  'sortOrder': i,
+                },
+            ],
+          });
+
+          final result = await repo.assignProgram(
+            programId: 'prog1',
+            athleteId: 'athlete1',
+            startDate: '2026-$month-01',
+            assignedBy: 'coach1',
+          );
+          expect(result.instanceCount, 4);
+          final snapshot = await fakeFirestore
+              .collection('workoutInstances')
+              .where('programAssignmentId', isEqualTo: result.assignmentId)
+              .get();
+          final dates = snapshot.docs
+              .map((doc) => doc.data()['scheduledDate'] as String)
+              .toList()
+            ..sort();
+          expect(dates, [
+            '2026-$month-01',
+            '2026-$month-08',
+            '2026-$month-15',
+            '2026-$month-22',
+          ]);
+          final instance = await fakeFirestore
+              .collection('athleteProgramInstances')
+              .doc(result.programInstanceId)
+              .get();
+          expect(instance.data()!['expectedEndDate'], '2026-$month-22');
+        });
+      }
+
       Future<void> publishVersion(
         String programId,
         List<Map<String, dynamic>> entries,
@@ -1413,8 +1502,7 @@ void main() {
       test(
           'allows self-assigning an assignable program with the default '
           'subscribed relationship mode (no trainerClientRelationship with '
-          'self is required)',
-          () async {
+          'self is required)', () async {
         await createProgram('prog1', ownerId: 'coach1', type: 'assignable');
         await createWorkoutTemplate('wt1', 'push');
         await publishVersion('prog1', [

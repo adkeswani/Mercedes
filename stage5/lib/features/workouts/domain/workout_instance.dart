@@ -573,8 +573,8 @@ List<String> expandRecurrence({
   List<int>? daysOfWeek,
   int? intervalDays,
 }) {
-  final start = DateTime.parse(startDate);
-  final end = DateTime.parse(endDate);
+  final start = _parseCalendarDate(startDate);
+  final end = _parseCalendarDate(endDate);
 
   if (end.isBefore(start)) return [];
 
@@ -628,12 +628,18 @@ String _formatDate(DateTime date) {
   return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 }
 
+DateTime _parseCalendarDate(String isoDate) {
+  final date = DateTime.parse(isoDate);
+  // Date-only arithmetic must not gain or lose hours at local clock changes.
+  return DateTime.utc(date.year, date.month, date.day);
+}
+
 /// Returns [isoDate] (YYYY-MM-DD) advanced by [days] calendar days.
 ///
 /// Used to materialize a program's relative schedule entries against a
 /// concrete start date: `scheduledDate = addDays(startDate, dayOffset)`.
 String addDays(String isoDate, int days) {
-  final date = DateTime.parse(isoDate).add(Duration(days: days));
+  final date = _parseCalendarDate(isoDate).add(Duration(days: days));
   return _formatDate(date);
 }
 
@@ -674,6 +680,8 @@ List<int> expandRecurrenceOffsets({
     intervalDays: intervalDays,
   );
 
-  final anchor = DateTime.parse(_offsetAnchorDate);
-  return dates.map((d) => DateTime.parse(d).difference(anchor).inDays).toList();
+  final anchor = _parseCalendarDate(_offsetAnchorDate);
+  return dates
+      .map((d) => _parseCalendarDate(d).difference(anchor).inDays)
+      .toList();
 }
