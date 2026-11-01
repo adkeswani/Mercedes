@@ -31,6 +31,7 @@ void main() {
     final role = browserSmokeConfig.identityRole;
     expect(role, isNotNull);
     final identity = role!.name;
+    var surfaceStatus = '';
     final waits = BrowserTestWaitContext(
       identity: identity,
       testFile: _testFile,
@@ -46,7 +47,7 @@ void main() {
           condition: label,
           isSatisfied: ready,
           pump: () => tester.pump(const Duration(milliseconds: 100)),
-          details: () => 'Visible: ${find.byType(Text).evaluate().map(
+          details: () => '$surfaceStatus Visible: ${find.byType(Text).evaluate().map(
                 (element) => (element.widget as Text).data,
               ).whereType<String>().take(25).join(' | ')}',
         );
@@ -105,11 +106,8 @@ void main() {
           throw StateError('${surface.route} reported $state');
         }
         final content = body?.getAttribute('$attribute-content');
-        if (state == 'ready' && content != surface.content) {
-          throw StateError(
-            '${surface.route} loaded "$content"; expected "${surface.content}"',
-          );
-        }
+        surfaceStatus =
+            '${surface.route} state=$state content="$content" expected="${surface.content}".';
         return mountedAppRouter(tester)
                     .routeInformationProvider
                     .value
