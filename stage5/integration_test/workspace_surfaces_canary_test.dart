@@ -92,93 +92,96 @@ void main() {
     );
 
     final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
-    final surfaces = role == BrowserSmokeIdentityRole.trainer
-        ? trainerWorkspaceSurfaces
-        : athleteWorkspaceSurfaces;
+    try {
+      final surfaces = role == BrowserSmokeIdentityRole.trainer
+          ? trainerWorkspaceSurfaces
+          : athleteWorkspaceSurfaces;
 
-    Future<void> openSurface(WorkspaceSurfaceScenario surface) async {
-      mountedAppRouter(tester).go(surface.route);
-      await wait('populated ${surface.route}', () {
-        final attribute = 'data-browser-smoke-surface-${surface.marker}';
-        final body = html.document.body;
-        final state = body?.getAttribute(attribute);
-        if (state != null && state != 'ready') {
-          throw StateError('${surface.route} reported $state');
+      Future<void> openSurface(WorkspaceSurfaceScenario surface) async {
+        mountedAppRouter(tester).go(surface.route);
+        await wait('populated ${surface.route}', () {
+          final attribute = 'data-browser-smoke-surface-${surface.marker}';
+          final body = html.document.body;
+          final state = body?.getAttribute(attribute);
+          if (state != null && state != 'ready') {
+            throw StateError('${surface.route} reported $state');
+          }
+          final content = body?.getAttribute('$attribute-content');
+          surfaceStatus =
+              '${surface.route} state=$state content="$content" expected="${surface.content}".';
+          return mountedAppRouter(tester)
+                      .routeInformationProvider
+                      .value
+                      .uri
+                      .path ==
+                  surface.route &&
+              state == 'ready' &&
+              (surface.content == null || content == surface.content);
+        });
+        for (final text in surface.visibleContent) {
+          await wait('visible $text on ${surface.route}',
+              () => find.textContaining(text).evaluate().isNotEmpty);
         }
-        final content = body?.getAttribute('$attribute-content');
-        surfaceStatus =
-            '${surface.route} state=$state content="$content" expected="${surface.content}".';
-        return mountedAppRouter(tester)
-                    .routeInformationProvider
-                    .value
-                    .uri
-                    .path ==
-                surface.route &&
-            state == 'ready' &&
-            (surface.content == null || content == surface.content);
-      });
-      for (final text in surface.visibleContent) {
-        await wait('visible $text on ${surface.route}',
-            () => find.textContaining(text).evaluate().isNotEmpty);
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(find.textContaining('permission-denied'), findsNothing);
+        expect(find.textContaining('Something went wrong'), findsNothing);
       }
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(find.textContaining('permission-denied'), findsNothing);
-      expect(find.textContaining('Something went wrong'), findsNothing);
-    }
 
-    Future<void> toggle(String label) async {
-      await wait('accessible $label', () => _control(label) != null);
-      _control(label)!.click();
-      await tester.pump(const Duration(milliseconds: 500));
-      final replacement = label.startsWith('Collapse ')
-          ? label.replaceFirst('Collapse ', 'Expand ')
-          : label.replaceFirst('Expand ', 'Collapse ');
-      await wait(
-        'accessible $replacement',
-        () => _control(replacement) != null,
-      );
-    }
-
-    for (final surface in surfaces) {
-      await openSurface(surface);
-      for (final control in surface.controls.entries) {
+      Future<void> toggle(String label) async {
+        await wait('accessible $label', () => _control(label) != null);
+        _control(label)!.click();
+        await tester.pump(const Duration(milliseconds: 500));
+        final replacement = label.startsWith('Collapse ')
+            ? label.replaceFirst('Collapse ', 'Expand ')
+            : label.replaceFirst('Expand ', 'Collapse ');
         await wait(
-          'accessible ${control.key}',
-          () => _control(control.key) != null,
-        );
-        final element = _control(control.key)!;
-        expect(
-          element.getAttribute('aria-disabled') == 'true' ||
-              element.hasAttribute('disabled'),
-          control.value,
-          reason: '${control.key} disabled state',
+          'accessible $replacement',
+          () => _control(replacement) != null,
         );
       }
-      final collapse = surface.collapseControl;
-      if (collapse != null) {
-        await toggle(collapse);
-        await toggle(collapse.replaceFirst('Collapse ', 'Expand '));
-      }
-    }
 
-    // Capture only after all functional checks, so a screenshot handshake
-    // cannot strand an unfinished scenario.
-    await waits.captureAfterAssertions('workspace screenshots', () async {
-      mountedAppRouter(tester).go(mode.initialLocation);
-      await tester.pump(const Duration(milliseconds: 500));
-      await binding.takeScreenshot('$identity-header-identity');
       for (final surface in surfaces) {
         await openSurface(surface);
+        for (final control in surface.controls.entries) {
+          await wait(
+            'accessible ${control.key}',
+            () => _control(control.key) != null,
+          );
+          final element = _control(control.key)!;
+          expect(
+            element.getAttribute('aria-disabled') == 'true' ||
+                element.hasAttribute('disabled'),
+            control.value,
+            reason: '${control.key} disabled state',
+          );
+        }
         final collapse = surface.collapseControl;
         if (collapse != null) {
           await toggle(collapse);
-          await binding.takeScreenshot('${surface.screenshot}-collapsed');
           await toggle(collapse.replaceFirst('Collapse ', 'Expand '));
         }
-        await binding.takeScreenshot(surface.screenshot);
       }
-    });
+
+      // Capture only after all functional checks, so a screenshot handshake
+      // cannot strand an unfinished scenario.
+      await waits.captureAfterAssertions('workspace screenshots', () async {
+        mountedAppRouter(tester).go(mode.initialLocation);
+        await tester.pump(const Duration(milliseconds: 500));
+        await binding.takeScreenshot('$identity-header-identity');
+        for (final surface in surfaces) {
+          await openSurface(surface);
+          final collapse = surface.collapseControl;
+          if (collapse != null) {
+            await toggle(collapse);
+            await binding.takeScreenshot('${surface.screenshot}-collapsed');
+            await toggle(collapse.replaceFirst('Collapse ', 'Expand '));
+          }
+          await binding.takeScreenshot(surface.screenshot);
+        }
+      });
+    } finally {
+      semantics.dispose();
+    }
   });
 }
 

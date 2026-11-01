@@ -53,21 +53,21 @@ void main() {
       'Programs filter': false,
       'Personal bests': true,
     });
+  });
 
-    test(
-        'workout library checks real fixture content rather than first-item order',
-        () {
-      final workout = trainerWorkspaceSurfaces.singleWhere(
-        (surface) => surface.route == '/trainer/workouts',
-      );
-      expect(workout.visibleContent, [
-        'Browser Calendar Workout',
-        'Client',
-        'Full Body',
-        'Browser workouts',
-        'Clients',
-        'Unfiled',
-      ]);
-    });
+  test(
+      'workout library checks real fixture content rather than first-item order',
+      () {
+    final workout = trainerWorkspaceSurfaces.singleWhere(
+      (surface) => surface.route == '/trainer/workouts',
+    );
+    expect(workout.visibleContent, [
+      'Browser Calendar Workout',
+      'Client',
+      'Full Body',
+      'Browser workouts',
+      'Clients',
+      'Unfiled',
+    ]);
   });
 }
