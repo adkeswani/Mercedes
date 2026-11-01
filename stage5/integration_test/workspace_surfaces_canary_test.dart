@@ -104,6 +104,12 @@ void main() {
         if (state != null && state != 'ready') {
           throw StateError('${surface.route} reported $state');
         }
+        final content = body?.getAttribute('$attribute-content');
+        if (state == 'ready' && content != surface.content) {
+          throw StateError(
+            '${surface.route} loaded "$content"; expected "${surface.content}"',
+          );
+        }
         return mountedAppRouter(tester)
                     .routeInformationProvider
                     .value
@@ -111,7 +117,7 @@ void main() {
                     .path ==
                 surface.route &&
             state == 'ready' &&
-            body?.getAttribute('$attribute-content') == surface.content;
+            content == surface.content;
       });
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.textContaining('permission-denied'), findsNothing);
