@@ -295,6 +295,7 @@ void main() {
         () => FirebaseFirestore.instance
             .collection('workoutInstances')
             .where('programAssignmentId', isEqualTo: assignment.assignmentId)
+            .where('athleteId', isEqualTo: userId)
             .get(_server));
     final assignedDates = assigned.docs
         .map((doc) => doc.data()['scheduledDate'] as String)
@@ -324,6 +325,7 @@ void main() {
         () => FirebaseFirestore.instance
             .collection('workoutInstances')
             .where('programId', isEqualTo: programId)
+            .where('athleteId', isEqualTo: userId)
             .get(_server));
     final recurringDates = recurring.docs
         .where((doc) => doc.data()['recurrence'] != null)
