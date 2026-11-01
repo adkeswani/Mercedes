@@ -7,7 +7,7 @@ class WorkoutDraftConflictFailure extends StateError {
 /// Browser-canary metadata only; never records draft contents or athlete IDs.
 class WorkoutDraftDiagnostics {
   static final executionId =
-      '${DateTime.now().toUtc().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
+      '${DateTime.now().toUtc().microsecondsSinceEpoch}-${Random.secure().nextInt(0x7fffffff)}';
 
   static final executionStartedAt = DateTime.now().toUtc().toIso8601String();
 
