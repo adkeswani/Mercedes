@@ -36,13 +36,13 @@ final userProfileRepositoryProvider = Provider<UserProfileRepository>((ref) {
 ///
 /// Automatically switches to the correct uid when auth state changes.
 final userProfileProvider = StreamProvider<UserProfile?>((ref) {
-  final authState = ref.watch(authStateProvider);
-  final user = authState.valueOrNull;
+  final uid =
+      ref.watch(authStateProvider.select((state) => state.valueOrNull?.uid));
 
-  if (user == null) return Stream.value(null);
+  if (uid == null) return Stream.value(null);
 
   final repo = ref.watch(userProfileRepositoryProvider);
-  return repo.watchUserProfile(user.uid);
+  return repo.watchUserProfile(uid);
 });
 
 /// Single source of truth for the app entry flow.

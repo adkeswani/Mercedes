@@ -57,6 +57,8 @@ class _WorkoutCompletionScreenState
   String? _recoveryMessage;
   String? _loadMessage;
   int _loadGeneration = 0;
+  WorkoutCompletionDraftRepository? _draftRepository;
+  String? _draftClientId;
 
   @override
   void initState() {
@@ -76,6 +78,8 @@ class _WorkoutCompletionScreenState
     _rpe = 5;
     _durationMinutes = 45;
     _revision = 0;
+    _draftRepository = null;
+    _draftClientId = null;
     _isLoading = false;
     _instance = null;
     _isAthlete = false;
@@ -146,23 +150,32 @@ class _WorkoutCompletionScreenState
       );
 
       WorkoutDraftRestoreResult? restore;
+      WorkoutCompletionDraftRepository? draftRepository;
+      String? currentClientId;
       if (isAthlete && instance.isScheduled) {
-        final currentClientId = ref.read(workoutDraftClientIdProvider);
-        restore = await ref.read(workoutCompletionDraftRepositoryProvider).load(
-              instanceId: instance.id,
-              athleteId: uid,
-              currentClientId: currentClientId,
-            );
+        final clientId = ref.read(workoutDraftClientIdProvider);
+        final repository = ref.read(workoutCompletionDraftRepositoryProvider);
+        currentClientId = clientId;
+        draftRepository = repository;
+        restore = await repository.load(
+          instanceId: instance.id,
+          athleteId: uid,
+          currentClientId: clientId,
+        );
       }
       if (!mounted ||
           generation != _loadGeneration ||
-          widget.instanceId != instance.id) {
+          widget.instanceId != instance.id ||
+          ref.read(authStateProvider).valueOrNull?.uid != uid) {
         return;
       }
       setState(() {
         _instance = instance;
         _blocks = workoutVersion?.blocks ?? [];
         _isAthlete = isAthlete;
+        // A loaded draft's revision, client, and repository are one session.
+        _draftRepository = draftRepository;
+        _draftClientId = currentClientId;
         final draft = restore?.draft;
         _actuals.addAll(instance.actualsBySlot);
         _restoreClimbingInputs(draft);
@@ -200,6 +213,7 @@ class _WorkoutCompletionScreenState
     if (_restoring ||
         !_isAthlete ||
         _instance?.isScheduled != true ||
+        ref.read(authStateProvider).valueOrNull?.uid != _instance?.athleteId ||
         _isLoading) {
       return;
     }
@@ -228,8 +242,13 @@ class _WorkoutCompletionScreenState
     final generation = _loadGeneration;
     final instance = _instance;
     final athleteId = ref.read(authStateProvider).value?.uid;
+    final repository = _draftRepository;
+    final clientId = _draftClientId;
     if (instance == null ||
         athleteId == null ||
+        athleteId != instance.athleteId ||
+        repository == null ||
+        clientId == null ||
         !instance.isScheduled ||
         !_isAthlete ||
         _isLoading) {
@@ -247,7 +266,7 @@ class _WorkoutCompletionScreenState
             ? null
             : _notesController.text.trim(),
         revision: revision,
-        clientId: ref.read(workoutDraftClientIdProvider),
+        clientId: clientId,
         updatedAt: DateTime.now().toUtc(),
         sourceRoute: route,
         slotInputs: {
@@ -255,11 +274,11 @@ class _WorkoutCompletionScreenState
             entry.key: climbingInputForStorage(entry.value),
         },
       );
-      final result =
-          await ref.read(workoutCompletionDraftRepositoryProvider).save(draft);
+      final result = await repository.save(draft);
       if (!mounted ||
           generation != _loadGeneration ||
           widget.instanceId != instance.id ||
+          ref.read(authStateProvider).valueOrNull?.uid != athleteId ||
           revision != _revision ||
           _isLoading) {
         return;
@@ -317,12 +336,15 @@ class _WorkoutCompletionScreenState
   Future<void> _complete() async {
     final generation = _loadGeneration;
     final instanceId = widget.instanceId;
+    final draftRepository = _draftRepository;
     _saveDebounce?.cancel();
     setState(() => _isLoading = true);
     try {
       final repo = ref.read(workoutInstanceRepositoryProvider);
       final athleteId = ref.read(authStateProvider).value?.uid;
-      if (athleteId == null) {
+      if (athleteId == null ||
+          athleteId != _instance?.athleteId ||
+          draftRepository == null) {
         throw StateError('A signed-in athlete is required');
       }
       await repo.completeWorkout(
@@ -341,12 +363,15 @@ class _WorkoutCompletionScreenState
             ? null
             : _notesController.text.trim(),
       );
-      await ref
-          .read(workoutCompletionDraftRepositoryProvider)
-          .clearLocalAfterCompletion(
-            instanceId: instanceId,
-            athleteId: athleteId,
-          );
+      if (!mounted ||
+          generation != _loadGeneration ||
+          ref.read(authStateProvider).valueOrNull?.uid != athleteId) {
+        return;
+      }
+      await draftRepository.clearLocalAfterCompletion(
+        instanceId: instanceId,
+        athleteId: athleteId,
+      );
 
       if (mounted && generation == _loadGeneration) {
         ScaffoldMessenger.of(context).showSnackBar(

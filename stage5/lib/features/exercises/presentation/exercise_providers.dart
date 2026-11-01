@@ -19,9 +19,10 @@ final exerciseVersionBackfillForUserProvider =
 
 /// Runs the owner-scoped backfill for the authenticated user.
 final exerciseVersionBackfillProvider = FutureProvider<int>((ref) async {
-  final user = ref.watch(authStateProvider).value;
-  if (user == null) return 0;
-  return ref.watch(exerciseVersionBackfillForUserProvider(user.uid).future);
+  final uid =
+      ref.watch(authStateProvider.select((state) => state.valueOrNull?.uid));
+  if (uid == null) return 0;
+  return ref.watch(exerciseVersionBackfillForUserProvider(uid).future);
 });
 
 /// Streams all non-deleted exercise templates for the current user.

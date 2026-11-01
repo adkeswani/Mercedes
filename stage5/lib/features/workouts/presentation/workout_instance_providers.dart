@@ -39,8 +39,9 @@ final workoutDraftClientIdStoreProvider =
 final workoutDraftClientSessionProvider =
     Provider<WorkoutDraftClientSession>((ref) {
   return WorkoutDraftClientSession(
-    store: ref.watch(workoutDraftClientIdStoreProvider),
-    generator: ref.watch(workoutDraftClientIdGeneratorProvider),
+    // These are session resources, not reactive identity dependencies.
+    store: ref.read(workoutDraftClientIdStoreProvider),
+    generator: ref.read(workoutDraftClientIdGeneratorProvider),
   );
 });
 

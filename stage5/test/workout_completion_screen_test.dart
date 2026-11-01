@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -131,6 +133,165 @@ void main() {
       find.textContaining('Restored saved workout progress'),
       findsOneWidget,
     );
+  });
+
+  testWidgets(
+      'provider recreation retains active draft identity and genuine conflicts',
+      (tester) async {
+    container.dispose();
+    var identityReads = 0;
+    container = ProviderContainer(overrides: [
+      authStateProvider
+          .overrideWith((ref) => Stream.value(_FakeUser('athlete-1'))),
+      workoutInstanceRepositoryProvider
+          .overrideWithValue(WorkoutInstanceRepository(firestore: firestore)),
+      workoutTemplateRepositoryProvider
+          .overrideWithValue(WorkoutTemplateRepository(firestore: firestore)),
+      workoutDraftLocalStoreProvider.overrideWithValue(localStore),
+      workoutCompletionDraftRepositoryProvider.overrideWith((ref) =>
+          WorkoutCompletionDraftRepository(
+              firestore: firestore, localStore: localStore)),
+      workoutDraftClientIdProvider.overrideWith(
+          (ref) => identityReads++ == 0 ? 'original-tab' : 'replacement-tab'),
+    ]);
+    await container.read(authStateProvider.future);
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+    final state = tester.state(find.byType(WorkoutCompletionScreen));
+    final originalRepo =
+        container.read(workoutCompletionDraftRepositoryProvider);
+    await tester.enterText(find.byType(TextField), 'First save');
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    expect(localStore.value!.revision, 1);
+    await originalRepo.save(_draftForTest(
+        revision: 2, clientId: 'original-tab', notes: 'Own newer save'));
+
+    container.invalidate(workoutDraftClientIdProvider);
+    container.invalidate(workoutCompletionDraftRepositoryProvider);
+    expect(container.read(workoutDraftClientIdProvider), 'replacement-tab');
+    expect(container.read(workoutCompletionDraftRepositoryProvider),
+        isNot(same(originalRepo)));
+    await tester.enterText(find.byType(TextField), 'Continue editing');
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    expect(tester.state(find.byType(WorkoutCompletionScreen)), same(state));
+    expect(find.text('Newer progress restored'), findsNothing);
+    expect(find.text('Saved'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'Latest continuation');
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    expect(localStore.value!.clientId, 'original-tab');
+    expect(localStore.value!.revision, 3);
+    expect(localStore.value!.athleteNotes, 'Latest continuation');
+
+    await originalRepo.save(_draftForTest(
+        revision: 8, clientId: 'genuine-other-tab', notes: 'Other tab latest'));
+    await tester.enterText(find.byType(TextField), 'Stale contested edit');
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    expect(find.text('Newer progress restored'), findsOneWidget);
+    expect(localStore.value!.clientId, 'genuine-other-tab');
+    expect(localStore.value!.revision, 8);
+    expect(localStore.value!.athleteNotes, 'Other tab latest');
+  });
+
+  testWidgets(
+      'provider replacement during save retains writer and latest input',
+      (tester) async {
+    container.dispose();
+    final gate = Completer<void>();
+    final originalRepo = _DelayedFirstSaveRepository(
+        firestore: firestore, localStore: localStore, gate: gate);
+    var repositories = 0;
+    var identities = 0;
+    container = ProviderContainer(overrides: [
+      authStateProvider
+          .overrideWith((ref) => Stream.value(_FakeUser('athlete-1'))),
+      workoutInstanceRepositoryProvider
+          .overrideWithValue(WorkoutInstanceRepository(firestore: firestore)),
+      workoutTemplateRepositoryProvider
+          .overrideWithValue(WorkoutTemplateRepository(firestore: firestore)),
+      workoutDraftLocalStoreProvider.overrideWithValue(localStore),
+      workoutCompletionDraftRepositoryProvider.overrideWith((ref) =>
+          repositories++ == 0
+              ? originalRepo
+              : WorkoutCompletionDraftRepository(
+                  firestore: firestore, localStore: localStore)),
+      workoutDraftClientIdProvider.overrideWith(
+          (ref) => identities++ == 0 ? 'original-tab' : 'replacement-tab'),
+    ]);
+    await container.read(authStateProvider.future);
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'First pending save');
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    expect(localStore.value!.revision, 1);
+    container.invalidate(workoutDraftClientIdProvider);
+    container.invalidate(workoutCompletionDraftRepositoryProvider);
+    await tester.enterText(find.byType(TextField), 'Latest input');
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(localStore.value!.clientId, 'original-tab');
+    expect(localStore.value!.revision, 2);
+    expect(localStore.value!.athleteNotes, 'Latest input');
+    expect(find.text('Saved'), findsOneWidget);
+  });
+
+  testWidgets('account switch cannot overwrite loaded owner local draft',
+      (tester) async {
+    container.dispose();
+    final auth = StreamController<User?>();
+    addTearDown(auth.close);
+    container = ProviderContainer(overrides: [
+      authStateProvider.overrideWith((ref) => auth.stream),
+      workoutInstanceRepositoryProvider
+          .overrideWithValue(WorkoutInstanceRepository(firestore: firestore)),
+      workoutTemplateRepositoryProvider
+          .overrideWithValue(WorkoutTemplateRepository(firestore: firestore)),
+      workoutDraftLocalStoreProvider.overrideWithValue(localStore),
+      workoutCompletionDraftRepositoryProvider.overrideWithValue(
+          WorkoutCompletionDraftRepository(
+              firestore: firestore, localStore: localStore)),
+      workoutDraftClientIdProvider.overrideWithValue('original-tab'),
+    ]);
+    final signedIn = container.read(authStateProvider.future);
+    auth.add(_FakeUser('athlete-1'));
+    await signedIn;
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Owner saved progress');
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    auth.add(_FakeUser('athlete-2'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Wrong account edit');
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    expect(localStore.value!.athleteId, 'athlete-1');
+    expect(localStore.value!.athleteNotes, 'Owner saved progress');
+    await tester.scrollUntilVisible(
+      find.text('Mark as Completed'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Mark as Completed'));
+    await tester.pumpAndSettle();
+    expect(
+        (await firestore.collection('workoutInstances').doc('instance-1').get())
+            .data()!['status'],
+        'scheduled');
+    expect(localStore.value!.athleteId, 'athlete-1');
+    auth.add(null);
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pumpAndSettle();
+    expect(localStore.value!.revision, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   });
 
   testWidgets('lifecycle save uses a web-safe generated client ID',
@@ -432,8 +593,7 @@ void main() {
 
   testWidgets(
       'standard exercise card shows media/instructions by default, '
-      'collapses, and records sets/reps/weight actuals',
-      (tester) async {
+      'collapses, and records sets/reps/weight actuals', (tester) async {
     await _seedWorkoutWithExercises(firestore);
 
     await pumpScreen(tester, id: 'instance-2');
@@ -557,8 +717,7 @@ void main() {
     );
 
     // Starting the work timer ticks down and fills in the duration field.
-    final workTimerState =
-        tester.state<WorkoutTimerWidgetState>(workTimer);
+    final workTimerState = tester.state<WorkoutTimerWidgetState>(workTimer);
     workTimerState.start();
     await tester.pump(const Duration(seconds: 3));
     expect(
@@ -584,8 +743,7 @@ void main() {
 
     // Starting the rest timer records the elapsed restSeconds onto the
     // actual once the workout is completed.
-    final restTimerState =
-        tester.state<WorkoutTimerWidgetState>(restTimer);
+    final restTimerState = tester.state<WorkoutTimerWidgetState>(restTimer);
     restTimerState.start();
     await tester.pump(const Duration(seconds: 5));
     restTimerState.pause();
@@ -877,11 +1035,29 @@ Future<void> _seedWorkoutWithExercises(FakeFirebaseFirestore firestore) async {
     'versionNumber': 1,
     'name': 'Burpee Round',
     'description': 'As many burpee rounds as possible.',
-    'instructions':
-        'Complete as many rounds as possible before time runs out.',
+    'instructions': 'Complete as many rounds as possible before time runs out.',
     'publishedAt': now,
     'publishedBy': 'trainer-1',
   });
+}
+
+class _DelayedFirstSaveRepository extends WorkoutCompletionDraftRepository {
+  _DelayedFirstSaveRepository({
+    required super.firestore,
+    required super.localStore,
+    required this.gate,
+  });
+
+  final Completer<void> gate;
+  var saves = 0;
+
+  @override
+  Future<WorkoutDraftSaveResult> save(WorkoutCompletionDraft draft) async {
+    final first = saves++ == 0;
+    final result = await super.save(draft);
+    if (first) await gate.future;
+    return result;
+  }
 }
 
 class _FakeUser extends Fake implements User {

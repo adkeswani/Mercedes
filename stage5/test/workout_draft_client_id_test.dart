@@ -81,6 +81,22 @@ void main() {
     expect(second, isNot(first));
   });
 
+  test('recreating storage provider cannot rotate active container session',
+      () {
+    var byte = 0;
+    final container = ProviderContainer(overrides: [
+      workoutDraftClientIdStoreProvider
+          .overrideWith((ref) => _MemoryClientIdStore()),
+      workoutDraftClientIdGeneratorProvider.overrideWithValue(
+          WorkoutDraftClientIdGenerator(randomInt: (_) => byte++)),
+    ]);
+    addTearDown(container.dispose);
+    final initial = container.read(workoutDraftClientIdProvider);
+    container.invalidate(workoutDraftClientIdStoreProvider);
+    container.read(workoutDraftClientIdStoreProvider);
+    expect(container.read(workoutDraftClientIdProvider), initial);
+  });
+
   test('malformed stored ID is regenerated and overwritten', () {
     final store = _MemoryClientIdStore('athlete-identity-is-not-a-client-id');
     final session = WorkoutDraftClientSession(
