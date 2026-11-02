@@ -4,17 +4,21 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/programs/domain/athlete_program_instance.dart';
+import 'package:stage5/features/workouts/data/workout_local_day.dart';
 
 /// Firestore persistence and lifecycle operations for athlete-owned programs.
 class AthleteProgramInstanceRepository {
   AthleteProgramInstanceRepository({
     FirebaseFirestore? firestore,
     DateTime Function()? now,
+    WorkoutLocalDay localDay = const WorkoutLocalDay(),
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _now = now ?? DateTime.now;
+        _now = now ?? DateTime.now,
+        _localDay = localDay;
 
   final FirebaseFirestore _firestore;
   final DateTime Function() _now;
+  final WorkoutLocalDay _localDay;
 
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('athleteProgramInstances');
@@ -127,10 +131,8 @@ class AthleteProgramInstanceRepository {
         .where('athleteProgramInstanceId', isEqualTo: instanceId)
         .where('athleteId', isEqualTo: athleteId)
         .get();
-    final now = _now().toUtc();
-    final today = '${now.year.toString().padLeft(4, '0')}-'
-        '${now.month.toString().padLeft(2, '0')}-'
-        '${now.day.toString().padLeft(2, '0')}';
+    final now = _now();
+    final today = calendarDate(now);
     final mutableWorkouts = workouts.docs
         .where(
           (doc) =>
@@ -143,6 +145,9 @@ class AthleteProgramInstanceRepository {
       throw StateError(
         'Program instance has too many workouts to convert atomically',
       );
+    }
+    for (final workout in mutableWorkouts) {
+      await _localDay.prepare(workout, now);
     }
     final batch = _firestore.batch();
     batch.update(ref, {

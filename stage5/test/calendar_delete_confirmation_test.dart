@@ -12,6 +12,7 @@ import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/presentation/trainer_calendar_screen.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
+import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
 void main() {
   late List<String> operations;
@@ -49,6 +50,7 @@ void main() {
         myEnrolledProgramsProvider.overrideWith((ref) async => []),
         athleteScheduleProvider
             .overrideWith((ref, range) => Stream.value([instance])),
+        workoutTemplateProvider.overrideWith((ref, id) async => null),
         workoutInstanceRepositoryProvider
             .overrideWithValue(_Workouts(operations)),
         athleteProgramInstanceRepositoryProvider

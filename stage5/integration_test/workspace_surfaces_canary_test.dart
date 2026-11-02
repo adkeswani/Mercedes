@@ -10,6 +10,7 @@ import 'package:stage5/app.dart';
 import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/core/web_workspace/web_workspace_mode.dart';
 import 'package:stage5/features/auth/presentation/web_workspace_shell.dart';
+import 'package:stage5/features/workouts/data/workout_local_day.dart';
 import 'package:stage5/main.dart' as app;
 
 import 'support/browser_test_wait.dart';
@@ -124,6 +125,20 @@ void main() {
             () => find.textContaining(text).evaluate().isNotEmpty,
           );
         }
+        if (surface.marker == 'athlete-calendar') {
+          final day = find.byKey(
+            ValueKey('calendar-day-${calendarDate(DateTime.now())}'),
+          );
+          await wait('current month day', () => day.evaluate().isNotEmpty);
+          await tester.tap(day);
+          await wait(
+            'selected day workout',
+            () => find.text('Browser Calendar Workout').evaluate().isNotEmpty,
+          );
+          expect(find.widgetWithText(FilledButton, 'Complete'), findsWidgets);
+          expect(find.byTooltip('Workout actions'), findsWidgets);
+          await tester.tapAt(const Offset(10, 10));
+        }
         await waits.runStep(
           'render ${surface.route}',
           () => tester.pumpAndSettle(),
@@ -182,6 +197,19 @@ void main() {
             await toggle(collapse.replaceFirst('Collapse ', 'Expand '));
           }
           await binding.takeScreenshot(surface.screenshot);
+          if (surface.marker == 'athlete-calendar') {
+            await tester.tap(find.byKey(
+              ValueKey('calendar-day-${calendarDate(DateTime.now())}'),
+            ));
+            await wait(
+              'day screenshot workout',
+              () => find.text('Browser Calendar Workout').evaluate().isNotEmpty,
+            );
+            await tester.pumpAndSettle();
+            await binding.takeScreenshot('${surface.screenshot}-day');
+            await tester.tapAt(const Offset(10, 10));
+            await tester.pumpAndSettle();
+          }
         }
       });
     } finally {

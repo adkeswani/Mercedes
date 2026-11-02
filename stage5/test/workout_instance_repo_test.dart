@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
+import 'package:stage5/features/workouts/data/workout_local_day.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
 
 void main() {
@@ -2069,6 +2070,72 @@ void main() {
           ),
           throwsStateError,
         );
+      });
+
+      for (final owner in ['athlete1', 'coach1']) {
+        test('local today is deletable after UTC rollover by $owner', () async {
+          await createProgram('prog1');
+          await enrollAthlete('prog1', 'athlete1');
+          final now = DateTime(2026, 11, 1, 23, 30);
+          final today = calendarDate(now);
+          final repaired = <String>[];
+          final currentRepo = WorkoutInstanceRepository(
+            firestore: fakeFirestore,
+            now: () => now,
+            localDay: WorkoutLocalDay(repair: (id, offset) async {
+              expect(offset, now.timeZoneOffset.inMinutes);
+              repaired.add(id);
+            }),
+          );
+          final id = await assignWorkout(scheduledDate: today);
+          await fakeFirestore.collection('workoutInstances').doc(id).update({
+            'scheduledAt': Timestamp.fromDate(
+              DateTime.utc(now.year, now.month, now.day),
+            ),
+          });
+          await currentRepo.deleteInstance(instanceId: id, ownerId: owner);
+          expect(await currentRepo.getById(id), isNull);
+          if (now.toUtc().day != now.day) {
+            expect(repaired, [id]);
+          }
+        });
+      }
+
+      test('bulk deletion includes local today but preserves past and history',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final now = DateTime(2026, 11, 1, 23, 30);
+        final currentRepo = WorkoutInstanceRepository(
+          firestore: fakeFirestore,
+          now: () => now,
+          localDay: WorkoutLocalDay(repair: (_, __) async {}),
+        );
+        final ids = <String>[];
+        for (final date in ['2026-10-31', '2026-11-01', '2026-11-02']) {
+          final id = await assignWorkout(scheduledDate: date);
+          ids.add(id);
+          await fakeFirestore.collection('workoutInstances').doc(id).update({
+            'programAssignmentId': 'legacy-group',
+          });
+        }
+        final completed = await assignWorkout(scheduledDate: '2026-11-01');
+        await fakeFirestore
+            .collection('workoutInstances')
+            .doc(completed)
+            .update({
+          'programAssignmentId': 'legacy-group',
+          'status': 'completed',
+        });
+        final count = await currentRepo.deleteIncompleteProgramAssignment(
+          programAssignmentId: 'legacy-group',
+          ownerId: 'coach1',
+        );
+        expect(count, 2);
+        expect(await currentRepo.getById(ids[0]), isNotNull);
+        expect(await currentRepo.getById(ids[1]), isNull);
+        expect(await currentRepo.getById(ids[2]), isNull);
+        expect((await currentRepo.getById(completed))!.isCompleted, isTrue);
       });
     });
 

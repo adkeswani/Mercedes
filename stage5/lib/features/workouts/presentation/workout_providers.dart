@@ -11,6 +11,11 @@ final workoutTemplateRepositoryProvider =
   return WorkoutTemplateRepository();
 });
 
+final workoutTemplateProvider =
+    FutureProvider.autoDispose.family<WorkoutTemplate?, String>((ref, id) {
+  return ref.watch(workoutTemplateRepositoryProvider).getById(id);
+});
+
 /// Streams all non-deleted workout templates for the current user.
 final workoutTemplatesProvider = StreamProvider<List<WorkoutTemplate>>((ref) {
   final user = ref.watch(authStateProvider).value;

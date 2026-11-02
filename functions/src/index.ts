@@ -5,6 +5,7 @@ import {HttpsError, onCall} from "firebase-functions/v2/https";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
 import {propagateProgramVersion} from "./subscription_propagation";
+import {repairWorkoutLocalDay as repairLocalDay} from "./workout_local_day";
 import {
   assertYoutubeCallableRateLimit,
   handleYoutubePublicRequest,
@@ -23,6 +24,20 @@ const db = admin.firestore();
 const youtubeApiKey = defineSecret("YOUTUBE_API_KEY");
 let youtubeService: YoutubePublicService | undefined;
 const youtubeCatalogueStore = new FirestoreYoutubeCatalogueStore(db);
+
+export const repairWorkoutLocalDay = onCall(
+  {region: "us-central1", maxInstances: 10, cors: true},
+  async (request) => {
+    try {
+      await repairLocalDay(db, request.auth?.uid ?? "", request.data);
+      return {repaired: true};
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      logger.error("Workout local-day repair failed", {error});
+      throw new HttpsError("internal", "Could not prepare today's workout.");
+    }
+  },
+);
 
 function publicYoutubeService(): YoutubePublicService {
   youtubeService ??= new YoutubePublicService(youtubeApiKey.value());

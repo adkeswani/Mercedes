@@ -152,6 +152,15 @@ Implemented in this slice:
   customization. Deleting subscribed workouts uses a delete-specific warning
   about stopping program updates, not a request to create a copy; unlinking
   still happens before deletion to prevent updates restoring removed workouts.
+  Calendar mutations and subscription unlinking use the device's local day:
+  today's scheduled workouts remain removable after UTC midnight, while past
+  days and completed history stay protected. If a server-propagated UTC
+  timestamp expires early (or a fall-back day lasts 25 hours), the authenticated
+  `repairWorkoutLocalDay` callable repairs only today's authorization timestamp
+  using server time and a bounded device UTC offset. It verifies ownership and
+  an active relationship for trainer requests; it cannot change the scheduled
+  date, terminal workouts, or legacy records without `scheduledAt`. Existing
+  Firestore deletion rules are unchanged.
   Also supports recoverable unlink-to-copy when a trainer-client
   relationship enters its `ending` state. New assignments are blocked before
   unlink batches run, and retries finish the transition to `ended`.
@@ -220,6 +229,10 @@ Compatibility behavior:
 - Trainers may manage only current or future incomplete workouts while the
   relationship is active. Completed and past workouts remain historical;
   athletes must explicitly convert subscriptions before structural changes.
+- Athlete Calendar and My Schedule now share the trainer-style monthly grid.
+  Select a day to see workout names, program/status, and a direct Complete
+  button or clickable workout row. Completed workouts open their details;
+  today/future scheduled rows retain reschedule/cancel/delete actions.
 - Signed-in template reads remain compatible with Stage 4 while assigned
   workout detail resolves its pinned immutable workout/exercise versions;
   owner-only template writes are enforced.

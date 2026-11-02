@@ -1,4 +1,5 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,6 +14,7 @@ import 'package:stage5/features/programs/data/program_repository.dart';
 import 'package:stage5/features/programs/domain/athlete_program_instance.dart';
 import 'package:stage5/features/programs/presentation/athlete_program_instance_providers.dart';
 import 'package:stage5/features/programs/presentation/athlete_programs_screen.dart';
+import 'package:stage5/features/programs/presentation/enrollment_providers.dart';
 import 'package:stage5/features/programs/presentation/program_providers.dart';
 import 'package:stage5/features/workouts/data/workout_template_repository.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
@@ -281,6 +283,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          authStateProvider
+              .overrideWith((ref) => Stream.value(_CalendarUser())),
+          myEnrolledProgramsProvider.overrideWith((ref) async => []),
           athleteScheduleProvider.overrideWith(
             (ref, range) =>
                 Stream.error(StateError('cloud_firestore/permission-denied')),
@@ -306,6 +311,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          authStateProvider
+              .overrideWith((ref) => Stream.value(_CalendarUser())),
+          myEnrolledProgramsProvider.overrideWith((ref) async => []),
           athleteScheduleProvider.overrideWith(
             (ref, range) => Stream.value([
               _scheduledWorkout(scheduledDate: scheduledDate),
@@ -320,9 +328,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byKey(ValueKey('calendar-day-$scheduledDate')));
+    await tester.pumpAndSettle();
     expect(find.text('Completed Strength Session'), findsOneWidget);
     expect(find.text('workout-1'), findsNothing);
   });
+}
+
+class _CalendarUser extends Fake implements User {
+  @override
+  String get uid => 'athlete-1';
 }
 
 UserProfile _profile({

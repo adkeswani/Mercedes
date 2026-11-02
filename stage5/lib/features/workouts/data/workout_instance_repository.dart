@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/programs/domain/program.dart';
 import 'package:stage5/features/relationships/data/trainer_client_relationship_repository.dart';
+import 'package:stage5/features/workouts/data/workout_local_day.dart';
 import 'package:stage5/features/workouts/data/workout_template_repository.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
@@ -17,11 +18,14 @@ class WorkoutInstanceRepository {
   WorkoutInstanceRepository({
     FirebaseFirestore? firestore,
     DateTime Function()? now,
+    WorkoutLocalDay localDay = const WorkoutLocalDay(),
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _now = now ?? DateTime.now;
+        _now = now ?? DateTime.now,
+        _localDay = localDay;
 
   final FirebaseFirestore _firestore;
   final DateTime Function() _now;
+  final WorkoutLocalDay _localDay;
 
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('workoutInstances');
@@ -29,19 +33,7 @@ class WorkoutInstanceRepository {
   CollectionReference<Map<String, dynamic>> get _programInstances =>
       _firestore.collection('athleteProgramInstances');
 
-  String get _today {
-    final now = _now().toUtc();
-    return '${now.year.toString().padLeft(4, '0')}-'
-        '${now.month.toString().padLeft(2, '0')}-'
-        '${now.day.toString().padLeft(2, '0')}';
-  }
-
-  String get _localToday {
-    final now = _now();
-    return '${now.year.toString().padLeft(4, '0')}-'
-        '${now.month.toString().padLeft(2, '0')}-'
-        '${now.day.toString().padLeft(2, '0')}';
-  }
+  String get _today => calendarDate(_now());
 
   Duration get _untilNextLocalDay {
     final now = _now();
@@ -642,6 +634,9 @@ class WorkoutInstanceRepository {
 
     final instanceRef = _programInstances.doc(programAssignmentId);
     final instance = await instanceRef.get();
+    for (final doc in targets) {
+      await _localDay.prepare(doc, _now());
+    }
     for (var start = 0; start < targets.length; start += 450) {
       final batch = _firestore.batch();
       final end = (start + 450).clamp(0, targets.length);
@@ -663,9 +658,8 @@ class WorkoutInstanceRepository {
     return targets.length;
   }
 
-  /// Permanently deletes the still-incomplete instances of a program
-  /// assignment (everything except completed workouts, so an athlete's
-  /// completion history is preserved).
+  /// Permanently deletes today's and future scheduled instances of a program
+  /// assignment. Past and terminal workouts are preserved.
   ///
   /// Used to undo an assignment that was made by mistake. Unlike
   /// [cancelProgramAssignment] this is a hard delete, so no audit trail
@@ -789,6 +783,7 @@ class WorkoutInstanceRepository {
     }
 
     for (final instance in instances) {
+      await _localDay.prepare(instance, _now());
       final results = await instance.reference.collection('slotResults').get();
       for (final result in results.docs) {
         batch.delete(result.reference);
@@ -905,6 +900,7 @@ class WorkoutInstanceRepository {
         continue;
       }
       targets.add(doc.reference);
+      await _localDay.prepare(doc, _now());
       final programInstanceId =
           doc.data()['athleteProgramInstanceId'] as String?;
       if (programInstanceId != null) {
@@ -916,6 +912,7 @@ class WorkoutInstanceRepository {
         rootDoc.data()?['status'] == WorkoutInstanceStatus.scheduled.name &&
         (rootData['scheduledDate'] as String? ?? '').compareTo(_today) >= 0) {
       targets.add(rootDoc.reference);
+      await _localDay.prepare(rootDoc, _now());
       final programInstanceId = rootData['athleteProgramInstanceId'] as String?;
       if (programInstanceId != null) {
         programInstances.add(programInstanceId);
@@ -1118,6 +1115,9 @@ class WorkoutInstanceRepository {
               0,
         )
         .toList();
+    for (final doc in targets) {
+      await _localDay.prepare(doc, _now());
+    }
     for (var start = 0; start < targets.length; start += 450) {
       final batch = _firestore.batch();
       final end = (start + 450).clamp(0, targets.length);
@@ -1184,7 +1184,7 @@ class WorkoutInstanceRepository {
     var latest = <WorkoutInstance>[];
 
     void emit() {
-      final today = _localToday;
+      final today = _today;
       controller.add(
         latest
             .where(
@@ -1490,6 +1490,7 @@ class WorkoutInstanceRepository {
           );
         }
       }
+      await _localDay.prepare(await _collection.doc(instance.id).get(), _now());
       return;
     }
 
@@ -1498,6 +1499,7 @@ class WorkoutInstanceRepository {
       throw StateError('User $actorId cannot manage instance ${instance.id}');
     }
     await _verifyActiveRelationship(trainerId, instance.athleteId);
+    await _localDay.prepare(await _collection.doc(instance.id).get(), _now());
   }
 
   /// Returns a single workout instance by ID, or null.

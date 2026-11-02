@@ -14,6 +14,7 @@ import 'package:stage5/features/programs/presentation/program_providers.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/presentation/trainer_calendar_canary_status.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
+import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
 /// Per-athlete trainer calendar.
 ///
@@ -330,9 +331,10 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
 
     return instancesAsync.when(
       data: (instances) {
+        final marker = athleteView ? 'athlete-calendar' : 'trainer-calendar';
         if (browserAutomationEnabled && instances.isEmpty) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            markBrowserSmokeSurfaceFailure('trainer-calendar', 'empty');
+            markBrowserSmokeSurfaceFailure(marker, 'empty');
           });
         }
         final byDate = <String, List<WorkoutInstance>>{};
@@ -361,6 +363,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                 instance: canaryInstance,
                 athleteName: _athleteNames[athleteId],
                 programName: canaryProgramName,
+                athleteView: athleteView,
               ),
             Expanded(
               child: SingleChildScrollView(
@@ -381,7 +384,10 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
       error: (e, _) {
         if (browserAutomationEnabled) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            markBrowserSmokeSurfaceFailure('trainer-calendar', 'error');
+            markBrowserSmokeSurfaceFailure(
+              athleteView ? 'athlete-calendar' : 'trainer-calendar',
+              'error',
+            );
           });
         }
         return Center(child: Text('Error: $e'));
@@ -462,6 +468,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     final isToday = iso == todayIso;
 
     return InkWell(
+      key: ValueKey('calendar-day-$iso'),
       onTap: () => _openDay(context, date, dayInstances, programs),
       child: Container(
         height: 64,
@@ -556,7 +563,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
       showDragHandle: true,
       builder: (sheetContext) {
         return SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -583,16 +590,43 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                             ? Colors.grey
                             : _colorForProgram(i.programId, programs),
                       ),
-                      title: Text(nameById[i.programId] ?? 'Program'),
+                      title: _CalendarWorkoutTitle(
+                        templateId: i.workoutTemplateId,
+                      ),
                       subtitle: Text(
+                        '${nameById[i.programId] ?? 'Program'} · '
                         '${i.workoutType.name} · ${i.status.name}',
                       ),
-                      trailing: i.isScheduled &&
+                      onTap: i.isScheduled || i.isCompleted
+                          ? () {
+                              Navigator.of(sheetContext).pop();
+                              context.push('/athlete/workouts/${i.id}');
+                            }
+                          : null,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (i.isScheduled &&
+                              i.athleteId ==
+                                  ref.read(authStateProvider).value?.uid)
+                            FilledButton(
+                              onPressed: () {
+                                Navigator.of(sheetContext).pop();
+                                context.push('/athlete/workouts/${i.id}');
+                              },
+                              child: const Text('Complete'),
+                            ),
+                          if (i.isScheduled &&
+                              i.scheduledDate.compareTo(
+                                    _formatIsoDate(DateTime.now()),
+                                  ) >=
+                                  0 &&
                               _canManage(
                                 i,
                                 ref.read(authStateProvider).value?.uid,
-                              )
-                          ? PopupMenuButton<String>(
+                              ))
+                            PopupMenuButton<String>(
+                              tooltip: 'Workout actions',
                               onSelected: (value) async {
                                 Navigator.of(sheetContext).pop();
                                 if (value == 'open') {
@@ -624,13 +658,16 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                                 ),
                               ],
                             )
-                          : IconButton(
+                          else if (i.isCompleted)
+                            IconButton(
                               icon: const Icon(Icons.chevron_right),
                               onPressed: () {
                                 Navigator.of(sheetContext).pop();
                                 context.push('/athlete/workouts/${i.id}');
                               },
                             ),
+                        ],
+                      ),
                     ),
                   ),
                 const Divider(),
@@ -869,5 +906,21 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
         ).showSnackBar(SnackBar(content: Text('Failed to delete: $e')));
       }
     }
+  }
+}
+
+class _CalendarWorkoutTitle extends ConsumerWidget {
+  const _CalendarWorkoutTitle({required this.templateId});
+
+  final String templateId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return ref.watch(workoutTemplateProvider(templateId)).when(
+          data: (workout) =>
+              Text(workout?.name ?? 'Workout details unavailable'),
+          loading: () => const Text('Loading workout...'),
+          error: (error, _) => Text('Could not load workout: $error'),
+        );
   }
 }

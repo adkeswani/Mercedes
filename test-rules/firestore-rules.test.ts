@@ -5123,6 +5123,51 @@ describe('workoutInstances', () => {
     );
   });
 
+  it('keeps expired schedule authorization protected until a trusted repair',
+      async () => {
+    await seedInstance();
+    const now = new Date();
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc(INSTANCE_ID)
+        .update({
+          scheduledAt: new Date(now.getTime() - 25 * 60 * 60 * 1000),
+        });
+    });
+    const athlete = testEnv.authenticatedContext(ATHLETE).firestore()
+      .collection('workoutInstances').doc(INSTANCE_ID);
+    await assertFails(athlete.delete());
+    await assertFails(athlete.update({ scheduledAt: now }));
+    // The callable's Admin SDK transaction is the only repair path.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc(INSTANCE_ID)
+        .update({ scheduledAt: now });
+    });
+    const stranger = testEnv.authenticatedContext(STRANGER).firestore()
+      .collection('workoutInstances').doc(INSTANCE_ID);
+    await assertFails(stranger.delete());
+    await assertSucceeds(athlete.delete());
+  });
+
+  it('does not make completed or past workouts deletable with local-day repair',
+      async () => {
+    await seedInstance();
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    const workout = db.collection('workoutInstances').doc(INSTANCE_ID);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc(INSTANCE_ID)
+        .update({ status: 'completed', scheduledAt: new Date() });
+    });
+    await assertFails(workout.delete());
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().collection('workoutInstances').doc(INSTANCE_ID)
+        .update({
+          status: 'scheduled',
+          scheduledAt: new Date(Date.now() - 48 * 60 * 60 * 1000),
+        });
+    });
+    await assertFails(workout.delete());
+  });
+
   describe('program assignment batch (WorkoutInstanceRepository.assignProgram)', () => {
     const ASSIGNMENT_ID = 'assignment-1';
 

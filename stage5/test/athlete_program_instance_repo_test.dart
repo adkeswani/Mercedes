@@ -1,8 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/programs/data/athlete_program_instance_repository.dart';
+import 'package:stage5/features/workouts/data/workout_local_day.dart';
 
 void main() {
   late FakeFirebaseFirestore firestore;
@@ -126,9 +128,52 @@ void main() {
       'updatedAt': DateTime.utc(2026, 1, 1),
       'updatedBy': 'athlete-1',
     });
+
     final legacy = await repository.getById('legacy');
     expect(legacy!.propagationState, ProgramPropagationState.complete);
     expect(legacy.propagationAttempt, 0);
+  });
+
+  test('unlink includes local today after UTC rollover and keeps history',
+      () async {
+    await seedSubscription();
+    final now = DateTime(2026, 11, 1, 23, 30);
+    final repairs = <String>[];
+    repository = AthleteProgramInstanceRepository(
+      firestore: firestore,
+      now: () => now,
+      localDay: WorkoutLocalDay(repair: (id, _) async => repairs.add(id)),
+    );
+    for (final entry in {
+      'past': ('2026-10-31', 'scheduled'),
+      'today': ('2026-11-01', 'scheduled'),
+      'completed': ('2026-11-01', 'completed'),
+      'future': ('2026-11-02', 'scheduled'),
+    }.entries) {
+      await firestore.collection('workoutInstances').doc(entry.key).set({
+        'athleteProgramInstanceId': 'instance-1',
+        'athleteId': 'athlete-1',
+        'scheduledDate': entry.value.$1,
+        'scheduledAt': Timestamp.fromDate(
+          DateTime.parse('${entry.value.$1}T00:00:00Z'),
+        ),
+        'status': entry.value.$2,
+        'relationshipMode': 'subscribed',
+      });
+    }
+    await repository.convertSubscriptionToCopy(
+      instanceId: 'instance-1',
+      athleteId: 'athlete-1',
+      confirmed: true,
+    );
+    for (final id in ['today', 'future', 'past', 'completed']) {
+      final doc = await firestore.collection('workoutInstances').doc(id).get();
+      expect(doc.data()!['relationshipMode'],
+          ['today', 'future'].contains(id) ? 'copied' : 'subscribed');
+    }
+    if (now.toUtc().day != now.day) {
+      expect(repairs, ['today']);
+    }
   });
 
   test('athlete program query includes modern and compatible legacy records',
@@ -165,8 +210,7 @@ void main() {
       'updatedBy': 'athlete-2',
     });
 
-    final instances =
-        await repository.watchForAthlete('athlete-1').first;
+    final instances = await repository.watchForAthlete('athlete-1').first;
 
     expect(instances.map((instance) => instance.id), ['instance-1', 'legacy']);
     expect(

@@ -20,6 +20,19 @@ tests cover spring/fall transitions, inclusive end dates, persisted assignments,
 and seven-day program offsets. Existing materialized assignments are not
 automatically rewritten by this change; correct their dates explicitly.
 
+Calendar mutation cutoffs and subscription unlinking use local "today", not
+UTC "today". Deploy the `repairWorkoutLocalDay` callable with the calendar
+client changes. It repairs an expired `scheduledAt` only for an authenticated
+owner's still-scheduled local-today workout, using server time and a validated
+UTC offset (-12 to +14 hours). Trainer requests additionally require an active
+relationship. This handles UTC-midnight timestamps written by propagation and
+the final hour of a fall-back day without loosening Firestore rules or changing
+`scheduledDate`. Past, completed, missed, cancelled, and legacy workouts
+without `scheduledAt` cannot be repaired. The client surfaces callable failures
+rather than claiming a successful deletion. The callable's emulator tests run
+with the existing Functions test suite (`npm --prefix functions test` under
+`firebase emulators:exec --only firestore`).
+
 ## Stage 5 browser validation timeouts
 
 `scripts/run-stage-validation.ps1` gives Flutter/web compilation and emulator

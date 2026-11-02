@@ -10,25 +10,29 @@ class TrainerCalendarCanaryStatus extends ConsumerWidget {
     required this.instance,
     required this.athleteName,
     required this.programName,
+    this.athleteView = false,
     super.key,
   });
 
   final WorkoutInstance instance;
   final String? athleteName;
   final String? programName;
+  final bool athleteView;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (athleteName == null || athleteName == instance.athleteId) {
+    if (!athleteView &&
+        (athleteName == null || athleteName == instance.athleteId)) {
       return const SizedBox.shrink();
     }
-    if (programName == null) {
+    if (!athleteView && programName == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         markBrowserSmokeSurfaceFailure('trainer-calendar', 'missing-program');
       });
       return const SizedBox.shrink();
     }
     final repository = ref.watch(workoutTemplateRepositoryProvider);
+    final marker = athleteView ? 'athlete-calendar' : 'trainer-calendar';
     return FutureBuilder(
       future: repository.getById(instance.workoutTemplateId),
       builder: (context, snapshot) {
@@ -36,16 +40,18 @@ class TrainerCalendarCanaryStatus extends ConsumerWidget {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             final workout = snapshot.data;
             if (snapshot.hasError) {
-              markBrowserSmokeSurfaceFailure('trainer-calendar', 'error');
+              markBrowserSmokeSurfaceFailure(marker, 'error');
             } else if (workout == null) {
               markBrowserSmokeSurfaceFailure(
-                'trainer-calendar',
+                marker,
                 'missing-workout',
               );
             } else {
               markBrowserSmokeSurfaceReady(
-                'trainer-calendar',
-                content: '$athleteName | $programName | ${workout.name}',
+                marker,
+                content: athleteView
+                    ? workout.name
+                    : '$athleteName | $programName | ${workout.name}',
               );
             }
           });
