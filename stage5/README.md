@@ -149,7 +149,10 @@ Implemented in this slice:
   scheduled workout are committed together, and each workout references the
   first-class instance while retaining the legacy assignment ID alias.
 - Confirmation-gated subscription-to-copy conversion for structural
-  customization, plus recoverable unlink-to-copy when a trainer-client
+  customization. Deleting subscribed workouts uses a delete-specific warning
+  about stopping program updates, not a request to create a copy; unlinking
+  still happens before deletion to prevent updates restoring removed workouts.
+  Also supports recoverable unlink-to-copy when a trainer-client
   relationship enters its `ending` state. New assignments are blocked before
   unlink batches run, and retries finish the transition to `ended`.
 - Authoritative Cloud Function propagation for each newly published immutable

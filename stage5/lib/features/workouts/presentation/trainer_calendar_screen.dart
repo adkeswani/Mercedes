@@ -682,8 +682,9 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
   Future<bool> _confirmStructuralCustomization(
     BuildContext context,
     WorkoutInstance instance,
-    String athleteId,
-  ) async {
+    String athleteId, {
+    bool deleting = false,
+  }) async {
     final programInstanceId = instance.resolvedProgramInstanceId;
     if (instance.athleteId != athleteId ||
         instance.relationshipMode != ProgramRelationshipMode.subscribed ||
@@ -693,19 +694,25 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Create an independent copy?'),
-        content: const Text(
-          'Changing this subscribed schedule will unlink it from the trainer '
-          'program. Future template updates will not apply.',
+        title: Text(deleting
+            ? 'Stop program updates and delete?'
+            : 'Create an independent copy?'),
+        content: Text(
+          deleting
+              ? 'Deleting workouts from this subscribed program will stop '
+                  'future program updates for this assignment. '
+                  'Completed workouts are kept.'
+              : 'Changing this subscribed schedule will unlink it from the trainer '
+                  'program. Future template updates will not apply.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Keep subscribed'),
+            child: Text(deleting ? 'Cancel' : 'Keep subscribed'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Create copy'),
+            child: Text(deleting ? 'Continue deleting' : 'Create copy'),
           ),
         ],
       ),
@@ -828,7 +835,12 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
     );
     if (confirmed != true) return;
     try {
-      if (!await _confirmStructuralCustomization(context, instance, uid)) {
+      if (!await _confirmStructuralCustomization(
+        context,
+        instance,
+        uid,
+        deleting: true,
+      )) {
         return;
       }
       final repo = ref.read(workoutInstanceRepositoryProvider);
