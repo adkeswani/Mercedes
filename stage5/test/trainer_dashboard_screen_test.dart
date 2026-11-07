@@ -85,6 +85,27 @@ void main() {
     expect(find.textContaining('Celebrate'), findsWidgets);
     expect(find.byKey(const Key('trainer-dashboard-section-personalBest')),
         findsNothing);
+    tester.view.physicalSize = const Size(1180, 650);
+    await tester.pumpAndSettle();
+    final scrollable = find
+        .descendant(
+          of: find.byKey(const Key('trainer-dashboard-feed')),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    for (final category in [
+      'completion',
+      'comment',
+      'reaction',
+      'programEndingSoon',
+    ]) {
+      final heading = find.byKey(Key('trainer-dashboard-section-$category'));
+      await tester.scrollUntilVisible(heading, 250, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      expect(heading, findsOneWidget);
+    }
+    tester.state<ScrollableState>(scrollable).position.jumpTo(0);
+    await tester.pumpAndSettle();
     await tester
         .tap(find.byKey(const Key('trainer-dashboard-filter-comments')));
     await tester.pumpAndSettle();

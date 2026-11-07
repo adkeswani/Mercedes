@@ -184,20 +184,35 @@ void main() {
           );
         }
         if (surface.marker == 'trainer-dashboard') {
+          final scrollable = find
+              .descendant(
+                of: find.byKey(const Key('trainer-dashboard-feed')),
+                matching: find.byType(Scrollable),
+              )
+              .first;
           for (final category in [
             'completion',
             'comment',
             'reaction',
             'programEndingSoon',
           ]) {
+            final heading =
+                find.byKey(Key('trainer-dashboard-section-$category'));
+            await waits.runStep(
+              'scroll to trainer All category $category',
+              () => tester.scrollUntilVisible(
+                heading,
+                250,
+                scrollable: scrollable,
+              ),
+            );
             await wait(
               'trainer All category $category',
-              () => find
-                  .byKey(Key('trainer-dashboard-section-$category'))
-                  .evaluate()
-                  .isNotEmpty,
+              () => heading.evaluate().isNotEmpty,
             );
           }
+          tester.state<ScrollableState>(scrollable).position.jumpTo(0);
+          await tester.pumpAndSettle();
         }
         if (surface.marker == 'athlete-calendar') {
           final day = find.byKey(
