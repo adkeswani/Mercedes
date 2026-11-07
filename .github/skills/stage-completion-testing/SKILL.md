@@ -50,6 +50,9 @@ complete.
 
 ## Browser prerequisites
 
+Browser validation runs one headless Chrome instance per invocation. It does
+not require a foreground-window acknowledgment or user interaction.
+
 Browser integration tests require the prerequisites documented by the selected
 stage. For Stage 5 these include Chrome, Firebase CLI and Java, Windows
 Developer Mode, and free local emulator ports. The validation runner resolves

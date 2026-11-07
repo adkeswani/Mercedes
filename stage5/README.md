@@ -20,6 +20,16 @@ Implemented in this slice:
   rather than home.
 - Exercise actuals remain intact when scrolling recycles an exercise card;
   recreated cards restore recorded values rather than prescription defaults.
+- On phones (completion content narrower than 600 logical pixels), each
+  exercise occupies at least one viewport-height section. Scroll normally or
+  use **Next exercise**, then **Review & complete** to reach workout feedback.
+  Long climbing activities can exceed a viewport without clipping their rows.
+  Desktop completion remains a continuous list with more separation; builder
+  cards also have larger padding and gaps.
+- Embedded YouTube players stop receiving pointer input while a dropdown or
+  other popup route covers their screen, so selecting a grade or RPE cannot
+  click through to the video. Closing the popup restores player interaction
+  without reloading it.
 - In-progress RPE, duration, and completion notes autosave after a debounce to
   both `localStorage` and the athlete-only
   `workoutInstances/{instanceId}/completionDrafts/current` document. The UI
@@ -401,10 +411,8 @@ Role-specific tests skip the other identity. Its screenshots are
 `trainer-climbing-authoring.png`, `athlete-climbing-recovery.png`, and
 `athlete-climbing-history.png` in the runner's selected artifact directory.
 
-**Before running any browser test, explicitly acknowledge that you are ready
-to foreground Chrome.** After launch, keep the Chrome test window visible,
-foregrounded, and untouched until it finishes. Do not minimize/cover it,
-switch desktops, lock the machine, or allow the display to sleep.
+Browser tests use one headless Chrome instance per invocation. No
+foreground-window acknowledgment or user interaction is required.
 
 Flutter Web's semantics DOM does not reliably propagate ChromeDriver element
 clears into `TextEditingController`, or native pointer gestures into
@@ -425,12 +433,8 @@ pinned: the runtime driver intentionally follows the locally installed Chrome
 major. ChromeDriver's existing BSD-3-Clause notice remains in
 `THIRD_PARTY_NOTICES.md`.
 
-On one Windows screenshot-based run, Chrome appeared to require a manual click
-or foreground focus before the test progressed. This is an intermittent
-observation to investigate, not a confirmed prerequisite or permanent
-workaround. Follow-up should reproduce whether foreground focus is actually
-required, inspect ChromeDriver window activation and screenshot timing, and
-automate focus only if that need is proven.
+The former manual-focus workaround is obsolete now that browser automation
+uses a single headless Chrome instance.
 
 ## Release authorization contract
 

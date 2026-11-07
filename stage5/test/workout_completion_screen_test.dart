@@ -82,6 +82,73 @@ void main() {
   });
 
   testWidgets(
+      'phone exercises occupy a viewport and advance without losing input',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _seedWorkoutWithExercises(firestore);
+    await pumpScreen(tester, id: 'instance-2');
+    await tester.pumpAndSettle();
+    final list = find.byKey(WorkoutCompletionScreen.listKey);
+    final scrollable =
+        find.descendant(of: list, matching: find.byType(Scrollable)).first;
+    final firstCard = find.byKey(const ValueKey('slot-pushup'));
+    final firstPage = find.ancestor(
+        of: firstCard,
+        matching: find.byWidgetPredicate(
+            (widget) => widget is Padding && widget.key is GlobalKey));
+    expect(tester.getSize(firstPage).height,
+        greaterThanOrEqualTo(tester.getSize(list).height));
+    expect(find.text('Exercise 1 of 4'), findsOneWidget);
+    final sets = find.widgetWithText(TextField, 'Sets');
+    await tester.ensureVisible(sets);
+    await tester.enterText(sets, '7');
+    for (final slot in [
+      'slot-pushup',
+      'slot-boulder',
+      'slot-plank',
+      'slot-amrap'
+    ]) {
+      final next = find.byKey(ValueKey('next-exercise-$slot'));
+      await tester.scrollUntilVisible(next, 200, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(next);
+      await tester.pumpAndSettle();
+      expect(next.hitTestable(), findsOneWidget);
+      await tester.tap(next);
+      await tester.pumpAndSettle();
+      if (slot == 'slot-pushup') {
+        expect(find.text('Exercise 2 of 4').hitTestable(), findsOneWidget);
+      }
+    }
+    expect(find.text('Rate of Perceived Exertion (RPE)').hitTestable(),
+        findsOneWidget);
+    await tester.scrollUntilVisible(sets, -200, scrollable: scrollable);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(sets).controller!.text, '7');
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('desktop keeps a continuous list with spaced exercises',
+      (tester) async {
+    await _seedWorkoutWithExercises(firestore);
+    await pumpScreen(tester, id: 'instance-2');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Exercise 1 of'), findsNothing);
+    expect(find.text('Next exercise'), findsNothing);
+    final firstCard = find.byKey(const ValueKey('slot-pushup'));
+    final firstPage = find.ancestor(
+        of: firstCard,
+        matching: find.byWidgetPredicate(
+            (widget) => widget is Padding && widget.key is GlobalKey));
+    expect(tester.widget<Padding>(firstPage).padding,
+        const EdgeInsets.only(bottom: 32));
+  });
+
+  testWidgets(
       'timed actual survives card recycling instead of prescription reset',
       (tester) async {
     tester.view.physicalSize = const Size(800, 320);

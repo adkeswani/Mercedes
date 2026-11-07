@@ -1,35 +1,55 @@
-import 'dart:ui_web' as ui_web;
-
 import 'package:flutter/widgets.dart';
 import 'package:web/web.dart' as web;
 
-/// Tracks which view types have already been registered to avoid
-/// re-registering the same factory (which throws).
-final Set<String> _registeredViewTypes = <String>{};
+Widget buildYoutubeEmbedImpl(String videoId, {required bool interactive}) =>
+    _YoutubeEmbedWeb(videoId: videoId, interactive: interactive);
 
-/// Web YouTube embed backed by a native `<iframe>` rendered through an
-/// [HtmlElementView]. This loads the standard YouTube embedded player and is
-/// far more reliable on Flutter web than a webview-based player.
-Widget buildYoutubeEmbedImpl(String videoId) {
-  final viewType = 'youtube-iframe-$videoId';
+class _YoutubeEmbedWeb extends StatefulWidget {
+  const _YoutubeEmbedWeb({
+    required this.videoId,
+    required this.interactive,
+  });
 
-  if (!_registeredViewTypes.contains(viewType)) {
-    ui_web.platformViewRegistry.registerViewFactory(viewType, (int viewId) {
-      final iframe = web.HTMLIFrameElement()
-        ..src = 'https://www.youtube.com/embed/$videoId'
-        ..allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; '
-            'gyroscope; picture-in-picture'
-        ..allowFullscreen = true
-        ..style.border = 'none'
-        ..style.width = '100%'
-        ..style.height = '100%';
-      return iframe;
-    });
-    _registeredViewTypes.add(viewType);
+  final String videoId;
+  final bool interactive;
+
+  @override
+  State<_YoutubeEmbedWeb> createState() => _YoutubeEmbedWebState();
+}
+
+class _YoutubeEmbedWebState extends State<_YoutubeEmbedWeb> {
+  web.HTMLIFrameElement? _iframe;
+
+  @override
+  void didUpdateWidget(_YoutubeEmbedWeb oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.videoId != widget.videoId) {
+      _iframe?.src = 'https://www.youtube.com/embed/${widget.videoId}';
+    }
+    _updatePointerInput();
   }
 
-  return AspectRatio(
-    aspectRatio: 16 / 9,
-    child: HtmlElementView(viewType: viewType),
-  );
+  void _updatePointerInput() {
+    _iframe?.style.pointerEvents = widget.interactive ? 'auto' : 'none';
+  }
+
+  @override
+  Widget build(BuildContext context) => AspectRatio(
+        aspectRatio: 16 / 9,
+        child: HtmlElementView.fromTagName(
+          tagName: 'iframe',
+          onElementCreated: (element) {
+            _iframe = (element as web.HTMLIFrameElement)
+              ..src = 'https://www.youtube.com/embed/${widget.videoId}'
+              ..allow =
+                  'accelerometer; autoplay; clipboard-write; encrypted-media; '
+                      'gyroscope; picture-in-picture'
+              ..allowFullscreen = true
+              ..style.border = 'none'
+              ..style.width = '100%'
+              ..style.height = '100%';
+            _updatePointerInput();
+          },
+        ),
+      );
 }

@@ -24,6 +24,8 @@ import 'support/dropdown_test_utils.dart';
 import 'support/list_test_utils.dart';
 import 'support/router_test_utils.dart';
 import 'support/workout_draft_diagnostics.dart';
+import 'support/youtube_pointer_test_stub.dart'
+    if (dart.library.js_interop) 'support/youtube_pointer_test_web.dart';
 
 const _testFile = 'integration_test/workout_climbing_canary_test.dart';
 const _artifactPath = String.fromEnvironment('BROWSER_TEST_ARTIFACT_PATH',
@@ -38,6 +40,8 @@ WorkoutDraftDiagnostics _draftDiagnostics = WorkoutDraftDiagnostics();
 void main() {
   _draftDiagnostics.record({'phase': 'execution-start'});
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  registerYoutubePointerTest();
 
   testWidgets('trainer creates and edits both climbing block types via real UI',
       (tester) async {

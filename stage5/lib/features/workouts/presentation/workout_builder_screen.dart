@@ -572,7 +572,10 @@ class _WorkoutBlockCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isStandard = block is StandardExerciseBlock;
     return Card(
+      margin: const EdgeInsets.only(bottom: 24),
       child: ListTile(
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         leading: ReorderableDragStartListener(
           index: index,
           child: const Icon(Icons.drag_handle),

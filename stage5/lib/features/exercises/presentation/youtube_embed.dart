@@ -9,4 +9,19 @@ import 'package:stage5/features/exercises/presentation/youtube_embed_mobile.dart
 /// - On web, a native `<iframe>` is embedded via `HtmlElementView`, which
 ///   renders the YouTube player reliably.
 /// - On other platforms, the `youtube_player_iframe` package is used.
-Widget buildYoutubeEmbed(String videoId) => buildYoutubeEmbedImpl(videoId);
+Widget buildYoutubeEmbed(String videoId) => YoutubeEmbedInteraction(
+      builder: (interactive) =>
+          buildYoutubeEmbedImpl(videoId, interactive: interactive),
+    );
+
+class YoutubeEmbedInteraction extends StatelessWidget {
+  const YoutubeEmbedInteraction({required this.builder, super.key});
+
+  final Widget Function(bool interactive) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    // Native iframes otherwise receive clicks through Flutter popup routes.
+    return builder(ModalRoute.isCurrentOf(context) ?? true);
+  }
+}

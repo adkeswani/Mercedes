@@ -18,6 +18,40 @@ import 'package:stage5/features/workouts/presentation/workout_builder_screen.dar
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
 void main() {
+  testWidgets('builder exercises have larger padding and separation',
+      (tester) async {
+    final repo = _VersionedWorkoutRepository();
+    final workout = _workout(id: 'spaced-workout', currentVersion: 1);
+    repo.versions[workout.id] = WorkoutTemplateVersion(
+      versionNumber: 1,
+      publishedAt: DateTime.utc(2026),
+      blocks: [
+        StandardExerciseBlock(
+          blockId: 'spaced-block',
+          sortOrder: 0,
+          exercise: ExercisePrescription(
+            slotId: 'spaced-slot',
+            sortOrder: 0,
+            exerciseId: 'ex-bike',
+            exerciseVersion: 1,
+            exerciseName: 'Bike',
+            mode: ExerciseMode.reps,
+          ),
+        ),
+      ],
+    );
+    await tester.pumpWidget(_harness(repository: repo, workout: workout));
+    await tester.pumpAndSettle();
+    final tile = find.widgetWithText(ListTile, 'Bike');
+    expect(tester.widget<ListTile>(tile).contentPadding,
+        const EdgeInsets.symmetric(horizontal: 16, vertical: 12));
+    expect(
+        tester
+            .widget<Card>(find.ancestor(of: tile, matching: find.byType(Card)))
+            .margin,
+        const EdgeInsets.only(bottom: 24));
+  });
+
   testWidgets('Add menu lists all block types', (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();

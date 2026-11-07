@@ -62,16 +62,10 @@ PowerShell, Firebase, ChromeDriver, and Chrome process tree by job/PID
 ownership; unrelated processes and emulator sessions from other runs are not
 name-killed.
 
-Browser automation also starts Chrome with background timer throttling,
-renderer backgrounding, and occluded-window backgrounding disabled.
-
-Before any browser validation starts, the operator must acknowledge that they
-are ready to foreground the Chrome test window. Launch only after that
-acknowledgment. Once Chrome appears, keep it visible, foregrounded, and
-untouched until the run completes; do not minimize or cover it, switch virtual
-desktops, lock the machine, or allow the display to sleep. This keeps
-Flutter Web frame scheduling and bounded test waits independent of whether the
-Chrome window has focus. Existing caller-supplied Chrome flags are preserved
+Browser automation uses a single headless Chrome instance per invocation, with
+background timer throttling, renderer backgrounding, and occluded-window
+backgrounding disabled. No foreground-window acknowledgment or user interaction
+is required. Existing caller-supplied Chrome flags are preserved
 without duplicate options. App lifecycle behavior remains enabled, and
 recovery tests still simulate lifecycle transitions explicitly.
 

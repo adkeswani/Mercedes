@@ -160,6 +160,45 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('phone climbing pages scroll past long rows and retain results',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await pumpScreen(tester);
+    final scrollable = find
+        .descendant(
+          of: find.byKey(WorkoutCompletionScreen.listKey),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final completed = find.text('Completed prescribed row');
+    await tester.scrollUntilVisible(completed, 200, scrollable: scrollable);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(completed);
+    await tester.tap(completed);
+    await tester.pumpAndSettle();
+    final next = find.byKey(const ValueKey('next-exercise-circuit-slot'));
+    await tester.scrollUntilVisible(next, 200, scrollable: scrollable);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(next);
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(find.text('Exercise 2 of 2').hitTestable(), findsOneWidget);
+    expect(find.text('Free Climbing'), findsOneWidget);
+    await tester.scrollUntilVisible(completed, -200, scrollable: scrollable);
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<CheckboxListTile>(find.widgetWithText(
+                CheckboxListTile, 'Completed prescribed row'))
+            .value,
+        isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   Future<void> expectVideos(WidgetTester tester) async {
     for (final entry in {
       'circuit': 'https://example.test/circuit-drill.mp4',

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -43,6 +44,7 @@ class _WorkoutCompletionScreenState
     extends ConsumerState<WorkoutCompletionScreen> with WidgetsBindingObserver {
   final _notesController = TextEditingController();
   final _scrollController = ScrollController();
+  final Map<String, GlobalKey> _exercisePageKeys = {};
   int _rpe = 5;
   int _durationMinutes = 45;
   bool _isLoading = false;
@@ -101,6 +103,7 @@ class _WorkoutCompletionScreenState
     _instance = null;
     _isAthlete = false;
     _blocks = [];
+    _exercisePageKeys.clear();
     _actuals.clear();
     _slotInputs.clear();
     _climbingRestoreRevision++;
@@ -431,267 +434,356 @@ class _WorkoutCompletionScreenState
               : 'Workout Details',
         ),
       ),
-      body: ListView(
-        key: WorkoutCompletionScreen.listKey,
-        controller: _scrollController,
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Workout info
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    instance.workoutType.name.toUpperCase(),
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Scheduled: ${instance.scheduledDate}',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Exercises with media, instructions, and recorded actuals
-          if (_blocks.isNotEmpty) ...[
-            Text(
-              'Exercises',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            for (final block in _blocks) ...[
-              if (_blockSummary(block) != null) ...[
-                Text(
-                  _blockSummary(block)!,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                ),
-                const SizedBox(height: 4),
-              ],
-              if (block is ClimbingCircuitBlock || block is FreeClimbingBlock)
-                ClimbingCompletionCard(
-                  key: ValueKey('${block.blockId}-$_climbingRestoreRevision'),
-                  block: block,
-                  recordingEnabled: _isAthlete && !instance.isCompleted,
-                  initialInput: _slotInputs[block.slots.single.slotId],
-                  actual: instance.actualsBySlot[block.slots.single.slotId],
-                  exerciseContent:
-                      block is ClimbingCircuitBlock && block.hasExercise
-                          ? _ClimbingExerciseContent(slot: block.exercise)
-                          : null,
-                  onChanged: (input) {
-                    _slotInputs[block.slots.single.slotId] = input;
-                    _scheduleSave();
-                  },
-                )
-              else
-                for (final slot in block.slots)
-                  _ExerciseEntryCard(
-                    key: ValueKey(slot.slotId),
-                    slot: slot,
-                    block: block,
-                    isAthlete: _isAthlete,
-                    recordingEnabled: _isAthlete && !instance.isCompleted,
-                    onActualChanged: _onActualChanged,
-                    initialActual: _actuals[slot.slotId],
-                  ),
-            ],
-            const SizedBox(height: 24),
-          ] else
-            const SizedBox(height: 24),
-
-          // RPE slider
-          if (_isAthlete && !instance.isCompleted) ...[
-            if (_recoveryMessage != null) ...[
-              MaterialBanner(
-                content: Text(_recoveryMessage!),
-                actions: [
-                  TextButton(
-                    onPressed: () => setState(() => _recoveryMessage = null),
-                    child: const Text('Dismiss'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-            ],
-            _DraftSaveStatus(
-              state: _saveState,
-              onRetry: _saveState == _DraftSaveState.failed ? _saveDraft : null,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Rate of Perceived Exertion (RPE)',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Text(
-                  '$_rpe',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: _rpeColor(_rpe),
-                      ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Slider(
-                    value: _rpe.toDouble(),
-                    min: 1,
-                    max: 10,
-                    divisions: 9,
-                    label: '$_rpe',
-                    onChanged: (value) {
-                      setState(() => _rpe = value.round());
-                      _scheduleSave();
-                    },
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('1 (Easy)', style: Theme.of(context).textTheme.bodySmall),
-                Text('10 (Max)', style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
-
-            const SizedBox(height: 24),
-
-            // Duration
-            Text(
-              'Duration (minutes)',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.remove_circle_outline),
-                  onPressed: _durationMinutes > 5
-                      ? () {
-                          setState(() => _durationMinutes -= 5);
-                          _scheduleSave();
-                        }
-                      : null,
-                ),
-                Text(
-                  '$_durationMinutes min',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add_circle_outline),
-                  onPressed: () {
-                    setState(() => _durationMinutes += 5);
-                    _scheduleSave();
-                  },
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 24),
-
-            // Notes
-            Text(
-              'Notes (optional)',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _notesController,
-              decoration: const InputDecoration(
-                hintText: 'How did it go?',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-
-            const SizedBox(height: 32),
-
-            // Complete button
-            FilledButton.icon(
-              onPressed: _isLoading ? null : _complete,
-              icon: _isLoading
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.check_circle),
-              label: const Text('Mark as Completed'),
-            ),
-          ] else if (instance.isCompleted) ...[
-            // Read-only view for owner
-            Text(
-              'Completion Details',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
+      body: LayoutBuilder(builder: (context, constraints) {
+        final exercisePageHeight =
+            constraints.maxWidth < 600 && _isAthlete && instance.isScheduled
+                ? constraints.maxHeight
+                : null;
+        return ListView(
+          key: WorkoutCompletionScreen.listKey,
+          controller: _scrollController,
+          padding: const EdgeInsets.all(16),
+          children: [
+            // Workout info
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          'RPE: ',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                        Text(
-                          '${instance.rpe ?? '-'}',
-                          style:
-                              Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: _rpeColor(instance.rpe ?? 5),
-                                  ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
                     Text(
-                      'Duration: ${instance.durationMinutes ?? '-'} min',
+                      instance.workoutType.name.toUpperCase(),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Scheduled: ${instance.scheduledDate}',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
-                    if (instance.athleteNotes != null &&
-                        instance.athleteNotes!.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Athlete notes: ${instance.athleteNotes}',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
                   ],
                 ),
               ),
             ),
-          ] else ...[
-            // Owner viewing a scheduled workout — no actions
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  'This workout is scheduled for the athlete. '
-                  'Only the athlete can complete it.',
-                  style: Theme.of(context).textTheme.bodyMedium,
+
+            const SizedBox(height: 24),
+
+            // Exercises with media, instructions, and recorded actuals
+            if (_blocks.isNotEmpty) ...[
+              Text(
+                'Exercises',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 16),
+              ..._buildExerciseSections(instance, exercisePageHeight),
+              const SizedBox(height: 24),
+            ] else
+              const SizedBox(height: 24),
+
+            // RPE slider
+            if (_isAthlete && !instance.isCompleted) ...[
+              if (_recoveryMessage != null) ...[
+                MaterialBanner(
+                  content: Text(_recoveryMessage!),
+                  actions: [
+                    TextButton(
+                      onPressed: () => setState(() => _recoveryMessage = null),
+                      child: const Text('Dismiss'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ],
+              _DraftSaveStatus(
+                state: _saveState,
+                onRetry:
+                    _saveState == _DraftSaveState.failed ? _saveDraft : null,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Rate of Perceived Exertion (RPE)',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Text(
+                    '$_rpe',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: _rpeColor(_rpe),
+                        ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Slider(
+                      value: _rpe.toDouble(),
+                      min: 1,
+                      max: 10,
+                      divisions: 9,
+                      label: '$_rpe',
+                      onChanged: (value) {
+                        setState(() => _rpe = value.round());
+                        _scheduleSave();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('1 (Easy)',
+                      style: Theme.of(context).textTheme.bodySmall),
+                  Text('10 (Max)',
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+
+              const SizedBox(height: 24),
+
+              // Duration
+              Text(
+                'Duration (minutes)',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.remove_circle_outline),
+                    onPressed: _durationMinutes > 5
+                        ? () {
+                            setState(() => _durationMinutes -= 5);
+                            _scheduleSave();
+                          }
+                        : null,
+                  ),
+                  Text(
+                    '$_durationMinutes min',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add_circle_outline),
+                    onPressed: () {
+                      setState(() => _durationMinutes += 5);
+                      _scheduleSave();
+                    },
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 24),
+
+              // Notes
+              Text(
+                'Notes (optional)',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _notesController,
+                decoration: const InputDecoration(
+                  hintText: 'How did it go?',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+
+              const SizedBox(height: 32),
+
+              // Complete button
+              FilledButton.icon(
+                onPressed: _isLoading ? null : _complete,
+                icon: _isLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.check_circle),
+                label: const Text('Mark as Completed'),
+              ),
+            ] else if (instance.isCompleted) ...[
+              // Read-only view for owner
+              Text(
+                'Completion Details',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'RPE: ',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          Text(
+                            '${instance.rpe ?? '-'}',
+                            style:
+                                Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: _rpeColor(instance.rpe ?? 5),
+                                    ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Duration: ${instance.durationMinutes ?? '-'} min',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      if (instance.athleteNotes != null &&
+                          instance.athleteNotes!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Athlete notes: ${instance.athleteNotes}',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
-            ),
+            ] else ...[
+              // Owner viewing a scheduled workout — no actions
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'This workout is scheduled for the athlete. '
+                    'Only the athlete can complete it.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ),
+            ],
           ],
+        );
+      }),
+    );
+  }
+
+  List<Widget> _buildExerciseSections(
+      WorkoutInstance instance, double? pageHeight) {
+    final total =
+        _blocks.fold<int>(0, (count, block) => count + block.slots.length);
+    var index = 0;
+    return [
+      for (final block in _blocks)
+        for (final slot in block.slots)
+          _buildExerciseSection(
+            instance: instance,
+            block: block,
+            slot: slot,
+            index: index++,
+            total: total,
+            pageHeight: pageHeight,
+          ),
+    ];
+  }
+
+  Widget _buildExerciseSection({
+    required WorkoutInstance instance,
+    required WorkoutBlock block,
+    required ExercisePrescription slot,
+    required int index,
+    required int total,
+    required double? pageHeight,
+  }) {
+    final pageKey = _exercisePageKeys.putIfAbsent(slot.slotId, GlobalKey.new);
+    final summary = _blockSummary(block);
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (pageHeight != null) ...[
+          Text('Exercise ${index + 1} of $total',
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
         ],
+        if (summary != null &&
+            (pageHeight != null || slot == block.slots.first)) ...[
+          Text(summary,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                  )),
+          const SizedBox(height: 8),
+        ],
+        if (block is ClimbingCircuitBlock || block is FreeClimbingBlock)
+          ClimbingCompletionCard(
+            key: ValueKey('${block.blockId}-$_climbingRestoreRevision'),
+            block: block,
+            recordingEnabled: _isAthlete && !instance.isCompleted,
+            initialInput: _slotInputs[slot.slotId],
+            actual: instance.actualsBySlot[slot.slotId],
+            exerciseContent: block is ClimbingCircuitBlock && block.hasExercise
+                ? _ClimbingExerciseContent(slot: block.exercise)
+                : null,
+            onChanged: (input) {
+              _slotInputs[slot.slotId] = input;
+              _scheduleSave();
+            },
+          )
+        else
+          _ExerciseEntryCard(
+            key: ValueKey(slot.slotId),
+            slot: slot,
+            block: block,
+            isAthlete: _isAthlete,
+            recordingEnabled: _isAthlete && !instance.isCompleted,
+            onActualChanged: _onActualChanged,
+            initialActual: _actuals[slot.slotId],
+          ),
+      ],
+    );
+    return Padding(
+      key: pageKey,
+      padding: const EdgeInsets.only(bottom: 32),
+      child: ConstrainedBox(
+        constraints:
+            BoxConstraints(minHeight: pageHeight == null ? 0 : pageHeight - 32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            content,
+            if (pageHeight != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 24),
+                child: OutlinedButton.icon(
+                  key: ValueKey('next-exercise-${slot.slotId}'),
+                  onPressed: () => _nextExercise(pageKey),
+                  icon: const Icon(Icons.arrow_downward),
+                  label: Text(index + 1 == total
+                      ? 'Review & complete'
+                      : 'Next exercise'),
+                ),
+              ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Future<void> _nextExercise(GlobalKey pageKey) async {
+    FocusScope.of(context).unfocus();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final box = pageKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !_scrollController.hasClients) return;
+    final viewport = RenderAbstractViewport.of(box);
+    final nextOffset =
+        viewport.getOffsetToReveal(box, 0).offset + box.size.height;
+    await _scrollController.animateTo(
+      nextOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
     );
   }
 
