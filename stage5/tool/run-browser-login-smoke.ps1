@@ -220,7 +220,7 @@ Invoke-RestMethod `
 
 $today = Get-Date
 $calendarDate = $today.ToString('yyyy-MM-dd')
-$historyDate = $today.AddDays(-7).ToString('yyyy-MM-dd')
+$historyDate = $today.AddDays(-1).ToString('yyyy-MM-dd')
 $exerciseTypesDate = $today.AddDays(14).ToString('yyyy-MM-dd')
 $calendarTimestamp = [DateTime]::ParseExact(
     $calendarDate,

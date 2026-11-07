@@ -418,6 +418,10 @@ Role-specific tests skip the other identity. Its screenshots are
 
 Browser tests use one headless Chrome instance per invocation. No
 foreground-window acknowledgment or user interaction is required.
+The shared workspace fixture uses yesterday's completion and discussion
+activity, keeping historical records inside the athlete dashboard's rolling
+seven-day window. Workspace checks verify today's schedule in athlete All
+and every populated category heading in both dashboards.
 
 Flutter Web's semantics DOM does not reliably propagate ChromeDriver element
 clears into `TextEditingController`, or native pointer gestures into

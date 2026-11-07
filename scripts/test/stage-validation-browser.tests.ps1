@@ -34,6 +34,37 @@ Assert-True `
     ) `
     -Message 'Browser fixture omitted the canonical materialization key.'
 
+$fixtureTokens = $null
+$fixtureErrors = $null
+$fixtureAst = [System.Management.Automation.Language.Parser]::ParseInput(
+    $browserSmokeSource, [ref]$fixtureTokens, [ref]$fixtureErrors
+)
+$historyAssignment = $fixtureAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left.Extent.Text -eq '$historyDate'
+}, $true)
+Assert-True `
+    -Condition ($null -ne $historyAssignment) `
+    -Message 'Browser history fixture date assignment was not found.'
+$historyExpression = [scriptblock]::Create($historyAssignment.Right.Extent.Text)
+foreach ($today in @(
+    [DateTime]::new(2026, 11, 7, 12, 0, 0),
+    [DateTime]::new(2026, 11, 2, 0, 0, 0),
+    [DateTime]::new(2026, 3, 9, 12, 0, 0)
+)) {
+    $historyDay = [DateTime]::ParseExact(
+        (& $historyExpression), 'yyyy-MM-dd',
+        [Globalization.CultureInfo]::InvariantCulture
+    )
+    Assert-True `
+        -Condition (
+            $historyDay -gt $today.AddDays(-7) -and
+            $historyDay -lt $today.Date
+        ) `
+        -Message 'Completed fixture must remain past-dated inside the athlete activity window.'
+}
+
 $functionalOutput = @'
 BROWSER_TEST_STEP_START|identity=athlete|file=integration_test%2Frecovery.dart|condition=draft%20saved|route=%2Fathlete%2Fworkouts%2Fone|elapsedMs=0|artifact=C%3A%5Cartifacts
 '@
