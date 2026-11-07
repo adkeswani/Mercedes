@@ -94,6 +94,64 @@ void main() {
 
     final semantics = tester.ensureSemantics();
     try {
+      if (role == BrowserSmokeIdentityRole.athlete) {
+        await wait(
+          'All includes today schedule',
+          () =>
+              find
+                  .byKey(const Key('athlete-dashboard-section-todaysWorkouts'))
+                  .evaluate()
+                  .isNotEmpty &&
+              find
+                  .textContaining('Browser Calendar Workout')
+                  .evaluate()
+                  .isNotEmpty,
+        );
+        for (final category in ['completion', 'comment', 'reaction']) {
+          await wait(
+            'athlete All category $category',
+            () => find
+                .byKey(Key('athlete-dashboard-section-$category'))
+                .evaluate()
+                .isNotEmpty,
+          );
+        }
+        expect(
+            tester
+                .widget<FilterChip>(
+                    find.byKey(const Key('athlete-dashboard-filter-all')))
+                .selected,
+            isTrue);
+        expect(find.widgetWithText(FilledButton, 'Complete'), findsWidgets);
+        await tester.tap(
+            find.byKey(const Key('athlete-dashboard-filter-todaysWorkouts')));
+        await wait(
+          'today filter keeps scheduled workout',
+          () =>
+              find
+                  .textContaining('Browser Calendar Workout')
+                  .evaluate()
+                  .isNotEmpty &&
+              find
+                  .byKey(const Key('athlete-dashboard-section-completion'))
+                  .evaluate()
+                  .isEmpty,
+        );
+        await tester.tap(find.byKey(const Key('athlete-dashboard-filter-all')));
+        await wait(
+          'All restores schedule and activity groups',
+          () =>
+              find
+                  .byKey(const Key('athlete-dashboard-section-completion'))
+                  .evaluate()
+                  .isNotEmpty &&
+              find
+                  .textContaining('Browser Calendar Workout')
+                  .evaluate()
+                  .isNotEmpty,
+        );
+      }
+
       final surfaces = role == BrowserSmokeIdentityRole.trainer
           ? trainerWorkspaceSurfaces
           : athleteWorkspaceSurfaces;
@@ -124,6 +182,22 @@ void main() {
             'visible $text on ${surface.route}',
             () => find.textContaining(text).evaluate().isNotEmpty,
           );
+        }
+        if (surface.marker == 'trainer-dashboard') {
+          for (final category in [
+            'completion',
+            'comment',
+            'reaction',
+            'programEndingSoon',
+          ]) {
+            await wait(
+              'trainer All category $category',
+              () => find
+                  .byKey(Key('trainer-dashboard-section-$category'))
+                  .evaluate()
+                  .isNotEmpty,
+            );
+          }
         }
         if (surface.marker == 'athlete-calendar') {
           final day = find.byKey(
@@ -188,6 +262,9 @@ void main() {
         mountedAppRouter(tester).go(mode.initialLocation);
         await tester.pumpAndSettle();
         await binding.takeScreenshot('$identity-header-identity');
+        if (role == BrowserSmokeIdentityRole.athlete) {
+          await binding.takeScreenshot('athlete-dashboard');
+        }
         for (final surface in surfaces) {
           await openSurface(surface);
           final collapse = surface.collapseControl;

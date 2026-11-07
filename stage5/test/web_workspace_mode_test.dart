@@ -247,7 +247,7 @@ void main() {
       expect(preference.writes, ['trainer']);
     });
 
-    testWidgets('athlete Today shows the dashboard without the schedule card',
+    testWidgets('athlete All includes today without the legacy schedule card',
         (tester) async {
       _setViewport(tester, const Size(1280, 800));
       final preference = _FakeWebWorkspacePreference();
@@ -267,7 +267,9 @@ void main() {
       expect(find.byType(HomeScreenContent), findsOneWidget);
       expect(find.text('Dashboard'), findsOneWidget);
       expect(find.text('All'), findsOneWidget);
-      expect(find.text("Today's Workouts"), findsOneWidget);
+      expect(find.text("Today's Workouts"), findsNWidgets(2));
+      expect(find.byKey(const Key('athlete-dashboard-section-todaysWorkouts')),
+          findsOneWidget);
       expect(find.text('Comments'), findsOneWidget);
       expect(find.text('Reactions'), findsOneWidget);
       expect(find.text('My Schedule'), findsNothing);

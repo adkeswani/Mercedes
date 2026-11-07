@@ -9,6 +9,92 @@ import 'package:stage5/features/trainer_dashboard/presentation/trainer_dashboard
 import 'package:stage5/features/trainer_dashboard/presentation/trainer_dashboard_screen.dart';
 
 void main() {
+  testWidgets('All includes every trainer category under ordered headings',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1180, 1800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await _pumpDashboard(
+      tester,
+      load: () async => TrainerDashboardPage(
+        events: [
+          ProgramEndingSoonActivityEvent(
+            id: 'program-ending:instance-1',
+            occurredAt: DateTime(2026, 9, 26),
+            athleteId: 'athlete-1',
+            athleteName: 'Ada Athlete',
+            programInstanceId: 'instance-1',
+            programId: 'program-1',
+            programName: 'Strength Foundations',
+            endDate: '2026-09-26',
+            daysRemaining: 7,
+          ),
+          _completion(),
+          CommentActivityEvent(
+            id: 'comment:new',
+            occurredAt: DateTime(2026, 9, 19, 9),
+            athleteId: 'athlete-1',
+            athleteName: 'Ada Athlete',
+            workoutInstanceId: 'completed-1',
+            comment: 'Newest comment',
+            authorName: 'Coach',
+          ),
+          ReactionActivityEvent(
+            id: 'reaction:1',
+            occurredAt: DateTime(2026, 9, 19, 8),
+            athleteId: 'athlete-1',
+            athleteName: 'Ada Athlete',
+            workoutInstanceId: 'completed-1',
+            reactionId: 'celebrate',
+            actorName: 'Coach',
+          ),
+          CommentActivityEvent(
+            id: 'comment:old',
+            occurredAt: DateTime(2026, 9, 19, 7),
+            athleteId: 'athlete-1',
+            athleteName: 'Ada Athlete',
+            workoutInstanceId: 'completed-1',
+            comment: 'Older comment',
+            authorName: 'Athlete',
+          ),
+        ],
+        isBounded: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    var previousY = -1.0;
+    for (final category in [
+      'completion',
+      'comment',
+      'reaction',
+      'programEndingSoon',
+    ]) {
+      final heading = find.byKey(Key('trainer-dashboard-section-$category'));
+      expect(heading, findsOneWidget);
+      final y = tester.getTopLeft(heading).dy;
+      expect(y, greaterThan(previousY));
+      previousY = y;
+    }
+    expect(find.text('Heavy Pull completed'), findsOneWidget);
+    expect(find.text('Strength Foundations ends soon'), findsOneWidget);
+    expect(find.textContaining('Newest comment'), findsOneWidget);
+    expect(find.textContaining('Older comment'), findsOneWidget);
+    expect(tester.getTopLeft(find.textContaining('Newest comment')).dy,
+        lessThan(tester.getTopLeft(find.textContaining('Older comment')).dy));
+    expect(find.textContaining('Celebrate'), findsWidgets);
+    expect(find.byKey(const Key('trainer-dashboard-section-personalBest')),
+        findsNothing);
+    await tester
+        .tap(find.byKey(const Key('trainer-dashboard-filter-comments')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('trainer-dashboard-section-comment')),
+        findsNothing);
+    expect(find.text('Heavy Pull completed'), findsNothing);
+    expect(find.text('Strength Foundations ends soon'), findsNothing);
+    expect(find.textContaining('Newest comment'), findsOneWidget);
+  });
+
   testWidgets('shows loading then filter-specific empty states', (
     tester,
   ) async {

@@ -42,7 +42,10 @@ Implemented in this slice:
   atomically writes the immutable result and deletes the server draft, then
   clears the local copy only after success.
 - Athlete navigation for Today, My calendar, My programs, Workout history,
-  Progress, and Messages. Today reuses the current training experience. My
+  Progress, and Messages. Dashboard **All** starts with the same current-day
+  workouts shown by **Today's Workouts**, then groups recent completions,
+  comments, and reactions under category headings. Schedule failures remain
+  visible with a retry action, independently of the recent activity feed. My
   calendar now uses the athlete-owned date-range query directly instead of
   entering the trainer calendar's enrollment and legacy-migration flow.
 - A dedicated My programs workspace backed by signed-in-athlete
@@ -60,7 +63,9 @@ Implemented in this slice:
   Program library, and Calendar & assignments. Existing roster, library, and
   trainer calendar screens remain wired to their natural destinations.
 - A real Trainer Dashboard at `/trainer/dashboard` with one bounded,
-  reverse-chronological activity feed. It combines completed workouts,
+  activity feed, newest first within each category. **All** includes headings
+  for Completions, Comments, Reactions, and Programs when populated; individual
+  category filters remain unchanged. It combines completed workouts,
   workout-thread comments and reactions, and active athlete programs ending in
   the next seven calendar days. Filters cover All, Completions, Comments,
   Reactions, and Programs; Personal bests remains a disabled, clearly labelled

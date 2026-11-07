@@ -65,6 +65,10 @@ class _TrainerDashboardScreenState
             );
           });
           final events = filterTrainerActivityEvents(page.events, _filter);
+          final groups = {
+            for (final type in TrainerActivityEventType.values)
+              type: events.where((event) => event.type == type).toList(),
+          };
           return RefreshIndicator(
             onRefresh: () async {
               ref.invalidate(trainerDashboardProvider);
@@ -84,24 +88,45 @@ class _TrainerDashboardScreenState
                     hasScrollBody: false,
                     child: _DashboardEmpty(filter: _filter),
                   )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                    sliver: SliverList.separated(
-                      itemCount: events.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) => Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 980),
-                          child: _ActivityCard(
-                            event: events[index],
-                            onQuickComment: _quickComment,
-                            onReaction: _reaction,
+                else if (_filter == TrainerActivityFilter.all) ...[
+                  for (final group in groups.entries)
+                    if (group.value.isNotEmpty) ...[
+                      SliverToBoxAdapter(
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1012),
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                              child: Semantics(
+                                header: true,
+                                child: Text(
+                                  key: Key(
+                                      'trainer-dashboard-section-${group.key.name}'),
+                                  switch (group.key) {
+                                    TrainerActivityEventType.completion =>
+                                      'Completions',
+                                    TrainerActivityEventType.comment =>
+                                      'Comments',
+                                    TrainerActivityEventType.reaction =>
+                                      'Reactions',
+                                    TrainerActivityEventType
+                                          .programEndingSoon =>
+                                      'Programs',
+                                    TrainerActivityEventType.personalBest =>
+                                      'Personal bests',
+                                  },
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
+                      _eventSliver(group.value),
+                    ],
+                ] else
+                  _eventSliver(events),
                 if (page.isBounded)
                   const SliverToBoxAdapter(
                     child: Padding(
@@ -116,6 +141,25 @@ class _TrainerDashboardScreenState
       ),
     );
   }
+
+  Widget _eventSliver(List<TrainerActivityEvent> events) => SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+        sliver: SliverList.separated(
+          itemCount: events.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (context, index) => Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 980),
+              child: _ActivityCard(
+                key: ValueKey(events[index].id),
+                event: events[index],
+                onQuickComment: _quickComment,
+                onReaction: _reaction,
+              ),
+            ),
+          ),
+        ),
+      );
 
   Future<void> _quickComment(CompletionActivityEvent event, String body) async {
     if (widget.onQuickComment != null) {
@@ -250,6 +294,7 @@ class _ActivityCard extends StatelessWidget {
     required this.event,
     required this.onQuickComment,
     required this.onReaction,
+    super.key,
   });
 
   final TrainerActivityEvent event;

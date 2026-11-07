@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,7 +8,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:stage5/features/athlete_dashboard/domain/athlete_activity_event.dart';
 import 'package:stage5/features/athlete_dashboard/presentation/athlete_dashboard_providers.dart';
 import 'package:stage5/features/athlete_dashboard/presentation/athlete_dashboard_view.dart';
+import 'package:stage5/core/enums.dart';
+import 'package:stage5/features/programs/data/program_repository.dart';
+import 'package:stage5/features/programs/presentation/program_providers.dart';
+import 'package:stage5/features/workouts/data/workout_template_repository.dart';
+import 'package:stage5/features/workouts/domain/workout_instance.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
+import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
 void main() {
   testWidgets(
@@ -23,7 +30,7 @@ void main() {
         find.byKey(const Key('athlete-dashboard-filter-all')),
         findsOneWidget,
       );
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsWidgets);
 
       completer.complete(
         const AthleteDashboardPage(events: [], isBounded: false),
@@ -121,21 +128,163 @@ void main() {
     expect(find.text('No recent activity'), findsOneWidget);
     expect(attempts, 2);
   });
+
+  testWidgets('All includes today and groups every activity category once',
+      (tester) async {
+    DateRange? requestedRange;
+    await _pumpDashboard(
+      tester,
+      schedule: (range) {
+        requestedRange = range;
+        return Stream.value([_todayWorkout()]);
+      },
+      load: () async => AthleteDashboardPage(
+        events: [
+          AthleteCommentActivityEvent(
+            id: 'comment:new',
+            occurredAt: DateTime(2026, 11, 7, 12),
+            workoutInstanceId: 'completed',
+            comment: 'Newest comment',
+            authorName: 'Coach',
+          ),
+          AthleteCompletionActivityEvent(
+            id: 'completion:1',
+            occurredAt: DateTime(2026, 11, 7, 11),
+            workoutInstanceId: 'completed',
+            workoutName: 'Pull session',
+            rpe: 7,
+            durationMinutes: 40,
+          ),
+          AthleteReactionActivityEvent(
+            id: 'reaction:1',
+            occurredAt: DateTime(2026, 11, 7, 10),
+            workoutInstanceId: 'completed',
+            reactionId: 'celebrate',
+            actorName: 'Coach',
+          ),
+          AthleteCommentActivityEvent(
+            id: 'comment:old',
+            occurredAt: DateTime(2026, 11, 7, 9),
+            workoutInstanceId: 'completed',
+            comment: 'Older comment',
+            authorName: 'You',
+          ),
+        ],
+        isBounded: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final today = _todayWorkout().scheduledDate;
+    expect(requestedRange!.startDate, today);
+    expect(requestedRange!.endDate, today);
+    expect(find.text('Complete'), findsOneWidget);
+    expect(find.text('You completed Pull session'), findsOneWidget);
+    expect(find.text('Coach reacted'), findsOneWidget);
+    var previousY = -1.0;
+    for (final category in [
+      'todaysWorkouts',
+      'completion',
+      'comment',
+      'reaction'
+    ]) {
+      final heading = find.byKey(Key('athlete-dashboard-section-$category'));
+      expect(heading, findsOneWidget);
+      final y = tester.getTopLeft(heading).dy;
+      expect(y, greaterThan(previousY));
+      previousY = y;
+    }
+    expect(tester.getTopLeft(find.textContaining('Newest comment')).dy,
+        lessThan(tester.getTopLeft(find.textContaining('Older comment')).dy));
+
+    await tester.ensureVisible(
+        find.byKey(const Key('athlete-dashboard-filter-todaysWorkouts')));
+    await tester
+        .tap(find.byKey(const Key('athlete-dashboard-filter-todaysWorkouts')));
+    await tester.pumpAndSettle();
+    expect(find.text('Complete'), findsOneWidget);
+    expect(find.text('You completed Pull session'), findsNothing);
+    expect(find.byKey(const Key('athlete-dashboard-section-todaysWorkouts')),
+        findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('today remains visible when recent activity fails',
+      (tester) async {
+    await _pumpDashboard(
+      tester,
+      schedule: (_) => Stream.value([_todayWorkout()]),
+      load: () => Future.error(StateError('activity failed')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Complete'), findsOneWidget);
+    expect(find.text('Unable to load activity'), findsOneWidget);
+    expect(find.text('No workouts scheduled today'), findsNothing);
+  });
+
+  testWidgets('All surfaces and retries a failed today schedule',
+      (tester) async {
+    var attempts = 0;
+    await _pumpDashboard(
+      tester,
+      schedule: (_) {
+        attempts++;
+        return attempts == 1
+            ? Stream.error(StateError('schedule failed'))
+            : Stream.value([_todayWorkout()]);
+      },
+      load: () async =>
+          const AthleteDashboardPage(events: [], isBounded: false),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text("Unable to load today's workouts"), findsOneWidget);
+    expect(find.text('No recent activity'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Retry'));
+    await tester.pumpAndSettle();
+    expect(attempts, 2);
+    expect(find.text('Complete'), findsOneWidget);
+    expect(find.text("Unable to load today's workouts"), findsNothing);
+  });
 }
 
 Future<void> _pumpDashboard(
   WidgetTester tester, {
   required Future<AthleteDashboardPage> Function() load,
+  Stream<List<WorkoutInstance>> Function(DateRange range)? schedule,
 }) {
+  final firestore = FakeFirebaseFirestore();
   return tester.pumpWidget(
     ProviderScope(
       overrides: [
         athleteDashboardProvider.overrideWith((ref) => load()),
-        athleteScheduleProvider.overrideWith((ref, range) => Stream.value([])),
+        athleteScheduleProvider.overrideWith(
+            (ref, range) => schedule?.call(range) ?? Stream.value([])),
+        workoutTemplateRepositoryProvider
+            .overrideWithValue(WorkoutTemplateRepository(firestore: firestore)),
+        programRepositoryProvider
+            .overrideWithValue(ProgramRepository(firestore: firestore)),
       ],
       child: const MaterialApp(
-        home: Scaffold(body: AthleteDashboardView()),
+        home: Scaffold(
+            body: SingleChildScrollView(child: AthleteDashboardView())),
       ),
     ),
+  );
+}
+
+WorkoutInstance _todayWorkout() {
+  final now = DateTime.now();
+  return WorkoutInstance(
+    id: 'today',
+    programId: 'program-1',
+    athleteId: 'athlete-1',
+    workoutTemplateId: 'workout-1',
+    workoutTemplateVersion: 1,
+    scheduledDate: now.toIso8601String().substring(0, 10),
+    assignedBy: 'trainer-1',
+    assignedAt: now,
+    status: WorkoutInstanceStatus.scheduled,
+    workoutType: WorkoutType.fullBody,
+    createdAt: now,
+    updatedAt: now,
   );
 }

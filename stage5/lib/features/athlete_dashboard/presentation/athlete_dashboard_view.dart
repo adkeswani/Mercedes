@@ -52,7 +52,15 @@ class _AthleteDashboardViewState extends State<AthleteDashboardView> {
           ),
         ),
         const SizedBox(height: 12),
-        if (_filter == AthleteActivityFilter.todaysWorkouts)
+        if (_filter == AthleteActivityFilter.all) ...[
+          const _SectionHeading(
+            key: Key('athlete-dashboard-section-todaysWorkouts'),
+            label: "Today's Workouts",
+          ),
+          const _TodaysWorkoutsSection(),
+          const SizedBox(height: 16),
+          _AthleteActivityFeed(filter: _filter),
+        ] else if (_filter == AthleteActivityFilter.todaysWorkouts)
           const _TodaysWorkoutsSection()
         else
           _AthleteActivityFeed(filter: _filter),
@@ -115,14 +123,43 @@ class _AthleteActivityFeed extends ConsumerWidget {
       data: (page) {
         final events = filterAthleteActivityEvents(page.events, filter);
         if (events.isEmpty) {
-          return _FeedEmpty(filter: filter);
-        }
-        return Column(
-          children: [
-            for (final event in events) ...[
-              _ActivityCard(event: event),
-              const SizedBox(height: 8),
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (filter == AthleteActivityFilter.all)
+                const _SectionHeading(label: 'Recent activity'),
+              _FeedEmpty(filter: filter),
             ],
+          );
+        }
+        final groups = {
+          for (final type in AthleteActivityEventType.values)
+            type: events.where((event) => event.type == type).toList(),
+        };
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (filter == AthleteActivityFilter.all) ...[
+              for (final group in groups.entries)
+                if (group.value.isNotEmpty) ...[
+                  _SectionHeading(
+                    key: Key('athlete-dashboard-section-${group.key.name}'),
+                    label: switch (group.key) {
+                      AthleteActivityEventType.completion => 'Completed',
+                      AthleteActivityEventType.comment => 'Comments',
+                      AthleteActivityEventType.reaction => 'Reactions',
+                    },
+                  ),
+                  for (final event in group.value) ...[
+                    _ActivityCard(event: event),
+                    const SizedBox(height: 8),
+                  ],
+                ],
+            ] else
+              for (final event in events) ...[
+                _ActivityCard(event: event),
+                const SizedBox(height: 8),
+              ],
             if (page.isBounded)
               const Padding(
                 padding: EdgeInsets.only(top: 4, bottom: 8),
@@ -133,6 +170,21 @@ class _AthleteActivityFeed extends ConsumerWidget {
       },
     );
   }
+}
+
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading({required this.label, super.key});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        header: true,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 16, bottom: 12),
+          child: Text(label, style: Theme.of(context).textTheme.titleLarge),
+        ),
+      );
 }
 
 class _ActivityCard extends StatelessWidget {
@@ -200,10 +252,15 @@ class _SimpleActivityCard extends StatelessWidget {
 }
 
 class _FeedError extends StatelessWidget {
-  const _FeedError({required this.error, required this.onRetry});
+  const _FeedError({
+    required this.error,
+    required this.onRetry,
+    this.title = 'Unable to load activity',
+  });
 
   final Object error;
   final VoidCallback onRetry;
+  final String title;
 
   @override
   Widget build(BuildContext context) {
@@ -214,7 +271,7 @@ class _FeedError extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Unable to load activity',
+              title,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 4),
@@ -281,9 +338,9 @@ class _TodaysWorkoutsSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final today = _formatIsoDate(DateTime.now());
-    final scheduleAsync = ref.watch(
-      athleteScheduleProvider(DateRange(startDate: today, endDate: today)),
-    );
+    final scheduleProvider =
+        athleteScheduleProvider(DateRange(startDate: today, endDate: today));
+    final scheduleAsync = ref.watch(scheduleProvider);
 
     return scheduleAsync.when(
       data: (instances) {
@@ -300,7 +357,11 @@ class _TodaysWorkoutsSection extends ConsumerWidget {
         padding: EdgeInsets.all(16),
         child: Center(child: CircularProgressIndicator()),
       ),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (error, _) => _FeedError(
+        title: "Unable to load today's workouts",
+        error: error,
+        onRetry: () => ref.invalidate(scheduleProvider),
+      ),
     );
   }
 }
