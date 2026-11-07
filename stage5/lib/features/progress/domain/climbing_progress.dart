@@ -23,8 +23,11 @@ enum ProgressPreset {
   static DateTime _yearStart(DateTime now) {
     final exclusive = DateTime(now.year, now.month, now.day + 1);
     final lastDay = DateTime(exclusive.year - 1, exclusive.month + 1, 0).day;
-    return DateTime(exclusive.year - 1, exclusive.month,
-        exclusive.day > lastDay ? lastDay : exclusive.day);
+    return DateTime(
+      exclusive.year - 1,
+      exclusive.month,
+      exclusive.day > lastDay ? lastDay : exclusive.day,
+    );
   }
 }
 
@@ -110,10 +113,14 @@ class ClimbingSession {
     required this.unrecordedBlocks,
     required this.legacyRoutes,
     this.workoutName = 'Workout',
+    this.programId,
+    this.programName,
   });
   final String instanceId;
   final String athleteId;
   final String workoutName;
+  final String? programId;
+  final String? programName;
   (String, String) get selectionKey => (athleteId, instanceId);
   final String templateId;
   final int version;
@@ -133,22 +140,27 @@ class ClimbingSession {
     WorkoutInstance instance,
     WorkoutTemplateVersion version, {
     String workoutName = 'Workout',
+    String? programName,
   }) {
     if (!instance.isCompleted) return null;
     if (instance.workoutTemplateVersion != version.versionNumber) {
       throw StateError(
-          'Progress requires the workout instance\'s pinned version');
+        'Progress requires the workout instance\'s pinned version',
+      );
     }
     final blocks = version.blocks
-        .where((block) =>
-            block is ClimbingRouteBlock ||
-            block is ClimbingCircuitBlock ||
-            block is FreeClimbingBlock)
+        .where(
+          (block) =>
+              block is ClimbingRouteBlock ||
+              block is ClimbingCircuitBlock ||
+              block is FreeClimbingBlock,
+        )
         .toList();
     if (blocks.isEmpty) return null;
     if (instance.completedAt == null) {
       throw StateError(
-          'Completed workout ${instance.id} has no completion time');
+        'Completed workout ${instance.id} has no completion time',
+      );
     }
     final climbs = <RecordedClimbs>[];
     final routes = <RoutePerformance>[];
@@ -166,7 +178,8 @@ class ClimbingSession {
               1) {
         final candidates = instance.actuals
             .where(
-                (a) => !a.hasExplicitSlotId && a.exerciseId == slot.exerciseId)
+              (a) => !a.hasExplicitSlotId && a.exerciseId == slot.exerciseId,
+            )
             .toList();
         if (candidates.length == 1) actual = candidates.single;
       }
@@ -180,19 +193,22 @@ class ClimbingSession {
       }
       if (actual.exerciseId != slot.exerciseId) {
         throw StateError(
-            'Result ${slot.slotId} does not match its pinned exercise');
+          'Result ${slot.slotId} does not match its pinned exercise',
+        );
       }
       actual.validateForBlock(block);
       if (block is ClimbingRouteBlock) {
         final system = block.gradingSystem!;
         validateClimbingGrade(system, block.grade);
-        routes.add(RoutePerformance(
-          system: system,
-          grade: block.grade,
-          sent: actual.sent,
-          attempts: actual.attempts,
-          name: block.title ?? slot.exerciseName ?? 'Single route',
-        ));
+        routes.add(
+          RoutePerformance(
+            system: system,
+            grade: block.grade,
+            sent: actual.sent,
+            attempts: actual.attempts,
+            name: block.title ?? slot.exerciseName ?? 'Single route',
+          ),
+        );
         if (actual.sent == null) {
           unrecorded++;
         } else {
@@ -211,14 +227,16 @@ class ClimbingSession {
             unrecorded++;
           }
         }
-        circuits.add(CircuitPerformance(
-          key:
-              '${instance.workoutTemplateId}/${version.versionNumber}/${block.blockId}',
-          name: block.title ?? 'Climbing Circuit',
-          prescription: block.rows,
-          completedRows: completed,
-          totalRows: block.rows.length,
-        ));
+        circuits.add(
+          CircuitPerformance(
+            key:
+                '${instance.workoutTemplateId}/${version.versionNumber}/${block.blockId}',
+            name: block.title ?? 'Climbing Circuit',
+            prescription: block.rows,
+            completedRows: completed,
+            totalRows: block.rows.length,
+          ),
+        );
       } else if (block is FreeClimbingBlock) {
         if (actual.freeRows!.isEmpty) unrecorded++;
         for (final row in actual.freeRows!) {
@@ -230,6 +248,8 @@ class ClimbingSession {
       instanceId: instance.id,
       athleteId: instance.athleteId,
       workoutName: workoutName,
+      programId: progressProgramId(instance),
+      programName: programName,
       templateId: instance.workoutTemplateId,
       version: version.versionNumber,
       date: instance.completedAt!.toLocal(),
@@ -239,6 +259,32 @@ class ClimbingSession {
       unrecordedBlocks: unrecorded,
       legacyRoutes: legacy,
     );
+  }
+}
+
+// Ad-hoc workouts also have a programId for authorization, not membership.
+String? progressProgramId(WorkoutInstance instance) =>
+    instance.resolvedProgramInstanceId != null || instance.programVersion > 0
+        ? instance.programId
+        : null;
+
+class ProgressWorkoutGroup {
+  ProgressWorkoutGroup({
+    required this.key,
+    required this.title,
+    required List<ClimbingSession> sessions,
+  }) : sessions = List.unmodifiable(sessions);
+  final String key;
+  final String title;
+  final List<ClimbingSession> sessions;
+
+  bool? selectionValue(Set<(String, String)> excluded) {
+    final included = sessions
+        .where((session) => !excluded.contains(session.selectionKey))
+        .length;
+    if (included == 0) return false;
+    if (included == sessions.length) return true;
+    return null;
   }
 }
 
@@ -260,8 +306,11 @@ class ClimbingSummary {
     for (final session in sessions) {
       for (final entry in session.climbs.where((c) => c.system == system)) {
         if (entry.count > 0) {
-          counts.update(entry.grade, (n) => n + entry.count,
-              ifAbsent: () => entry.count);
+          counts.update(
+            entry.grade,
+            (n) => n + entry.count,
+            ifAbsent: () => entry.count,
+          );
         }
       }
     }
@@ -279,7 +328,8 @@ class ClimbingSummary {
     ];
     if (grades.isEmpty) return null;
     grades.sort(
-        (a, b) => system.grades.indexOf(a).compareTo(system.grades.indexOf(b)));
+      (a, b) => system.grades.indexOf(a).compareTo(system.grades.indexOf(b)),
+    );
     return grades.last;
   }
 
@@ -300,15 +350,45 @@ class ProgressBucket {
 }
 
 class ClimbingProgressReport {
-  ClimbingProgressReport(
-      {required this.range, required List<ClimbingSession> sessions})
-      : current =
+  ClimbingProgressReport({
+    required this.range,
+    required List<ClimbingSession> sessions,
+  })  : current =
             ClimbingSummary(sessions.where((s) => range.contains(s.date))),
         previous = ClimbingSummary(
-            sessions.where((s) => range.previous.contains(s.date)));
+          sessions.where((s) => range.previous.contains(s.date)),
+        );
   final ProgressRange range;
   final ClimbingSummary current;
   final ClimbingSummary previous;
+
+  List<ProgressWorkoutGroup> get workoutGroups {
+    final groups = <String, List<ClimbingSession>>{};
+    for (final session in [...current.sessions, ...previous.sessions]) {
+      final key = session.programId == null
+          ? 'independent'
+          : 'program:${session.programId}';
+      groups.putIfAbsent(key, () => []).add(session);
+    }
+    final result = [
+      for (final entry in groups.entries)
+        ProgressWorkoutGroup(
+          key: entry.key,
+          title: entry.key == 'independent'
+              ? 'Independent workouts'
+              : entry.value.first.programName ??
+                  'Program details unavailable (${entry.value.first.programId})',
+          sessions: entry.value..sort((a, b) => b.date.compareTo(a.date)),
+        ),
+    ];
+    result.sort((a, b) {
+      if (a.key == 'independent') return b.key == 'independent' ? 0 : 1;
+      if (b.key == 'independent') return -1;
+      final titleOrder = a.title.compareTo(b.title);
+      return titleOrder == 0 ? a.key.compareTo(b.key) : titleOrder;
+    });
+    return result;
+  }
 
   ClimbingProgressReport excluding(Set<(String, String)> excluded) =>
       ClimbingProgressReport(
@@ -329,11 +409,17 @@ class ClimbingProgressReport {
               : DateTime(start.year, start.month + 1);
       final last = DateTime(next.year, next.month, next.day - 1);
       final bucketRange = ProgressRange(
-          start: start, end: last.isAfter(range.end) ? range.end : last);
-      result.add(ProgressBucket(
+        start: start,
+        end: last.isAfter(range.end) ? range.end : last,
+      );
+      result.add(
+        ProgressBucket(
           bucketRange,
           ClimbingSummary(
-              current.sessions.where((s) => bucketRange.contains(s.date)))));
+            current.sessions.where((s) => bucketRange.contains(s.date)),
+          ),
+        ),
+      );
       start = next;
     }
     return result;

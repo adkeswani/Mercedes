@@ -87,6 +87,16 @@ $progressCompletions = @($progressWrites | Where-Object {
 })
 Assert-True -Condition ($progressCompletions.Count -eq 4) `
     -Message 'Progress ranges require distinct week, fortnight, month, and year fixtures.'
+Assert-True -Condition (@($progressCompletions | Where-Object {
+    $_.update.fields.programVersion.integerValue -eq '1' -and
+    $_.update.fields.programId.stringValue -eq 'program'
+}).Count -eq 2) -Message 'Program partial selection requires two contributing workouts.'
+Assert-True -Condition (@($progressCompletions | Where-Object {
+    $_.update.fields.programVersion.integerValue -eq '0'
+}).Count -eq 1) -Message 'Ad-hoc program containers must remain independent.'
+Assert-True -Condition (@($progressCompletions | Where-Object {
+    $_.update.fields.programId.stringValue -eq 'browser-progress-second-program'
+}).Count -eq 1) -Message 'Cross-program selection needs a separate source program.'
 Assert-True -Condition $browserSmokeSource.Contains(
     "if (`$TestTarget -match 'climbing_progress_canary_test\.dart$')"
 ) -Message 'Progress fixtures must not change other browser scenarios.'

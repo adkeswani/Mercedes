@@ -69,6 +69,13 @@ function Get-ProgressBrowserFixtureWrites {
         blocks = $blocks; slots = $slots; childWorkouts = @()
     }
     $documents = @(
+        @{ path = 'programs/browser-progress-second-program'; data = @{
+            name = 'Browser Second Progress Program'; ownerId = $TrainerId
+            clientAthleteId = $AthleteId; type = 'assignable'; status = 'published'
+            currentVersion = 1; createdAt = $time; updatedAt = $time
+            createdBy = $TrainerId; updatedBy = $TrainerId
+            deletedAt = $null; deletedBy = $null
+        } }
         @{ path = "workoutTemplates/$workoutId"; data = $header }
         @{ path = "workoutTemplates/$workoutId/workoutTemplateVersions/1"; data = $version }
         for ($i = 0; $i -lt $blocks.Count; $i++) {
@@ -115,6 +122,13 @@ function Get-ProgressBrowserFixtureWrites {
                     @{ rowId = 'free-row'; gradingSystem = 'vScale'; grade = 'V8'; climbs = 4 }
                 ) }
         )
+        if ($age -in @(1, 10)) {
+            $instance.programVersion = 1
+            $instance.athleteProgramInstanceId = 'browser-athlete-program-instance'
+        } elseif ($age -eq 200) {
+            $instance.programVersion = 1
+            $instance.programId = 'browser-progress-second-program'
+        }
         $documents += @{ path = "workoutInstances/$instanceId"; data = $instance }
         for ($i = 0; $i -lt $results.Count; $i++) {
             $documents += @{ path = "workoutInstances/$instanceId/slotResults/$($slots[$i].slotId)"; data = $results[$i] }

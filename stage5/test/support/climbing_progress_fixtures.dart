@@ -64,11 +64,16 @@ WorkoutInstance progressInstance({
   bool? sent = true,
   int? attempts = 2,
   bool freeCounts = true,
+  String programId = 'program',
+  int programVersion = 0,
+  String? programInstanceId,
 }) {
   final time = date ?? DateTime(2026, 11, 6, 12);
   return WorkoutInstance(
     id: id,
-    programId: 'program',
+    programId: programId,
+    programVersion: programVersion,
+    athleteProgramInstanceId: programInstanceId,
     athleteId: athlete,
     workoutTemplateId: 'template',
     workoutTemplateVersion: version,
@@ -129,6 +134,8 @@ ClimbingSession progressSession({
   String grade = 'V4',
   bool? sent = true,
   bool freeCounts = true,
+  String? programId,
+  String? programName,
 }) =>
     ClimbingSession.fromWorkout(
       progressInstance(
@@ -136,6 +143,9 @@ ClimbingSession progressSession({
           date: date,
           version: version,
           sent: sent,
+          programId: programId ?? 'program',
+          programVersion: programId == null ? 0 : 1,
           freeCounts: freeCounts),
       progressVersion(version: version, grade: grade),
+      programName: programName,
     )!;

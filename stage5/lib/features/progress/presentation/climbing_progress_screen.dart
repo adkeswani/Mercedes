@@ -63,6 +63,18 @@ class _ClimbingProgressScreenState
     ref.invalidate(climbingProgressProvider(_range));
   }
 
+  void _selectWorkouts(Iterable<ClimbingSession> sessions, bool include) {
+    setState(() {
+      for (final session in sessions) {
+        if (include) {
+          _excludedWorkouts.remove(session.selectionKey);
+        } else {
+          _excludedWorkouts.add(session.selectionKey);
+        }
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final progress = ref.watch(climbingProgressProvider(_range));
@@ -101,7 +113,8 @@ class _ClimbingProgressScreenState
                 key: const Key('progress-custom-range'),
                 avatar: const Icon(Icons.date_range),
                 label: Text(
-                    _preset == null ? 'Custom range selected' : 'Custom dates'),
+                  _preset == null ? 'Custom range selected' : 'Custom dates',
+                ),
                 onPressed: _pickDates,
               ),
             ],
@@ -135,9 +148,11 @@ class _ClimbingProgressScreenState
               final selected = report.excluding(_excludedWorkouts);
               if (browserAutomationEnabled) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  markBrowserSmokeSurfaceReady('athlete-progress',
-                      content:
-                          '${selected.current.sessionCount} climbing sessions');
+                  markBrowserSmokeSurfaceReady(
+                    'athlete-progress',
+                    content:
+                        '${selected.current.sessionCount} climbing sessions',
+                  );
                 });
               }
               return Column(
@@ -147,25 +162,17 @@ class _ClimbingProgressScreenState
                     available: report,
                     selected: selected,
                     excluded: _excludedWorkouts,
-                    onToggle: (session, include) => setState(() {
-                      if (include) {
-                        _excludedWorkouts.remove(session.selectionKey);
-                      } else {
-                        _excludedWorkouts.add(session.selectionKey);
-                      }
-                    }),
-                    onSelectAll: (include) => setState(() {
-                      for (final session in [
+                    onToggle: (session, include) =>
+                        _selectWorkouts([session], include),
+                    onSelectAll: (include) => _selectWorkouts(
+                      [
                         ...report.current.sessions,
                         ...report.previous.sessions,
-                      ]) {
-                        if (include) {
-                          _excludedWorkouts.remove(session.selectionKey);
-                        } else {
-                          _excludedWorkouts.add(session.selectionKey);
-                        }
-                      }
-                    }),
+                      ],
+                      include,
+                    ),
+                    onSelectGroup: (group, include) =>
+                        _selectWorkouts(group.sessions, include),
                   ),
                   _ProgressContent(
                     report: selected,
@@ -191,12 +198,14 @@ class _WorkoutSelector extends StatelessWidget {
     required this.excluded,
     required this.onToggle,
     required this.onSelectAll,
+    required this.onSelectGroup,
   });
   final ClimbingProgressReport available;
   final ClimbingProgressReport selected;
   final Set<(String, String)> excluded;
   final void Function(ClimbingSession, bool) onToggle;
   final ValueChanged<bool> onSelectAll;
+  final void Function(ProgressWorkoutGroup, bool) onSelectGroup;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -209,8 +218,9 @@ class _WorkoutSelector extends StatelessWidget {
           children: [
             const Text(
               'Includes completed climbing workouts from any program and independent '
-              'assignments. Uncheck individual sessions to update every chart and '
-              'summary. You can also choose the preceding-period contributions. '
+              'assignments. Expand a program to choose individual sessions. Group '
+              'checkboxes include both this range and its preceding comparison period. '
+              'Every chart and summary updates together. '
               'Selections stay in this view when changing dates; no workout data is changed.',
             ),
             Wrap(
@@ -228,32 +238,47 @@ class _WorkoutSelector extends StatelessWidget {
                 ),
               ],
             ),
-            for (final section in [
-              ('Selected date range', available.current.sessions),
-              ('Preceding comparison period', available.previous.sessions),
-            ]) ...[
-              _Heading(section.$1),
-              if (section.$2.isEmpty)
-                const Text('No climbing workouts in this period.'),
-              for (final session in section.$2.reversed)
-                CheckboxListTile(
-                  key: Key('progress-include-${session.instanceId}'),
-                  value: !excluded.contains(session.selectionKey),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: Text(session.sourceLabel),
-                  subtitle: Text(
-                      '${session.recordedClimbs?.toString() ?? 'Not recorded'} recorded climbs'),
-                  secondary: IconButton(
-                    tooltip: 'View workout ${calendarDate(session.date)}',
-                    icon: const Icon(Icons.open_in_new),
-                    onPressed: () =>
-                        context.push('/athlete/workouts/${session.instanceId}'),
+            for (final group in available.workoutGroups)
+              ExpansionTile(
+                key: Key('progress-group-${group.key}'),
+                leading: Checkbox(
+                  key: Key('progress-group-check-${group.key}'),
+                  tristate: true,
+                  value: group.selectionValue(excluded),
+                  semanticLabel: 'Include workouts from ${group.title}',
+                  onChanged: (_) => onSelectGroup(
+                    group,
+                    group.selectionValue(excluded) != true,
                   ),
-                  onChanged: (include) {
-                    if (include != null) onToggle(session, include);
-                  },
                 ),
-            ],
+                title: Text(group.title),
+                subtitle: Text(
+                    '${group.sessions.where((session) => !excluded.contains(session.selectionKey)).length} of '
+                    '${group.sessions.length} included; '
+                    '${group.sessions.where((session) => available.range.contains(session.date)).length} in selected range, '
+                    '${group.sessions.where((session) => !available.range.contains(session.date)).length} in preceding period'),
+                children: [
+                  for (final session in group.sessions)
+                    CheckboxListTile(
+                      key: Key('progress-include-${session.instanceId}'),
+                      value: !excluded.contains(session.selectionKey),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(session.sourceLabel),
+                      subtitle: Text(
+                          '${session.recordedClimbs?.toString() ?? 'Not recorded'} recorded climbs'
+                          ' · ${available.range.contains(session.date) ? 'Selected range' : 'Preceding period'}'),
+                      secondary: IconButton(
+                        tooltip: 'View workout ${calendarDate(session.date)}',
+                        icon: const Icon(Icons.open_in_new),
+                        onPressed: () => context
+                            .push('/athlete/workouts/${session.instanceId}'),
+                      ),
+                      onChanged: (include) {
+                        if (include != null) onToggle(session, include);
+                      },
+                    ),
+                ],
+              ),
           ],
         ),
       );
@@ -327,9 +352,11 @@ class _ProgressContent extends StatelessWidget {
         if (current.sessions.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Text(hasAvailableWorkouts
-                ? 'No workouts selected for this range.'
-                : 'No completed climbing workouts in this range.'),
+            child: Text(
+              hasAvailableWorkouts
+                  ? 'No workouts selected for this range.'
+                  : 'No completed climbing workouts in this range.',
+            ),
           ),
         const SizedBox(height: 24),
         const _Heading('Sessions over time'),
@@ -339,7 +366,10 @@ class _ProgressContent extends StatelessWidget {
           value: (summary) => summary.sessionCount,
           label: (summary) => '${summary.sessionCount} sessions',
           onTap: (bucket) => _showSources(
-              context, bucket.summary.sessions, bucket.range.label),
+            context,
+            bucket.summary.sessions,
+            bucket.range.label,
+          ),
         ),
         const SizedBox(height: 24),
         Wrap(
@@ -359,7 +389,8 @@ class _ProgressContent extends StatelessWidget {
         _Heading('Recorded climbs by grade - ${system.label}'),
         if (gradeCounts.isEmpty)
           const Text(
-              'No recorded completed climb counts for this grading system.'),
+            'No recorded completed climb counts for this grading system.',
+          ),
         for (final entry in gradeCounts.entries)
           ListTile(
             key: Key('progress-grade-${system.name}-${entry.key}'),
@@ -373,12 +404,14 @@ class _ProgressContent extends StatelessWidget {
             onTap: () => _showSources(
               context,
               current.sessions
-                  .where((session) => session.climbs.any(
-                        (climb) =>
-                            climb.system == system &&
-                            climb.grade == entry.key &&
-                            climb.count > 0,
-                      ))
+                  .where(
+                    (session) => session.climbs.any(
+                      (climb) =>
+                          climb.system == system &&
+                          climb.grade == entry.key &&
+                          climb.count > 0,
+                    ),
+                  )
                   .toList(),
               '${system.label}: ${entry.key}',
             ),
@@ -396,7 +429,10 @@ class _ProgressContent extends StatelessWidget {
             return count == null ? 'Not recorded' : '$count climbs';
           },
           onTap: (bucket) => _showSources(
-              context, bucket.summary.sessions, bucket.range.label),
+            context,
+            bucket.summary.sessions,
+            bucket.range.label,
+          ),
         ),
         const SizedBox(height: 24),
         const _Heading('Highest confirmed sent grade'),
@@ -421,9 +457,11 @@ class _ProgressContent extends StatelessWidget {
           onTap: (bucket) => _showSources(
             context,
             bucket.summary.sessions
-                .where((session) => session.routes.any(
-                      (route) => route.system == system && route.sent == true,
-                    ))
+                .where(
+                  (session) => session.routes.any(
+                    (route) => route.system == system && route.sent == true,
+                  ),
+                )
                 .toList(),
             'Confirmed sends: ${bucket.range.label}',
           ),
@@ -435,14 +473,16 @@ class _ProgressContent extends StatelessWidget {
           'attempts across sessions. Only confirmed sends have attempts-to-send.',
         ),
         if (!current.sessions.any(
-            (session) => session.routes.any((route) => route.system == system)))
+          (session) => session.routes.any((route) => route.system == system),
+        ))
           const Text('No single-route results for this grading system.'),
         for (final session in current.sessions)
           for (final route in session.routes.where((r) => r.system == system))
             ListTile(
               title: Text('${route.grade} - ${route.name}'),
               subtitle: Text(
-                  '${calendarDate(session.date)} - ${_routeResult(route)}'),
+                '${calendarDate(session.date)} - ${_routeResult(route)}',
+              ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () =>
                   context.push('/athlete/workouts/${session.instanceId}'),
@@ -489,8 +529,9 @@ class _CircuitTrends extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                      '${group.first.$2.name} - workout version ${group.first.$1.version}',
-                      style: Theme.of(context).textTheme.titleMedium),
+                    '${group.first.$2.name} - workout version ${group.first.$1.version}',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   for (final row in group.first.$2.prescription)
                     Text(
                         '${row.gradingSystem.label}: ${row.grade} x ${row.climbs}'
@@ -565,17 +606,19 @@ class _BucketChart extends StatelessWidget {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              Text(label(buckets[index].summary),
-                                  textAlign: TextAlign.center,
-                                  style:
-                                      Theme.of(context).textTheme.labelSmall),
+                              Text(
+                                label(buckets[index].summary),
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.labelSmall,
+                              ),
                               const SizedBox(height: 4),
                               Container(
                                 height: math.max(
-                                    2,
-                                    (value(buckets[index].summary) ?? 0) /
-                                        maxValue *
-                                        130),
+                                  2,
+                                  (value(buckets[index].summary) ?? 0) /
+                                      maxValue *
+                                      130,
+                                ),
                                 decoration: BoxDecoration(
                                   color: value(buckets[index].summary) == null
                                       ? Theme.of(context)
@@ -587,10 +630,10 @@ class _BucketChart extends StatelessWidget {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                  calendarDate(buckets[index].range.start)
-                                      .substring(5),
-                                  style:
-                                      Theme.of(context).textTheme.labelSmall),
+                                calendarDate(buckets[index].range.start)
+                                    .substring(5),
+                                style: Theme.of(context).textTheme.labelSmall,
+                              ),
                             ],
                           ),
                         ),
@@ -621,30 +664,38 @@ Future<void> _showSources(
           key: const Key('progress-source-sheet'),
           padding: const EdgeInsets.all(20),
           children: [
-            Row(children: [
-              Expanded(
-                  child: Text(title,
-                      style: Theme.of(context).textTheme.titleLarge)),
-              IconButton(
-                tooltip: 'Close source workouts',
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close),
-              ),
-            ]),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close source workouts',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
             if (sessions.isEmpty)
               const Text('No recorded workouts for this chart point.'),
             for (final session in sessions.reversed) ...[
               _SessionTile(session: session, closeSheet: true),
               for (final route in session.routes)
                 Text(
-                    '${route.system.label}: ${route.grade} - ${_routeResult(route)}'),
+                  '${route.system.label}: ${route.grade} - ${_routeResult(route)}',
+                ),
               for (final circuit in session.circuits)
                 Text(
-                    '${circuit.name}: ${circuit.completedRows}/${circuit.totalRows} whole rows'),
+                  '${circuit.name}: ${circuit.completedRows}/${circuit.totalRows} whole rows',
+                ),
               for (final climb
                   in session.climbs.where((entry) => entry.count > 0))
                 Text(
-                    '${climb.system.label}: ${climb.grade} - ${climb.count} recorded climbs'),
+                  '${climb.system.label}: ${climb.grade} - ${climb.count} recorded climbs',
+                ),
               const Divider(),
             ],
           ],
@@ -679,11 +730,12 @@ class _SessionTile extends StatelessWidget {
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard(
-      {required this.title,
-      required this.value,
-      required this.comparison,
-      super.key});
+  const _SummaryCard({
+    required this.title,
+    required this.value,
+    required this.comparison,
+    super.key,
+  });
   final String title;
   final String value;
   final String comparison;

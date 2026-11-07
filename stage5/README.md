@@ -676,6 +676,14 @@ selected and preceding periods. All are initially included, regardless of
 program or independent assignment; excluding a workout recalculates every
 chart, summary, and source list locally without mutating it or refetching.
 Include/exclude-all actions and an explicit no-selection state are provided.
+Workouts are organized into collapsible program groups and an Independent
+workouts group. Each tri-state group checkbox controls its selected-range and
+preceding-period contributions together; each dated workout identifies its
+period. Group identity uses the source program ID, not its display name, so
+different programs with identical names stay separate. Assignment-linked and
+legacy versioned workouts retain their program grouping; ad-hoc authorization
+containers do not imply membership. Missing or access-restricted historical
+program names are labeled explicitly without discarding the completed data.
 Selections stay in the current view when changing ranges or refreshing and
 are keyed by both athlete and instance identity. Workout labels use current
 library titles for recognition; all metric inputs use pinned versions/results.
@@ -701,6 +709,7 @@ It runs as athlete and trainer (whose own athlete workspace must not expose the
 client's data), producing `athlete-climbing-progress.png`,
 `athlete-climbing-progress-performance.png`,
 `athlete-climbing-progress-selected.png`,
+`athlete-climbing-progress-program-groups.png`,
 `athlete-climbing-progress-circuits.png`, and
 `trainer-own-progress-empty.png`. Fixtures are isolated to this test target.
 

@@ -12,32 +12,46 @@ Future<void> _pump(
   Future<ClimbingProgressReport> Function(ProgressRange)? load,
   List<ClimbingSession>? sessions,
 }) async {
-  final router = GoRouter(routes: [
-    GoRoute(path: '/', builder: (_, __) => const ClimbingProgressScreen()),
-    GoRoute(
+  final router = GoRouter(
+    routes: [
+      GoRoute(path: '/', builder: (_, __) => const ClimbingProgressScreen()),
+      GoRoute(
         path: '/athlete/workouts/:id',
         builder: (_, state) => Scaffold(
-            body: Text('Pinned workout ${state.pathParameters['id']}'))),
-  ]);
-  addTearDown(router.dispose);
-  await tester.pumpWidget(ProviderScope(
-    overrides: [
-      progressClockProvider.overrideWithValue(() => DateTime(2026, 11, 7, 14)),
-      climbingProgressProvider.overrideWith((ref, range) =>
-          load?.call(range) ??
-          Future.value(ClimbingProgressReport(
-              range: range, sessions: sessions ?? [progressSession()]))),
+          body: Text('Pinned workout ${state.pathParameters['id']}'),
+        ),
+      ),
     ],
-    child: MaterialApp.router(routerConfig: router),
-  ));
+  );
+  addTearDown(router.dispose);
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        progressClockProvider
+            .overrideWithValue(() => DateTime(2026, 11, 7, 14)),
+        climbingProgressProvider.overrideWith(
+          (ref, range) =>
+              load?.call(range) ??
+              Future.value(
+                ClimbingProgressReport(
+                  range: range,
+                  sessions: sessions ?? [progressSession()],
+                ),
+              ),
+        ),
+      ],
+      child: MaterialApp.router(routerConfig: router),
+    ),
+  );
   await tester.pumpAndSettle();
 }
 
 Future<void> _reveal(WidgetTester tester, Finder finder) async {
   final scrollable = find
       .descendant(
-          of: find.byKey(const Key('climbing-progress-scroll')),
-          matching: find.byType(Scrollable))
+        of: find.byKey(const Key('climbing-progress-scroll')),
+        matching: find.byType(Scrollable),
+      )
       .first;
   if (finder.evaluate().isEmpty) {
     tester.state<ScrollableState>(scrollable).position.jumpTo(0);
@@ -52,15 +66,24 @@ void main() {
       'workout checkboxes update charts, comparison and sources without refetching',
       (tester) async {
     var requests = 0;
-    await _pump(tester, load: (range) async {
-      requests++;
-      return ClimbingProgressReport(range: range, sessions: [
-        progressSession(id: 'first'),
-        progressSession(id: 'second', grade: 'V6', date: DateTime(2026, 11, 5)),
-        progressSession(id: 'previous', date: DateTime(2026, 10, 5)),
-      ]);
-    });
+    await _pump(
+      tester,
+      load: (range) async {
+        requests++;
+        return ClimbingProgressReport(
+          range: range,
+          sessions: [
+            progressSession(id: 'first'),
+            progressSession(
+                id: 'second', grade: 'V6', date: DateTime(2026, 11, 5)),
+            progressSession(id: 'previous', date: DateTime(2026, 10, 5)),
+          ],
+        );
+      },
+    );
     await tester.tap(find.text('Choose workouts'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Independent workouts'));
     await tester.pumpAndSettle();
     await _reveal(tester, find.byKey(const Key('progress-include-second')));
     await tester.tap(find.byKey(const Key('progress-include-second')));
@@ -83,19 +106,97 @@ void main() {
     expect(find.text('2 of 2 workouts included in this range'), findsOneWidget);
     expect(requests, 1);
   });
+  testWidgets(
+      'program groups collapse, show partial selection and filter locally',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var requests = 0;
+    await _pump(
+      tester,
+      load: (range) async {
+        requests++;
+        return ClimbingProgressReport(
+          range: range,
+          sessions: [
+            progressSession(
+              id: 'first',
+              programId: 'first',
+              programName: 'Climbing plan',
+            ),
+            progressSession(
+              id: 'second',
+              programId: 'first',
+              programName: 'Climbing plan',
+            ),
+            progressSession(
+              id: 'comparison',
+              programId: 'first',
+              programName: 'Climbing plan',
+              date: DateTime(2026, 10, 5),
+            ),
+            progressSession(
+              id: 'other',
+              programId: 'other',
+              programName: 'Other plan',
+            ),
+            progressSession(id: 'independent'),
+          ],
+        );
+      },
+    );
+    await tester.tap(find.text('Choose workouts'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('progress-include-first')), findsNothing);
+    await _reveal(tester, find.text('Climbing plan'));
+    await tester.tap(find.text('Climbing plan'));
+    await tester.pumpAndSettle();
+    await _reveal(tester, find.byKey(const Key('progress-include-second')));
+    await tester.tap(find.byKey(const Key('progress-include-second')));
+    await tester.pumpAndSettle();
+    final check = find.byKey(const Key('progress-group-check-program:first'));
+    expect(tester.widget<Checkbox>(check).value, isNull);
+    await _reveal(tester, check);
+    await tester.tap(check);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Checkbox>(check).value, isTrue);
+    await tester.tap(check);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Checkbox>(check).value, isFalse);
+    expect(find.text('2 of 4 workouts included in this range'), findsOneWidget);
+    expect(find.text('0 in preceding 30 days'), findsOneWidget);
+    await _reveal(tester, find.text('Climbing plan'));
+    await tester.tap(find.text('Climbing plan'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('progress-include-first')), findsNothing);
+    await _reveal(tester, check);
+    await tester.tap(check);
+    await tester.pumpAndSettle();
+    expect(find.text('4 of 4 workouts included in this range'), findsOneWidget);
+    expect(requests, 1);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('defaults to 30 days and supports 7, 14, and 12 month presets',
       (tester) async {
     final requests = <ProgressRange>[];
-    await _pump(tester, load: (range) async {
-      requests.add(range);
-      return ClimbingProgressReport(
-          range: range, sessions: [progressSession()]);
-    });
+    await _pump(
+      tester,
+      load: (range) async {
+        requests.add(range);
+        return ClimbingProgressReport(
+          range: range,
+          sessions: [progressSession()],
+        );
+      },
+    );
     expect(
-        tester
-            .widget<ChoiceChip>(find.byKey(const Key('progress-range-month')))
-            .selected,
-        isTrue);
+      tester
+          .widget<ChoiceChip>(find.byKey(const Key('progress-range-month')))
+          .selected,
+      isTrue,
+    );
     expect(requests.last.days, 30);
     for (final pair in [('week', 7), ('fortnight', 14), ('year', 365)]) {
       await tester.tap(find.byKey(Key('progress-range-${pair.$1}')));
@@ -114,15 +215,19 @@ void main() {
     expect(find.byKey(const Key('progress-grade-vScale-V2')), findsOneWidget);
     await _reveal(tester, find.byKey(const Key('progress-highest-send')));
     expect(
-        find.text('V4 - preceding period: No recorded sends'), findsOneWidget);
+      find.text('V4 - preceding period: No recorded sends'),
+      findsOneWidget,
+    );
     await _reveal(tester, find.byKey(const Key('progress-system-yds')));
     await tester.tap(find.byKey(const Key('progress-system-yds')));
     await tester.pumpAndSettle();
     await _reveal(tester, find.byKey(const Key('progress-grade-yds-5.11a')));
     expect(find.byKey(const Key('progress-grade-vScale-V8')), findsNothing);
     await _reveal(tester, find.byKey(const Key('progress-highest-send')));
-    expect(find.text('5.11a - preceding period: No recorded sends'),
-        findsOneWidget);
+    expect(
+      find.text('5.11a - preceding period: No recorded sends'),
+      findsOneWidget,
+    );
   });
   testWidgets(
       'chart point opens source workouts and navigates to immutable detail',
@@ -133,9 +238,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('progress-source-sheet')), findsOneWidget);
     expect(find.textContaining('2 recorded attempts'), findsWidgets);
-    await tester.tap(find.descendant(
+    await tester.tap(
+      find.descendant(
         of: find.byKey(const Key('progress-source-sheet')),
-        matching: find.byKey(const Key('progress-workout-workout'))));
+        matching: find.byKey(const Key('progress-workout-workout')),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Pinned workout workout'), findsOneWidget);
   });
@@ -148,24 +256,32 @@ void main() {
     await _pump(tester);
     await _reveal(tester, find.textContaining('workout version 1'));
     expect(find.textContaining('1/2 rows'), findsOneWidget);
-    expect(find.textContaining('V2 x 3, max 2 attempts per climb'),
-        findsOneWidget);
+    expect(
+      find.textContaining('V2 x 3, max 2 attempts per climb'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
   testWidgets('empty and unrecorded states are explicit', (tester) async {
     await _pump(tester, sessions: []);
-    expect(find.text('No completed climbing workouts in this range.'),
-        findsOneWidget);
+    expect(
+      find.text('No completed climbing workouts in this range.'),
+      findsOneWidget,
+    );
     expect(find.text('Not recorded'), findsWidgets);
   });
   testWidgets('load failure offers working Retry', (tester) async {
     var requests = 0;
-    await _pump(tester, load: (range) {
-      requests++;
-      if (requests == 1) return Future.error(StateError('Denied'));
-      return Future.value(
-          ClimbingProgressReport(range: range, sessions: [progressSession()]));
-    });
+    await _pump(
+      tester,
+      load: (range) {
+        requests++;
+        if (requests == 1) return Future.error(StateError('Denied'));
+        return Future.value(
+          ClimbingProgressReport(range: range, sessions: [progressSession()]),
+        );
+      },
+    );
     expect(find.text('Unable to load climbing progress'), findsOneWidget);
     expect(find.textContaining('Denied'), findsOneWidget);
     await tester.tap(find.text('Retry'));
@@ -177,10 +293,13 @@ void main() {
       'custom date input applies inclusive range and rejects oversize ranges',
       (tester) async {
     final requests = <ProgressRange>[];
-    await _pump(tester, load: (range) async {
-      requests.add(range);
-      return ClimbingProgressReport(range: range, sessions: []);
-    });
+    await _pump(
+      tester,
+      load: (range) async {
+        requests.add(range);
+        return ClimbingProgressReport(range: range, sessions: []);
+      },
+    );
     Future<void> pick(String start, String end) async {
       await tester.tap(find.byKey(const Key('progress-custom-range')));
       await tester.pumpAndSettle();

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
+import 'package:stage5/features/programs/presentation/program_providers.dart';
 import 'package:stage5/features/progress/data/climbing_progress_repository.dart';
 import 'package:stage5/features/progress/domain/climbing_progress.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
@@ -12,6 +13,7 @@ final climbingProgressRepositoryProvider = Provider<ClimbingProgressRepository>(
   (ref) => ClimbingProgressRepository(
     instances: ref.watch(workoutInstanceRepositoryProvider),
     templates: ref.watch(workoutTemplateRepositoryProvider),
+    programs: ref.watch(programRepositoryProvider),
   ),
 );
 

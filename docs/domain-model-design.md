@@ -779,6 +779,10 @@ implementation:
   explicit single-route sends and recorded counts, and allows individual
   workout contributions to be selected across programs. Circuit trends use
   pinned versions; legacy gym colors are not converted or ranked.
+  The contribution selector groups by source program identity, with collapsible
+  headings, tri-state group checkboxes, and an Independent workouts group.
+  Program names are display metadata only; unavailable historical names never
+  remove completed-workout contributions or change pinned metric inputs.
 - The full personal-best comparator catalog.
 - Search indexing and saved-view implementation.
 - Native versus web capability presentation details.
