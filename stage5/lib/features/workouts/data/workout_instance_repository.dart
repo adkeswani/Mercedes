@@ -1223,6 +1223,36 @@ class WorkoutInstanceRepository {
     return controller.stream;
   }
 
+  /// Reads every completion in a bounded interval, including tied timestamps.
+  /// Progress uses completion time, not the originally scheduled day.
+  Future<List<WorkoutInstance>> getCompletedInRange({
+    required String athleteId,
+    required DateTime start,
+    required DateTime endExclusive,
+  }) async {
+    if (athleteId.isEmpty || !endExclusive.isAfter(start)) {
+      throw ArgumentError(
+          'An athlete and a positive completion range are required');
+    }
+    final query = _collection
+        .where('athleteId', isEqualTo: athleteId)
+        .where('status', isEqualTo: WorkoutInstanceStatus.completed.name)
+        .where('completedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('completedAt', isLessThan: Timestamp.fromDate(endExclusive))
+        .orderBy('completedAt', descending: true);
+    final instances = <WorkoutInstance>[];
+    DocumentSnapshot<Map<String, dynamic>>? cursor;
+    while (true) {
+      final pageQuery =
+          cursor == null ? query : query.startAfterDocument(cursor);
+      final page = await pageQuery.limit(100).get();
+      instances.addAll(await _instancesFromSnapshot(page));
+      if (page.docs.length < 100) break;
+      cursor = page.docs.last;
+    }
+    return instances;
+  }
+
   /// Streams workout instances for a specific program-athlete pair.
   ///
   /// Used by the owner or athlete to view a schedule within a program.

@@ -3590,6 +3590,45 @@ describe('athleteProgramInstances', () => {
 describe('workoutInstances', () => {
   const INSTANCE_ID = 'instance-1';
 
+  it('bounds progress completions to the authenticated athlete and protects result children',
+      async () => {
+    const start = new Date('2026-11-01T00:00:00Z');
+    const end = new Date('2026-12-01T00:00:00Z');
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      for (const athleteId of [ATHLETE, STRANGER]) {
+        const instance = db.collection('workoutInstances').doc(`progress-${athleteId}`);
+        await instance.set({
+          athleteId, programId: PROGRAM_ID, programOwnerId: OWNER, assignedBy: OWNER,
+          status: 'completed', completedAt: new Date('2026-11-07T12:00:00Z'),
+          workoutTemplateId: 'w1', workoutTemplateVersion: 1,
+          actualSlotIds: ['climb'], actualsStorageFormat: 'slotResultsSubcollection',
+        });
+        await instance.collection('slotResults').doc('climb').set({
+          exerciseId: 'climb-exercise', mode: 'reps', sent: true, attempts: 2,
+        });
+      }
+    });
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    function progressQuery(athleteId) {
+      return db.collection('workoutInstances')
+        .where('athleteId', '==', athleteId)
+        .where('status', '==', 'completed')
+        .where('completedAt', '>=', start)
+        .where('completedAt', '<', end)
+        .orderBy('completedAt', 'desc').limit(100);
+    }
+    const own = await assertSucceeds(progressQuery(ATHLETE).get());
+    expect(own.docs.map((doc) => doc.id)).toEqual([`progress-${ATHLETE}`]);
+    await assertFails(progressQuery(STRANGER).get());
+    await assertFails(db.collection('workoutInstances')
+      .where('status', '==', 'completed').get());
+    await assertSucceeds(db.collection('workoutInstances').doc(`progress-${ATHLETE}`)
+      .collection('slotResults').doc('climb').get());
+    await assertFails(db.collection('workoutInstances').doc(`progress-${STRANGER}`)
+      .collection('slotResults').doc('climb').get());
+  });
+
   async function seedInstance() {
     await seedProgramWithEnrollment();
     await testEnv.withSecurityRulesDisabled(async (ctx) => {

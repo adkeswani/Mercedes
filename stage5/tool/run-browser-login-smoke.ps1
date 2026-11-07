@@ -1147,6 +1147,20 @@ Invoke-RestMethod -Method Post -Uri $commitUri `
     -Headers @{ Authorization = 'Bearer owner' } `
     -ContentType 'application/json' -Body $climbingSeedBody | Out-Null
 
+if ($TestTarget -match 'climbing_progress_canary_test\.dart$') {
+    . (Join-Path $PSScriptRoot 'seed-progress-browser-fixtures.ps1')
+    $progressSeedBody = @{
+        writes = @(Get-ProgressBrowserFixtureWrites `
+            -ProjectId $projectId -TrainerId $trainer.Uid -AthleteId $athlete.Uid `
+            -ProgramId $programId -ExerciseId $climbingExerciseTemplateId -Today $today)
+    } | ConvertTo-Json -Depth 30
+    $progressCommitParameters = @{
+        Method = 'Post'; Uri = $commitUri; ContentType = 'application/json'
+        Headers = @{ Authorization = 'Bearer owner' }; Body = $progressSeedBody
+    }
+    Invoke-RestMethod @progressCommitParameters | Out-Null
+}
+
 $selectedIdentity = if ($Identity -eq 'trainer') { $trainer } else { $athlete }
 $attempt = $env:BROWSER_SMOKE_ATTEMPT
 if ($attempt -and $attempt -ne '1') {

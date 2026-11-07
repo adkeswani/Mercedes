@@ -65,6 +65,32 @@ foreach ($today in @(
         -Message 'Completed fixture must remain past-dated inside the athlete activity window.'
 }
 
+. (Join-Path $repoRoot 'stage5\tool\seed-climbing-browser-fixtures.ps1')
+. (Join-Path $repoRoot 'stage5\tool\seed-progress-browser-fixtures.ps1')
+$progressWrites = @(Get-ProgressBrowserFixtureWrites `
+    -ProjectId 'demo-progress' -TrainerId 'trainer' -AthleteId 'athlete' `
+    -ProgramId 'program' -ExerciseId 'climb' `
+    -Today ([DateTime]::new(2026, 11, 7, 14, 0, 0)))
+Assert-True -Condition ($progressWrites.Count -lt 500) `
+    -Message 'Progress fixture must fit in one Firestore commit.'
+$pageWrites = @($progressWrites | Where-Object {
+    $_.update.name -match '/workoutInstances/browser-progress-page-\d{3}$'
+})
+Assert-True -Condition ($pageWrites.Count -eq 105) `
+    -Message 'Progress pagination fixture must exceed the 100-document page size.'
+Assert-True -Condition (@($pageWrites | ForEach-Object {
+    $_.update.fields.completedAt.timestampValue
+} | Select-Object -Unique).Count -eq 1) `
+    -Message 'Progress cursor coverage requires timestamp ties across pages.'
+$progressCompletions = @($progressWrites | Where-Object {
+    $_.update.name -match '/workoutInstances/browser-progress-(1|10|35|200)$'
+})
+Assert-True -Condition ($progressCompletions.Count -eq 4) `
+    -Message 'Progress ranges require distinct week, fortnight, month, and year fixtures.'
+Assert-True -Condition $browserSmokeSource.Contains(
+    "if (`$TestTarget -match 'climbing_progress_canary_test\.dart$')"
+) -Message 'Progress fixtures must not change other browser scenarios.'
+
 $functionalOutput = @'
 BROWSER_TEST_STEP_START|identity=athlete|file=integration_test%2Frecovery.dart|condition=draft%20saved|route=%2Fathlete%2Fworkouts%2Fone|elapsedMs=0|artifact=C%3A%5Cartifacts
 '@

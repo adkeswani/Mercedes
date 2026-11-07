@@ -125,6 +125,16 @@ class HomeScreenContent extends ConsumerWidget {
         const AthleteDashboardView(),
 
         if (showTrainerTools) ...[
+          const SizedBox(height: 24),
+          _FeatureCard(
+            icon: Icons.insights,
+            title: 'Climbing progress',
+            subtitle: 'Review sessions, grades, sends, and circuit completion',
+            onTap: () => context.push('/athlete/progress'),
+          ),
+        ],
+
+        if (showTrainerTools) ...[
           const SizedBox(height: 32),
           Text('Trainer Tools', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),

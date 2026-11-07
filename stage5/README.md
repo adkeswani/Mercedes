@@ -661,8 +661,53 @@ data and failure artifacts.
 
 ## Web workspace follow-ups
 
-Athlete progress reporting and standalone messaging remain polished empty
-destinations. Dashboard pagination beyond the bounded initial feed and
+Athlete Progress (`/athlete/progress`) now reports climbing sessions, recorded
+completed-climb volume and canonical grade distribution, highest confirmed
+single-route sent grades, recorded route attempts, and circuit whole-row
+completion trends against pinned workout versions. The view supports Last 7,
+14, and 30 days, Last 12 months, and an inclusive custom range of 1 to 366 days.
+Dates use actual completion timestamps in the viewer's local timezone, not
+scheduled dates. Summary cards compare the immediately preceding equal-length
+period. Daily (up to 14 days), weekly (up to 90 days), and monthly chart buckets
+open their source workouts; grade bars and circuit/route records also link to
+immutable completed detail. The phone home links to the same responsive view.
+**Choose workouts** provides checkboxes for every climbing completion in the
+selected and preceding periods. All are initially included, regardless of
+program or independent assignment; excluding a workout recalculates every
+chart, summary, and source list locally without mutating it or refetching.
+Include/exclude-all actions and an explicit no-selection state are provided.
+Selections stay in the current view when changing ranges or refreshing and
+are keyed by both athlete and instance identity. Workout labels use current
+library titles for recognition; all metric inputs use pinned versions/results.
+
+V-scale and YDS are never converted or averaged. Only explicit single-route
+`sent` results establish sent grades; Free Climbing counts and completed circuit
+prescriptions contribute recorded volume, not confirmed sends. Unchecked
+circuit rows may contain unknown partial work and omitted results are not zero.
+Legacy grade/color routes are disclosed but excluded from ranked metrics.
+Route attempts describe that workout, not cumulative attempts across sessions.
+Circuit comparisons stay within the same template/version/block.
+
+The read-only repository pages all completions in the selected and preceding
+bounded intervals using the existing `(athleteId, status, completedAt DESC)`
+index, hydrates slot results, and caches each pinned version once per load.
+There is no document-count truncation. Loading/empty/error/Retry/Refresh states
+are explicit; no new write path, rules relaxation, dependency, or index is
+introduced. `integration_test/climbing_progress_canary_test.dart` covers
+presets/custom dates, contribution checkboxes and select-all/none, missing-data
+interpretation, grade separation, immutable
+source navigation, and 105 equal-timestamp completions across page boundaries.
+It runs as athlete and trainer (whose own athlete workspace must not expose the
+client's data), producing `athlete-climbing-progress.png`,
+`athlete-climbing-progress-performance.png`,
+`athlete-climbing-progress-selected.png`,
+`athlete-climbing-progress-circuits.png`, and
+`trainer-own-progress-empty.png`. Fixtures are isolated to this test target.
+
+Standalone messaging remains a polished empty destination. General training
+load/type/difficulty analytics, training-data export, standalone climbing
+journaling, and Personal Best events remain deferred.
+Dashboard pagination beyond the bounded initial feed and
 Personal Best activity remain deferred. My programs is currently a read-only
 instance list and Workout history is a read-only chronological list; existing
 detail and completion routes remain available. Detail and edit flows continue

@@ -773,9 +773,12 @@ The model intentionally leaves these extensible rather than blocking the first
 implementation:
 
 - Exact typed block payloads for every workout format.
-- Climbing progress/charts, grading comparators/personal bests, and a separate
-  journal view. Canonical V-scale/YDS authoring and workout completion are
-  implemented; new gym-color authoring is not planned by this change.
+- Personal-best events/comparators and a separate climbing journal view.
+  Canonical V-scale/YDS authoring, workout completion, and climbing Progress
+  charts are implemented. Progress keeps grading systems separate, uses
+  explicit single-route sends and recorded counts, and allows individual
+  workout contributions to be selected across programs. Circuit trends use
+  pinned versions; legacy gym colors are not converted or ranked.
 - The full personal-best comparator catalog.
 - Search indexing and saved-view implementation.
 - Native versus web capability presentation details.

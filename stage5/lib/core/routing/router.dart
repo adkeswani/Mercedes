@@ -18,6 +18,7 @@ import 'package:stage5/features/programs/presentation/athlete_schedule_screen.da
 import 'package:stage5/features/programs/presentation/program_builder_screen.dart';
 import 'package:stage5/features/programs/presentation/program_list_screen.dart';
 import 'package:stage5/features/programs/presentation/roster_athletes_screen.dart';
+import 'package:stage5/features/progress/presentation/climbing_progress_screen.dart';
 import 'package:stage5/features/relationships/presentation/trainer_client_workspace_screen.dart';
 import 'package:stage5/features/trainer_dashboard/presentation/trainer_dashboard_screen.dart';
 import 'package:stage5/features/workouts/presentation/athlete_workout_history_screen.dart';
@@ -223,13 +224,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AdaptiveWebWorkspaceRoute(
           mode: WebWorkspaceMode.athlete,
           destination: WebWorkspaceDestination.athleteProgress,
-          webChild: WebWorkspacePlaceholder(
-            icon: Icons.insights,
-            title: 'Progress',
-            description:
-                'Training trends, milestones, and progress insights are '
-                'planned for a later Stage 5 slice.',
-          ),
+          webChild: ClimbingProgressScreen(),
+          mobileChild: ClimbingProgressScreen(),
         ),
       ),
       GoRoute(
