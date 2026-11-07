@@ -668,9 +668,16 @@ completion trends against pinned workout versions. The view supports Last 7,
 14, and 30 days, Last 12 months, and an inclusive custom range of 1 to 366 days.
 Dates use actual completion timestamps in the viewer's local timezone, not
 scheduled dates. Summary cards compare the immediately preceding equal-length
-period. Daily (up to 14 days), weekly (up to 90 days), and monthly chart buckets
-open their source workouts; grade bars and circuit/route records also link to
-immutable completed detail. The phone home links to the same responsive view.
+period. Three line charts show the highest confirmed single-route sent grade
+each week, total recorded climb volume across grading systems, and weekly
+volume broken down by the selected grading system's grades. Calendar weeks
+start on Monday; the first and last weeks are clipped to the selected range.
+Grade legend chips toggle individual lines. Missing observations leave gaps,
+not invented grades or climb counts; empty activity weeks have zero volume.
+Chart points and circuit/route records open immutable completed detail.
+The UI contains labels, values, filters and workout data, not methodological
+paragraphs or an optional explanation panel. The phone home links to the same
+responsive view; line charts fit the phone width without horizontal scrolling.
 **Choose workouts** provides checkboxes for every climbing completion in the
 selected and preceding periods. All are initially included, regardless of
 program or independent assignment; excluding a workout recalculates every
@@ -710,6 +717,7 @@ client's data), producing `athlete-climbing-progress.png`,
 `athlete-climbing-progress-performance.png`,
 `athlete-climbing-progress-selected.png`,
 `athlete-climbing-progress-program-groups.png`,
+`athlete-climbing-progress-grade-volume.png`,
 `athlete-climbing-progress-circuits.png`, and
 `trainer-own-progress-empty.png`. Fixtures are isolated to this test target.
 

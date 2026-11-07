@@ -783,6 +783,10 @@ implementation:
   headings, tri-state group checkboxes, and an Independent workouts group.
   Program names are display metadata only; unavailable historical names never
   remove completed-workout contributions or change pinned metric inputs.
+  Progress charts use calendar weeks for highest confirmed sent grade, overall
+  recorded climb volume, and per-grade recorded volume. Missing values remain
+  gaps; no-activity weeks have zero volume. Methodological detail belongs in
+  documentation, not explanatory panels in the app.
 - The full personal-best comparator catalog.
 - Search indexing and saved-view implementation.
 - Native versus web capability presentation details.

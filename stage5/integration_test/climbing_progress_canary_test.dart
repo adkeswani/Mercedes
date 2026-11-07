@@ -5,6 +5,8 @@ import 'package:integration_test/integration_test.dart';
 import 'package:stage5/app.dart';
 import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
+import 'package:stage5/features/progress/domain/climbing_progress.dart';
+import 'package:stage5/features/progress/presentation/progress_line_chart.dart';
 import 'package:stage5/features/workouts/presentation/workout_completion_screen.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
 import 'package:stage5/main.dart' as app;
@@ -269,7 +271,20 @@ void main() {
       find.byKey(const Key('progress-grade-vScale-V8')),
       'recorded V8 counts',
     );
-    expect(find.text('8 recorded climbs'), findsOneWidget);
+    expect(find.text('V8 · 8'), findsOneWidget);
+    final gradePainter = tester
+        .widget<CustomPaint>(
+          find.byKey(const Key('progress-grade-volume-lines')),
+        )
+        .painter! as ProgressLineChartPainter;
+    expect(
+      gradePainter.series.last.values
+          .where((value) => value != null && value > 0)
+          .toList(),
+      [4, 4],
+    );
+    expect(find.textContaining('Counts combine'), findsNothing);
+    expect(find.textContaining('Grades are ordered'), findsNothing);
     await reveal(
       find.byKey(const Key('progress-highest-send')),
       'highest confirmed send',
@@ -292,8 +307,17 @@ void main() {
       'restore V-scale',
     );
 
+    final monthWeeks = ClimbingProgressReport(
+      range: ProgressPreset.month.range(DateTime.now()),
+      sessions: [],
+    ).weeklyBuckets;
+    final recentWeek = monthWeeks.indexWhere(
+      (week) => week.range.contains(
+        DateTime(pageNow.year, pageNow.month, pageNow.day - 1, 12),
+      ),
+    );
     await tap(
-      find.byKey(const Key('progress-sessions-4')),
+      find.byKey(Key('progress-volume-$recentWeek')),
       'chart point drill-down',
     );
     await wait(
@@ -354,6 +378,18 @@ void main() {
         'monthly screenshot loaded',
         () => summary('sessions', '2').evaluate().isNotEmpty,
       );
+      tester
+          .state<ScrollableState>(
+            find
+                .descendant(
+                  of: find.byKey(const Key('climbing-progress-scroll')),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          )
+          .position
+          .jumpTo(0);
+      await tester.pumpAndSettle();
       await binding.takeScreenshot('athlete-climbing-progress');
       await tap(find.text('Choose workouts'), 'screenshot workout selection');
       await tap(
@@ -388,10 +424,15 @@ void main() {
         'collapse restored contributions',
       );
       await reveal(
-        find.byKey(const Key('progress-highest-send')),
+        find.text('Highest grade sent each week'),
         'send chart screenshot',
       );
       await binding.takeScreenshot('athlete-climbing-progress-performance');
+      await reveal(
+        find.text('Recorded climbs by grade each week'),
+        'grade volume line screenshot',
+      );
+      await binding.takeScreenshot('athlete-climbing-progress-grade-volume');
       await reveal(
         find.textContaining('Climbing Circuit - workout version 1'),
         'circuit screenshot',

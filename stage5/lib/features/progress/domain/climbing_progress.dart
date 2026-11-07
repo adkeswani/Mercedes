@@ -424,4 +424,32 @@ class ClimbingProgressReport {
     }
     return result;
   }
+
+  List<ProgressBucket> get weeklyBuckets {
+    final result = <ProgressBucket>[];
+    var start = range.start;
+    while (!start.isAfter(range.end)) {
+      final next = DateTime(
+        start.year,
+        start.month,
+        start.day + 8 - start.weekday,
+      );
+      final last = DateTime(next.year, next.month, next.day - 1);
+      final bucketRange = ProgressRange(
+        start: start,
+        end: last.isAfter(range.end) ? range.end : last,
+      );
+      result.add(
+        ProgressBucket(
+          bucketRange,
+          ClimbingSummary(
+            current.sessions
+                .where((session) => bucketRange.contains(session.date)),
+          ),
+        ),
+      );
+      start = next;
+    }
+    return result;
+  }
 }

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:stage5/features/progress/domain/climbing_progress.dart';
 import 'package:stage5/features/progress/presentation/climbing_progress_providers.dart';
 import 'package:stage5/features/progress/presentation/climbing_progress_screen.dart';
+import 'package:stage5/features/progress/presentation/progress_line_chart.dart';
 import 'support/climbing_progress_fixtures.dart';
 
 Future<void> _pump(
@@ -75,7 +76,10 @@ void main() {
           sessions: [
             progressSession(id: 'first'),
             progressSession(
-                id: 'second', grade: 'V6', date: DateTime(2026, 11, 5)),
+              id: 'second',
+              grade: 'V6',
+              date: DateTime(2026, 11, 5),
+            ),
             progressSession(id: 'previous', date: DateTime(2026, 10, 5)),
           ],
         );
@@ -233,8 +237,8 @@ void main() {
       'chart point opens source workouts and navigates to immutable detail',
       (tester) async {
     await _pump(tester);
-    await _reveal(tester, find.byKey(const Key('progress-sessions-4')));
-    await tester.tap(find.byKey(const Key('progress-sessions-4')));
+    await _reveal(tester, find.byKey(const Key('progress-volume-4')));
+    await tester.tap(find.byKey(const Key('progress-volume-4')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('progress-source-sheet')), findsOneWidget);
     expect(find.textContaining('2 recorded attempts'), findsWidgets);
@@ -269,6 +273,36 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Not recorded'), findsWidgets);
+  });
+  testWidgets(
+      'weekly line charts show overall volume, grade breakdown and no essays',
+      (tester) async {
+    await _pump(tester);
+    ProgressLineChartPainter painter(String prefix) => tester
+        .widget<CustomPaint>(find.byKey(Key('progress-$prefix-lines')))
+        .painter! as ProgressLineChartPainter;
+    expect(painter('volume').series.single.values, [0, 0, 0, 0, 9]);
+    expect(painter('sends').series.single.values, [null, null, null, null, 6]);
+    expect(
+      painter('grade-volume').series.map((line) => line.label).toList(),
+      ['V2', 'V4', 'V8'],
+    );
+    expect(painter('grade-volume').series.last.values, [0, 0, 0, 0, 4]);
+    expect(find.textContaining('Dates use actual'), findsNothing);
+    expect(find.textContaining('Counts combine'), findsNothing);
+    expect(find.textContaining('Grades are ordered'), findsNothing);
+    expect(find.textContaining('Attempts are the recorded'), findsNothing);
+    expect(find.textContaining('Each immutable workout'), findsNothing);
+    expect(find.textContaining('Selections stay in this view'), findsNothing);
+    expect(find.text('How progress is measured'), findsNothing);
+    await _reveal(tester, find.byKey(const Key('progress-grade-vScale-V8')));
+    await tester.tap(find.byKey(const Key('progress-grade-vScale-V8')));
+    await tester.pumpAndSettle();
+    expect(
+      painter('grade-volume').series.map((line) => line.label),
+      ['V2', 'V4'],
+    );
+    expect(painter('volume').series.single.values.last, 9);
   });
   testWidgets('load failure offers working Retry', (tester) async {
     var requests = 0;

@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +5,7 @@ import 'package:stage5/core/browser_smoke_status.dart';
 import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/progress/domain/climbing_progress.dart';
 import 'package:stage5/features/progress/presentation/climbing_progress_providers.dart';
+import 'package:stage5/features/progress/presentation/progress_line_chart.dart';
 import 'package:stage5/features/workouts/data/workout_local_day.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
 
@@ -216,13 +215,6 @@ class _WorkoutSelector extends StatelessWidget {
               '${available.current.sessionCount} workouts included in this range'),
           childrenPadding: const EdgeInsets.all(12),
           children: [
-            const Text(
-              'Includes completed climbing workouts from any program and independent '
-              'assignments. Expand a program to choose individual sessions. Group '
-              'checkboxes include both this range and its preceding comparison period. '
-              'Every chart and summary updates together. '
-              'Selections stay in this view when changing dates; no workout data is changed.',
-            ),
             Wrap(
               spacing: 8,
               children: [
@@ -254,9 +246,7 @@ class _WorkoutSelector extends StatelessWidget {
                 title: Text(group.title),
                 subtitle: Text(
                     '${group.sessions.where((session) => !excluded.contains(session.selectionKey)).length} of '
-                    '${group.sessions.length} included; '
-                    '${group.sessions.where((session) => available.range.contains(session.date)).length} in selected range, '
-                    '${group.sessions.where((session) => !available.range.contains(session.date)).length} in preceding period'),
+                    '${group.sessions.length} selected'),
                 children: [
                   for (final session in group.sessions)
                     CheckboxListTile(
@@ -301,54 +291,103 @@ class _ProgressContent extends StatelessWidget {
     final current = report.current;
     final previous = report.previous;
     final gradeCounts = current.gradeCounts(system);
+    final weeks = report.weeklyBuckets;
+    final sendChart = _ProgressChartCard(
+      title: 'Highest grade sent each week',
+      children: [
+        Text(
+          '${current.highestSend(system) ?? 'No recorded sends'}'
+          ' - preceding period: ${previous.highestSend(system) ?? 'No recorded sends'}',
+          key: const Key('progress-highest-send'),
+        ),
+        ProgressLineChart(
+          keyPrefix: 'sends',
+          buckets: weeks,
+          emptyLabel: 'No confirmed sends in this range.',
+          valueLabel: (rank) => rank == 0 ? '-' : system.grades[rank - 1],
+          series: [
+            ProgressLineSeries(
+              id: 'sends',
+              label: system.label,
+              values: [
+                for (final week in weeks)
+                  if (week.summary.highestSend(system) case final String grade)
+                    system.grades.indexOf(grade) + 1
+                  else
+                    null,
+              ],
+            ),
+          ],
+          onTap: (index, _) => _showSources(
+            context,
+            weeks[index]
+                .summary
+                .sessions
+                .where(
+                  (session) => session.routes.any(
+                    (route) => route.system == system && route.sent == true,
+                  ),
+                )
+                .toList(),
+            'Confirmed sends: ${weeks[index].range.label}',
+          ),
+        ),
+      ],
+    );
+    final volumeChart = _ProgressChartCard(
+      title: 'Total recorded climbs each week',
+      children: [
+        ProgressLineChart(
+          keyPrefix: 'volume',
+          buckets: weeks,
+          series: [
+            ProgressLineSeries(
+              id: 'volume',
+              label: 'Climbs',
+              values: [
+                for (final week in weeks)
+                  week.summary.sessions.isEmpty
+                      ? 0
+                      : week.summary.recordedClimbs,
+              ],
+            ),
+          ],
+          onTap: (index, _) => _showSources(
+            context,
+            weeks[index].summary.sessions,
+            weeks[index].range.label,
+          ),
+        ),
+      ],
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
+        Row(
           children: [
-            _SummaryCard(
-              key: const Key('progress-summary-sessions'),
-              title: 'Climbing sessions',
-              value: '${current.sessionCount}',
-              comparison:
-                  '${previous.sessionCount} in preceding ${report.range.days} days',
+            Expanded(
+              child: _SummaryCard(
+                key: const Key('progress-summary-sessions'),
+                title: 'Climbing sessions',
+                value: '${current.sessionCount}',
+                comparison:
+                    '${previous.sessionCount} in preceding ${report.range.days} days',
+              ),
             ),
-            _SummaryCard(
-              key: const Key('progress-summary-climbs'),
-              title: 'Recorded completed climbs',
-              value: current.recordedClimbs?.toString() ?? 'Not recorded',
-              comparison:
-                  '${previous.recordedClimbs?.toString() ?? 'Not recorded'} in preceding period',
+            const SizedBox(width: 12),
+            Expanded(
+              child: _SummaryCard(
+                key: const Key('progress-summary-climbs'),
+                title: 'Recorded completed climbs',
+                value: current.recordedClimbs?.toString() ?? 'Not recorded',
+                comparison:
+                    '${previous.recordedClimbs?.toString() ?? 'Not recorded'} in preceding period',
+              ),
             ),
           ],
         ),
         const SizedBox(height: 16),
-        Text(
-          'Dates use actual workout completion time in your local timezone. '
-          'One completed workout containing climbing counts as one session.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Counts combine sent single routes, all prescribed climbs in completed '
-          'circuit rows, and recorded Free Climbing counts. Circuit and Free '
-          'Climbing counts do not establish sends. Unfinished circuit rows and '
-          'omitted results are not zero.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        if (current.incompleteSessions > 0)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              '${current.incompleteSessions} sessions have missing counts or '
-              'legacy grades. Recorded totals may understate volume; legacy '
-              'colors/grades are not ranked.',
-              key: const Key('progress-coverage-note'),
-            ),
-          ),
         if (current.sessions.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 24),
@@ -358,147 +397,108 @@ class _ProgressContent extends StatelessWidget {
                   : 'No completed climbing workouts in this range.',
             ),
           ),
-        const SizedBox(height: 24),
-        const _Heading('Sessions over time'),
-        _BucketChart(
-          keyPrefix: 'sessions',
-          buckets: report.buckets,
-          value: (summary) => summary.sessionCount,
-          label: (summary) => '${summary.sessionCount} sessions',
-          onTap: (bucket) => _showSources(
-            context,
-            bucket.summary.sessions,
-            bucket.range.label,
+        if (current.sessions.isNotEmpty) ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final value in ClimbingGradingSystem.values)
+                ChoiceChip(
+                  key: Key('progress-system-${value.name}'),
+                  label: Text(value.label),
+                  selected: system == value,
+                  onSelected: (_) => onSystemChanged(value),
+                ),
+            ],
           ),
-        ),
-        const SizedBox(height: 24),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final value in ClimbingGradingSystem.values)
-              ChoiceChip(
-                key: Key('progress-system-${value.name}'),
-                label: Text(value.label),
-                selected: system == value,
-                onSelected: (_) => onSystemChanged(value),
-              ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        _Heading('Recorded climbs by grade - ${system.label}'),
-        if (gradeCounts.isEmpty)
-          const Text(
-            'No recorded completed climb counts for this grading system.',
-          ),
-        for (final entry in gradeCounts.entries)
-          ListTile(
-            key: Key('progress-grade-${system.name}-${entry.key}'),
-            contentPadding: EdgeInsets.zero,
-            title: Text(entry.key),
-            subtitle: LinearProgressIndicator(
-              value: entry.value / gradeCounts.values.reduce(math.max),
-              minHeight: 8,
-            ),
-            trailing: Text('${entry.value} recorded climbs'),
-            onTap: () => _showSources(
-              context,
-              current.sessions
-                  .where(
-                    (session) => session.climbs.any(
-                      (climb) =>
-                          climb.system == system &&
-                          climb.grade == entry.key &&
-                          climb.count > 0,
-                    ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) => constraints.maxWidth >= 900
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: sendChart),
+                      const SizedBox(width: 16),
+                      Expanded(child: volumeChart),
+                    ],
                   )
-                  .toList(),
-              '${system.label}: ${entry.key}',
-            ),
-          ),
-        const SizedBox(height: 24),
-        const _Heading('Recorded climb volume over time'),
-        _BucketChart(
-          keyPrefix: 'volume',
-          buckets: report.buckets,
-          value: (summary) {
-            return summary.recordedFor(system);
-          },
-          label: (summary) {
-            final count = summary.recordedFor(system);
-            return count == null ? 'Not recorded' : '$count climbs';
-          },
-          onTap: (bucket) => _showSources(
-            context,
-            bucket.summary.sessions,
-            bucket.range.label,
-          ),
-        ),
-        const SizedBox(height: 24),
-        const _Heading('Highest confirmed sent grade'),
-        Text(
-          '${current.highestSend(system) ?? 'No recorded sends'}'
-          ' - preceding period: ${previous.highestSend(system) ?? 'No recorded sends'}',
-          key: const Key('progress-highest-send'),
-        ),
-        const Text(
-          'Confirmed single-route sends only. Grades are ordered within one '
-          'system, not converted between systems or averaged. Different routes '
-          'and venues are not necessarily equivalent.',
-        ),
-        _BucketChart(
-          keyPrefix: 'sends',
-          buckets: report.buckets,
-          value: (summary) {
-            final grade = summary.highestSend(system);
-            return grade == null ? null : system.grades.indexOf(grade) + 1;
-          },
-          label: (summary) => summary.highestSend(system) ?? 'No sends',
-          onTap: (bucket) => _showSources(
-            context,
-            bucket.summary.sessions
-                .where(
-                  (session) => session.routes.any(
-                    (route) => route.system == system && route.sent == true,
+                : Column(
+                    children: [
+                      sendChart,
+                      const SizedBox(height: 16),
+                      volumeChart,
+                    ],
                   ),
-                )
-                .toList(),
-            'Confirmed sends: ${bucket.range.label}',
           ),
-        ),
-        const SizedBox(height: 24),
-        const _Heading('Single-route attempts and sends'),
-        const Text(
-          'Attempts are the recorded attempts in that workout, not accumulated '
-          'attempts across sessions. Only confirmed sends have attempts-to-send.',
-        ),
-        if (!current.sessions.any(
-          (session) => session.routes.any((route) => route.system == system),
-        ))
-          const Text('No single-route results for this grading system.'),
-        for (final session in current.sessions)
-          for (final route in session.routes.where((r) => r.system == system))
-            ListTile(
-              title: Text('${route.grade} - ${route.name}'),
-              subtitle: Text(
-                '${calendarDate(session.date)} - ${_routeResult(route)}',
+          const SizedBox(height: 16),
+          _ProgressChartCard(
+            title: 'Recorded climbs by grade each week',
+            children: [
+              ProgressLineChart(
+                key: const Key('progress-grade-chart'),
+                keyPrefix: 'grade-volume',
+                buckets: weeks,
+                showLegend: true,
+                emptyLabel: 'No recorded climbs for this grading system.',
+                series: [
+                  for (final grade in gradeCounts.keys)
+                    ProgressLineSeries(
+                      id: '${system.name}-$grade',
+                      label: grade,
+                      values: [
+                        for (final week in weeks)
+                          week.summary.sessions.isNotEmpty &&
+                                  week.summary.recordedFor(system) == null
+                              ? null
+                              : week.summary.gradeCounts(system)[grade] ?? 0,
+                      ],
+                    ),
+                ],
+                onTap: (index, visibleGrades) => _showSources(
+                  context,
+                  weeks[index]
+                      .summary
+                      .sessions
+                      .where(
+                        (session) => session.climbs.any(
+                          (climb) =>
+                              climb.system == system &&
+                              climb.count > 0 &&
+                              visibleGrades
+                                  .contains('${system.name}-${climb.grade}'),
+                        ),
+                      )
+                      .toList(),
+                  '${system.label}: ${weeks[index].range.label}',
+                ),
               ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () =>
-                  context.push('/athlete/workouts/${session.instanceId}'),
-            ),
-        const SizedBox(height: 24),
-        const _Heading('Circuit completion trends'),
-        const Text(
-          'Whole rows completed / prescribed rows. Each immutable workout '
-          'version is shown separately; changed prescriptions are not compared '
-          'as equivalent performance. Partial climb counts are unknown.',
-        ),
-        _CircuitTrends(report: report),
-        const SizedBox(height: 24),
-        const _Heading('Source workouts'),
-        for (final session in current.sessions.reversed)
-          _SessionTile(session: session),
+            ],
+          ),
+          const SizedBox(height: 24),
+          const _Heading('Single-route attempts and sends'),
+          if (!current.sessions.any(
+            (session) => session.routes.any((route) => route.system == system),
+          ))
+            const Text('No single-route results for this grading system.'),
+          for (final session in current.sessions)
+            for (final route in session.routes.where((r) => r.system == system))
+              ListTile(
+                title: Text('${route.grade} - ${route.name}'),
+                subtitle: Text(
+                  '${calendarDate(session.date)} - ${_routeResult(route)}',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () =>
+                    context.push('/athlete/workouts/${session.instanceId}'),
+              ),
+          const SizedBox(height: 24),
+          const _Heading('Circuit completion trends'),
+          _CircuitTrends(report: report),
+          const SizedBox(height: 24),
+          const _Heading('Source workouts'),
+          for (final session in current.sessions.reversed)
+            _SessionTile(session: session),
+        ],
       ],
     );
   }
@@ -563,90 +563,22 @@ class _CircuitTrends extends StatelessWidget {
   }
 }
 
-class _BucketChart extends StatelessWidget {
-  const _BucketChart({
-    required this.keyPrefix,
-    required this.buckets,
-    required this.value,
-    required this.label,
-    required this.onTap,
-  });
-  final String keyPrefix;
-  final List<ProgressBucket> buckets;
-  final int? Function(ClimbingSummary) value;
-  final String Function(ClimbingSummary) label;
-  final ValueChanged<ProgressBucket> onTap;
+class _ProgressChartCard extends StatelessWidget {
+  const _ProgressChartCard({required this.title, required this.children});
+  final String title;
+  final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) {
-    final maxValue =
-        buckets.map((b) => value(b.summary) ?? 0).fold<int>(1, math.max);
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: LayoutBuilder(
-        builder: (context, constraints) => SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            width: math.max(constraints.maxWidth, buckets.length * 84.0),
-            height: 210,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (var index = 0; index < buckets.length; index++)
-                  Expanded(
-                    child: Semantics(
-                      button: true,
-                      label:
-                          '${buckets[index].range.label}: ${label(buckets[index].summary)}. View source workouts.',
-                      child: InkWell(
-                        key: Key('progress-$keyPrefix-$index'),
-                        onTap: () => onTap(buckets[index]),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Text(
-                                label(buckets[index].summary),
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context).textTheme.labelSmall,
-                              ),
-                              const SizedBox(height: 4),
-                              Container(
-                                height: math.max(
-                                  2,
-                                  (value(buckets[index].summary) ?? 0) /
-                                      maxValue *
-                                      130,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: value(buckets[index].summary) == null
-                                      ? Theme.of(context)
-                                          .colorScheme
-                                          .outlineVariant
-                                      : Theme.of(context).colorScheme.primary,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                calendarDate(buckets[index].range.start)
-                                    .substring(5),
-                                style: Theme.of(context).textTheme.labelSmall,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+  Widget build(BuildContext context) => Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [_Heading(title), ...children],
           ),
         ),
-      ),
-    );
-  }
+      );
 }
 
 Future<void> _showSources(
@@ -741,20 +673,17 @@ class _SummaryCard extends StatelessWidget {
   final String comparison;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-        width: 280,
-        child: Card(
-          margin: EdgeInsets.zero,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: Theme.of(context).textTheme.titleSmall),
-                Text(value, style: Theme.of(context).textTheme.headlineMedium),
-                Text(comparison),
-              ],
-            ),
+  Widget build(BuildContext context) => Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleSmall),
+              Text(value, style: Theme.of(context).textTheme.headlineMedium),
+              Text(comparison),
+            ],
           ),
         ),
       );

@@ -8,6 +8,59 @@ import 'support/climbing_progress_fixtures.dart';
 
 void main() {
   group('progress dates', () {
+    for (final range in [
+      ProgressPreset.week.range(DateTime(2026, 11, 7)),
+      ProgressPreset.fortnight.range(DateTime(2026, 11, 7)),
+      ProgressPreset.month.range(DateTime(2026, 11, 7)),
+      ProgressPreset.year.range(DateTime(2024, 2, 29)),
+      ProgressRange(start: DateTime(2026, 3, 7), end: DateTime(2026, 3, 9)),
+      ProgressRange(start: DateTime(2026, 11, 7), end: DateTime(2026, 11, 7)),
+    ]) {
+      test(
+          '${range.label} groups calendar weeks without gaps or duplicate completions',
+          () {
+        final report = ClimbingProgressReport(
+          range: range,
+          sessions: [
+            for (var day = 0; day < range.days; day++)
+              progressSession(
+                id: '$day',
+                date: DateTime(
+                  range.start.year,
+                  range.start.month,
+                  range.start.day + day,
+                ),
+              ),
+            progressSession(id: 'previous', date: range.previous.end),
+          ],
+        );
+        final weeks = report.weeklyBuckets;
+        expect(weeks.first.range.start, range.start);
+        expect(weeks.last.range.end, range.end);
+        expect(
+          weeks.expand((week) => week.summary.sessions).length,
+          range.days,
+        );
+        expect(
+          weeks
+              .expand((week) => week.summary.sessions)
+              .map((session) => session.instanceId)
+              .toSet()
+              .length,
+          range.days,
+        );
+        for (var index = 0; index < weeks.length; index++) {
+          expect(weeks[index].range.days, lessThanOrEqualTo(7));
+          if (index > 0) {
+            expect(weeks[index].range.start.weekday, DateTime.monday);
+            expect(
+              weeks[index - 1].range.endExclusive,
+              weeks[index].range.start,
+            );
+          }
+        }
+      });
+    }
     for (final preset in ProgressPreset.values) {
       test('${preset.label} includes today and has a consecutive comparison',
           () {
