@@ -20,6 +20,10 @@ Implemented in this slice:
   rather than home.
 - Exercise actuals remain intact when scrolling recycles an exercise card;
   recreated cards restore recorded values rather than prescription defaults.
+- Workout and climbing timers calculate elapsed time from timestamps, retaining
+  partial seconds across pause/resume and catching up after browser suspension.
+  Countdown actuals stop at the prescribed duration. Completion callbacks run
+  when the browser next executes; locked-screen alerts are not guaranteed.
 - On phones (completion content narrower than 600 logical pixels), each
   exercise occupies at least one viewport-height section. Scroll normally or
   use **Next exercise**, then **Review & complete** to reach workout feedback.

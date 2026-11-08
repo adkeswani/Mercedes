@@ -814,6 +814,7 @@ void main() {
 
     // Starting the work timer ticks down and fills in the duration field.
     final workTimerState = tester.state<WorkoutTimerWidgetState>(workTimer);
+    workTimerState.now = tester.binding.clock.now;
     workTimerState.start();
     await tester.pump(const Duration(seconds: 3));
     expect(
@@ -840,6 +841,7 @@ void main() {
     // Starting the rest timer records the elapsed restSeconds onto the
     // actual once the workout is completed.
     final restTimerState = tester.state<WorkoutTimerWidgetState>(restTimer);
+    restTimerState.now = tester.binding.clock.now;
     restTimerState.start();
     await tester.pump(const Duration(seconds: 5));
     restTimerState.pause();

@@ -9,7 +9,8 @@ import 'package:flutter/material.dart';
 /// [onCompleted] once (clamping the displayed remaining time at zero).
 /// Without a target it counts up indefinitely as a stopwatch. Every tick
 /// (and reset) reports the elapsed seconds via [onElapsedChanged] so the
-/// caller can keep a recorded actual in sync with the timer.
+/// caller can keep a recorded actual in sync with the timer. Ticks refresh a
+/// timestamp-based elapsed duration, so suspended browsers catch up on resume.
 class WorkoutTimerWidget extends StatefulWidget {
   const WorkoutTimerWidget({
     required this.label,
@@ -28,11 +29,18 @@ class WorkoutTimerWidget extends StatefulWidget {
   State<WorkoutTimerWidget> createState() => WorkoutTimerWidgetState();
 }
 
-class WorkoutTimerWidgetState extends State<WorkoutTimerWidget> {
+class WorkoutTimerWidgetState extends State<WorkoutTimerWidget>
+    with WidgetsBindingObserver {
   Timer? _ticker;
+  DateTime? _startedAt;
+  Duration _elapsed = Duration.zero;
+  Duration _elapsedAtStart = Duration.zero;
   int _elapsedSeconds = 0;
   bool _running = false;
   bool _completedNotified = false;
+
+  @visibleForTesting
+  DateTime Function() now = DateTime.now;
 
   bool get _isCountdown => widget.targetSeconds != null;
 
@@ -45,47 +53,89 @@ class WorkoutTimerWidgetState extends State<WorkoutTimerWidget> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshElapsed();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
     super.dispose();
   }
 
   void start() {
-    if (_running) {
+    if (_running || _completedNotified) {
       return;
     }
+    _startedAt = now();
+    _elapsedAtStart = _elapsed;
     setState(() => _running = true);
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      setState(() {
-        _elapsedSeconds++;
-        widget.onElapsedChanged?.call(_elapsedSeconds);
-        if (_isCountdown && _elapsedSeconds >= widget.targetSeconds!) {
-          _pauseTicker();
-          if (!_completedNotified) {
-            _completedNotified = true;
-            widget.onCompleted?.call();
-          }
-        }
-      });
+    _ticker = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _refreshElapsed(),
+    );
+  }
+
+  void _refreshElapsed() {
+    if (!_running) {
+      return;
+    }
+    var elapsed = _elapsedAtStart + now().difference(_startedAt!);
+    // A device clock adjustment must not make a running timer go backwards.
+    if (elapsed < _elapsed) {
+      elapsed = _elapsed;
+    }
+    final completed =
+        _isCountdown && elapsed.inSeconds >= widget.targetSeconds!;
+    if (completed) {
+      elapsed = Duration(seconds: widget.targetSeconds!);
+    }
+    final secondsChanged = elapsed.inSeconds != _elapsedSeconds;
+    setState(() {
+      _elapsed = elapsed;
+      _elapsedSeconds = elapsed.inSeconds;
+      if (completed) {
+        _pauseTicker();
+        _completedNotified = true;
+      }
     });
+    if (secondsChanged) {
+      widget.onElapsedChanged?.call(_elapsedSeconds);
+    }
+    if (completed) {
+      widget.onCompleted?.call();
+    }
   }
 
   void pause() {
     if (!_running) {
       return;
     }
+    _refreshElapsed();
     setState(_pauseTicker);
   }
 
   void _pauseTicker() {
     _ticker?.cancel();
     _ticker = null;
+    _startedAt = null;
     _running = false;
   }
 
   void reset() {
     _pauseTicker();
     setState(() {
+      _elapsed = Duration.zero;
+      _elapsedAtStart = Duration.zero;
       _elapsedSeconds = 0;
       _completedNotified = false;
     });
@@ -101,8 +151,9 @@ class WorkoutTimerWidgetState extends State<WorkoutTimerWidget> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDone =
-        _isCountdown && _elapsedSeconds >= widget.targetSeconds! && _elapsedSeconds > 0;
+    final isDone = _isCountdown &&
+        _elapsedSeconds >= widget.targetSeconds! &&
+        _elapsedSeconds > 0;
     return Row(
       children: [
         Icon(
@@ -122,7 +173,9 @@ class WorkoutTimerWidgetState extends State<WorkoutTimerWidget> {
         const Spacer(),
         IconButton(
           icon: Icon(_running ? Icons.pause : Icons.play_arrow),
-          tooltip: _running ? 'Pause ${widget.label.toLowerCase()} timer' : 'Start ${widget.label.toLowerCase()} timer',
+          tooltip: _running
+              ? 'Pause ${widget.label.toLowerCase()} timer'
+              : 'Start ${widget.label.toLowerCase()} timer',
           onPressed: _running ? pause : start,
           visualDensity: VisualDensity.compact,
         ),

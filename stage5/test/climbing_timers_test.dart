@@ -61,6 +61,10 @@ void main() {
     final free = _timer('work-timer-free');
     expect(find.text(climbingCircuitExerciseId), findsNothing);
     expect(find.byType(WorkoutTimerWidget), findsNWidgets(5));
+    for (final state in tester
+        .stateList<WorkoutTimerWidgetState>(find.byType(WorkoutTimerWidget))) {
+      state.now = tester.binding.clock.now;
+    }
     await tester.tap(_inside(work, find.byTooltip('Start work timer')));
     await tester.pump(const Duration(seconds: 1));
     expect(_inside(work, find.text('0:02')), findsOneWidget);
@@ -108,6 +112,7 @@ void main() {
     ))));
     final work = _timer('work-timer-circuit-row');
     final state = tester.state<WorkoutTimerWidgetState>(work);
+    state.now = tester.binding.clock.now;
     state.start();
     await tester.drag(find.byType(ListView), const Offset(0, -1700));
     await tester.pump(const Duration(seconds: 1));
