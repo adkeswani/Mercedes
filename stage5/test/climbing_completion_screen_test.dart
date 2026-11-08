@@ -229,8 +229,8 @@ void main() {
         find.byKey(const ValueKey('exercise-separator-first-free-slot'));
     final initialBottom = tester.getBottomLeft(firstCard).dy;
     final initialNextTop = tester.getTopLeft(secondSection).dy;
-    expect(initialNextTop - initialBottom, closeTo(33, 0.01));
-    expect(tester.getTopLeft(separator).dy - initialBottom, closeTo(16, 0.01));
+    expect(initialNextTop - initialBottom, closeTo(67, 0.01));
+    expect(tester.getTopLeft(separator).dy - initialBottom, closeTo(32, 0.01));
     final add =
         find.descendant(of: firstSection, matching: find.text('Add climb'));
     for (var count = 1; count <= 2; count++) {
@@ -239,7 +239,7 @@ void main() {
       final bottom = tester.getBottomLeft(firstCard).dy;
       final nextTop = tester.getTopLeft(secondSection).dy;
       expect(bottom, greaterThan(initialBottom));
-      expect(nextTop - bottom, closeTo(33, 0.01));
+      expect(nextTop - bottom, closeTo(67, 0.01));
       expect(nextTop - initialNextTop, closeTo(bottom - initialBottom, 0.01));
       expect(find.text('Next exercise'), findsNothing);
       expect(tester.takeException(), isNull);

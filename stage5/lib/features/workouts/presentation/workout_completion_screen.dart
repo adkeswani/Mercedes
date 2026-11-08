@@ -746,10 +746,12 @@ class _WorkoutCompletionScreenState
           ),
         if (index + 1 < total)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
+            padding: const EdgeInsets.symmetric(vertical: 32),
             child: Divider(
               key: ValueKey('exercise-separator-${slot.slotId}'),
-              height: 1,
+              height: 3,
+              thickness: 3,
+              color: Theme.of(context).colorScheme.outline,
             ),
           ),
       ],

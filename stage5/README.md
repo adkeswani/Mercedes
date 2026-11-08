@@ -26,10 +26,10 @@ Implemented in this slice:
   when the browser next executes; locked-screen alerts are not guaranteed.
 - Scheduled workouts open with **Begin**. The recording page heading shows the
   workout name and scheduled date; **Mark as Completed** finishes the workout.
-  Exercises form a continuous list on phones and desktops, with a separator and
-  consistent spacing between them. Adding climbing rows moves the separator and
-  following exercise naturally, without viewport-sized gaps or navigation
-  buttons.
+  Exercises form a continuous list on phones and desktops, with a 3-pixel
+  higher-contrast separator and 32 logical pixels of space on either side.
+  Adding climbing rows moves the separator and following exercise naturally,
+  without viewport-sized gaps or navigation buttons.
 - Embedded YouTube players stop receiving pointer input while a dropdown or
   other popup route covers their screen, so selecting a grade or RPE cannot
   click through to the video. Closing the popup restores player interaction

@@ -138,7 +138,11 @@ void main() {
     expect(find.text('Next exercise'), findsNothing);
     final separator =
         find.byKey(const ValueKey('exercise-separator-slot-pushup'));
-    expect(tester.widget<Divider>(separator).height, 1);
+    final divider = tester.widget<Divider>(separator);
+    expect(divider.height, 3);
+    expect(divider.thickness, 3);
+    expect(
+        divider.color, Theme.of(tester.element(separator)).colorScheme.outline);
     expect(
         tester
             .widget<Padding>(
@@ -147,7 +151,7 @@ void main() {
                   .first,
             )
             .padding,
-        const EdgeInsets.symmetric(vertical: 16));
+        const EdgeInsets.symmetric(vertical: 32));
   });
 
   testWidgets('recording title shows workout name and scheduled date',

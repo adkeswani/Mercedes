@@ -426,7 +426,7 @@ void main() {
         find.byKey(const ValueKey('exercise-separator-slot-free-climbing'));
     final originalHeight = tester.getSize(freeCard).height;
     expect(tester.getTopLeft(separator).dy - tester.getBottomLeft(freeCard).dy,
-        closeTo(16, 0.01));
+        closeTo(32, 0.01));
     await _tap(
         tester,
         waits,
@@ -434,7 +434,7 @@ void main() {
         'add optional free result');
     expect(tester.getSize(freeCard).height, greaterThan(originalHeight));
     expect(tester.getTopLeft(separator).dy - tester.getBottomLeft(freeCard).dy,
-        closeTo(16, 0.01));
+        closeTo(32, 0.01));
     await selectClimbingGrade(
         tester,
         waits,
