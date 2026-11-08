@@ -614,7 +614,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                                 Navigator.of(sheetContext).pop();
                                 context.push('/athlete/workouts/${i.id}');
                               },
-                              child: const Text('Complete'),
+                              child: const Text('Begin'),
                             ),
                           if (i.isScheduled &&
                               i.scheduledDate.compareTo(
@@ -642,7 +642,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                               itemBuilder: (_) => [
                                 const PopupMenuItem(
                                   value: 'open',
-                                  child: Text('Open / Complete'),
+                                  child: Text('Open / Begin'),
                                 ),
                                 const PopupMenuItem(
                                   value: 'reschedule',

@@ -76,7 +76,7 @@ void main() {
       await _waitFor(
         tester,
         waits,
-        find.text('Complete Workout'),
+        find.byKey(WorkoutCompletionScreen.titleKey),
         step: 'exercise-types workout completion screen',
         timeout: const Duration(seconds: 30),
       );
@@ -183,7 +183,7 @@ void main() {
       await _waitForAbsent(
         tester,
         waits,
-        find.text('Complete Workout'),
+        find.byKey(WorkoutCompletionScreen.titleKey),
         step: 'completed workout navigation',
         timeout: const Duration(seconds: 30),
       );
@@ -235,7 +235,7 @@ void main() {
       await _waitFor(
         tester,
         waits,
-        find.text('Workout Details'),
+        find.byKey(WorkoutCompletionScreen.titleKey),
         step: 'immutable exercise-types completion details',
       );
       await waits.captureAfterAssertions('capture exercise-type screenshots',

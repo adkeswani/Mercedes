@@ -352,7 +352,7 @@ void main() {
     await tester.tap(source);
     await wait(
       'immutable workout detail',
-      () => find.text('Workout Details').evaluate().isNotEmpty,
+      () => find.byKey(WorkoutCompletionScreen.titleKey).evaluate().isNotEmpty,
     );
     expect(
       tester

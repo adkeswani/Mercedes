@@ -122,7 +122,7 @@ void main() {
                     find.byKey(const Key('athlete-dashboard-filter-all')))
                 .selected,
             isTrue);
-        expect(find.widgetWithText(FilledButton, 'Complete'), findsWidgets);
+        expect(find.widgetWithText(FilledButton, 'Begin'), findsWidgets);
         await tester.tap(
             find.byKey(const Key('athlete-dashboard-filter-todaysWorkouts')));
         await wait(
@@ -224,7 +224,7 @@ void main() {
             'selected day workout',
             () => find.text('Browser Calendar Workout').evaluate().isNotEmpty,
           );
-          expect(find.widgetWithText(FilledButton, 'Complete'), findsWidgets);
+          expect(find.widgetWithText(FilledButton, 'Begin'), findsWidgets);
           expect(find.byTooltip('Workout actions'), findsWidgets);
           await tester.tapAt(const Offset(10, 10));
         }

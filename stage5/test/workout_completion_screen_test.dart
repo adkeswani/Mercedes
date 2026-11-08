@@ -81,8 +81,7 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
-  testWidgets(
-      'phone exercises occupy a viewport and advance without losing input',
+  testWidgets('phone exercises scroll continuously without losing input',
       (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -94,14 +93,15 @@ void main() {
     final list = find.byKey(WorkoutCompletionScreen.listKey);
     final scrollable =
         find.descendant(of: list, matching: find.byType(Scrollable)).first;
-    final firstCard = find.byKey(const ValueKey('slot-pushup'));
-    final firstPage = find.ancestor(
-        of: firstCard,
-        matching: find.byWidgetPredicate(
-            (widget) => widget is Padding && widget.key is GlobalKey));
-    expect(tester.getSize(firstPage).height,
-        greaterThanOrEqualTo(tester.getSize(list).height));
+    final firstSection =
+        find.byKey(const ValueKey('exercise-section-slot-pushup'));
+    expect(tester.getSize(firstSection).height,
+        lessThan(tester.getSize(list).height));
     expect(find.text('Exercise 1 of 4'), findsOneWidget);
+    expect(find.text('Next exercise'), findsNothing);
+    expect(find.text('Review & complete'), findsNothing);
+    expect(find.byKey(const ValueKey('exercise-separator-slot-pushup')),
+        findsOneWidget);
     final sets = find.widgetWithText(TextField, 'Sets');
     await tester.ensureVisible(sets);
     await tester.enterText(sets, '7');
@@ -111,18 +111,15 @@ void main() {
       'slot-plank',
       'slot-amrap'
     ]) {
-      final next = find.byKey(ValueKey('next-exercise-$slot'));
-      await tester.scrollUntilVisible(next, 200, scrollable: scrollable);
+      final card = find.byKey(ValueKey(slot));
+      await tester.scrollUntilVisible(card, 200, scrollable: scrollable);
       await tester.pumpAndSettle();
-      await tester.ensureVisible(next);
-      await tester.pumpAndSettle();
-      expect(next.hitTestable(), findsOneWidget);
-      await tester.tap(next);
-      await tester.pumpAndSettle();
-      if (slot == 'slot-pushup') {
-        expect(find.text('Exercise 2 of 4').hitTestable(), findsOneWidget);
-      }
+      expect(card, findsOneWidget);
     }
+    await tester.scrollUntilVisible(
+        find.text('Rate of Perceived Exertion (RPE)'), 200,
+        scrollable: scrollable);
+    await tester.pumpAndSettle();
     expect(find.text('Rate of Perceived Exertion (RPE)').hitTestable(),
         findsOneWidget);
     await tester.scrollUntilVisible(sets, -200, scrollable: scrollable);
@@ -139,13 +136,48 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('Exercise 1 of'), findsNothing);
     expect(find.text('Next exercise'), findsNothing);
-    final firstCard = find.byKey(const ValueKey('slot-pushup'));
-    final firstPage = find.ancestor(
-        of: firstCard,
-        matching: find.byWidgetPredicate(
-            (widget) => widget is Padding && widget.key is GlobalKey));
-    expect(tester.widget<Padding>(firstPage).padding,
-        const EdgeInsets.only(bottom: 32));
+    final separator =
+        find.byKey(const ValueKey('exercise-separator-slot-pushup'));
+    expect(tester.widget<Divider>(separator).height, 1);
+    expect(
+        tester
+            .widget<Padding>(
+              find
+                  .ancestor(of: separator, matching: find.byType(Padding))
+                  .first,
+            )
+            .padding,
+        const EdgeInsets.symmetric(vertical: 16));
+  });
+
+  testWidgets('recording title shows workout name and scheduled date',
+      (tester) async {
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+    final title = find.byKey(WorkoutCompletionScreen.titleKey);
+    expect(find.descendant(of: title, matching: find.text('Push workout')),
+        findsOneWidget);
+    expect(find.descendant(of: title, matching: find.text('2026-10-04')),
+        findsOneWidget);
+    expect(find.text('Complete Workout'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Mark as Completed'), 200,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.text('Mark as Completed'), findsOneWidget);
+  });
+
+  testWidgets('missing template header does not block recording',
+      (tester) async {
+    await firestore.collection('workoutTemplates').doc('workout-1').delete();
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+    expect(
+        find.descendant(
+            of: find.byKey(WorkoutCompletionScreen.titleKey),
+            matching: find.text('Workout')),
+        findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Mark as Completed'), 200,
+        scrollable: find.byType(Scrollable).first);
+    expect(find.text('Mark as Completed'), findsOneWidget);
   });
 
   testWidgets(
@@ -628,7 +660,8 @@ void main() {
     await pumpScreen(tester);
     await tester.pumpAndSettle();
 
-    expect(find.text('Workout Details'), findsOneWidget);
+    expect(find.byKey(WorkoutCompletionScreen.titleKey), findsOneWidget);
+    expect(find.text('Push workout'), findsOneWidget);
     expect(find.text('Completion Details'), findsOneWidget);
     expect(find.textContaining('Duration: 65 min'), findsOneWidget);
     expect(find.text('Mark as Completed'), findsNothing);
@@ -724,6 +757,7 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, 'Sets'), '4');
     await tester.enterText(find.widgetWithText(TextField, 'Reps'), '12');
     await tester.enterText(find.widgetWithText(TextField, 'Weight'), '60kg');
+    FocusManager.instance.primaryFocus?.unfocus();
     await tester.pump();
 
     await tester.scrollUntilVisible(
@@ -731,6 +765,8 @@ void main() {
       300,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(find.text('Mark as Completed'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Mark as Completed'));
     await tester.pumpAndSettle();
 
@@ -765,6 +801,7 @@ void main() {
 
     await tester.enterText(find.widgetWithText(TextField, 'Attempts'), '5');
     await tester.tap(find.text('Sent the route'));
+    FocusManager.instance.primaryFocus?.unfocus();
     await tester.pump();
 
     await tester.scrollUntilVisible(
@@ -772,6 +809,8 @@ void main() {
       300,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(find.text('Mark as Completed'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Mark as Completed'));
     await tester.pumpAndSettle();
 
@@ -931,6 +970,13 @@ WorkoutCompletionDraft _draftForTest({
 
 Future<void> _seedWorkout(FakeFirebaseFirestore firestore) async {
   final now = DateTime.utc(2026, 10, 4, 12);
+  await firestore.collection('workoutTemplates').doc('workout-1').set({
+    'name': 'Push workout',
+    'ownerId': 'trainer-1',
+    'createdBy': 'trainer-1',
+    'currentVersion': 1,
+    'workoutType': 'push',
+  });
   await firestore.collection('workoutInstances').doc('instance-1').set({
     'programId': 'program-1',
     'athleteId': 'athlete-1',
@@ -962,6 +1008,13 @@ Future<void> _seedWorkout(FakeFirebaseFirestore firestore) async {
 /// mode-aware actual-recording UI.
 Future<void> _seedWorkoutWithExercises(FakeFirebaseFirestore firestore) async {
   final now = DateTime.utc(2026, 10, 4, 12);
+  await firestore.collection('workoutTemplates').doc('workout-2').set({
+    'name': 'Mixed workout',
+    'ownerId': 'trainer-1',
+    'createdBy': 'trainer-1',
+    'currentVersion': 1,
+    'workoutType': 'push',
+  });
   await firestore.collection('workoutInstances').doc('instance-2').set({
     'programId': 'program-1',
     'athleteId': 'athlete-1',

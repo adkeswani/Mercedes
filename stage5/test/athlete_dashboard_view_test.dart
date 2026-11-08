@@ -177,7 +177,7 @@ void main() {
     final today = _todayWorkout().scheduledDate;
     expect(requestedRange!.startDate, today);
     expect(requestedRange!.endDate, today);
-    expect(find.text('Complete'), findsOneWidget);
+    expect(find.text('Begin'), findsOneWidget);
     expect(find.text('You completed Pull session'), findsOneWidget);
     expect(find.text('Coach reacted'), findsOneWidget);
     var previousY = -1.0;
@@ -201,7 +201,7 @@ void main() {
     await tester
         .tap(find.byKey(const Key('athlete-dashboard-filter-todaysWorkouts')));
     await tester.pumpAndSettle();
-    expect(find.text('Complete'), findsOneWidget);
+    expect(find.text('Begin'), findsOneWidget);
     expect(find.text('You completed Pull session'), findsNothing);
     expect(find.byKey(const Key('athlete-dashboard-section-todaysWorkouts')),
         findsNothing);
@@ -216,7 +216,7 @@ void main() {
       load: () => Future.error(StateError('activity failed')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Complete'), findsOneWidget);
+    expect(find.text('Begin'), findsOneWidget);
     expect(find.text('Unable to load activity'), findsOneWidget);
     expect(find.text('No workouts scheduled today'), findsNothing);
   });
@@ -241,7 +241,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Retry'));
     await tester.pumpAndSettle();
     expect(attempts, 2);
-    expect(find.text('Complete'), findsOneWidget);
+    expect(find.text('Begin'), findsOneWidget);
     expect(find.text("Unable to load today's workouts"), findsNothing);
   });
 }

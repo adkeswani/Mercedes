@@ -83,6 +83,7 @@ void main() {
       });
     }
     await firestore.collection('workoutTemplates').doc('workout').set({
+      'name': 'Climbing workout',
       'createdBy': 'trainer',
       'ownerId': 'trainer',
       'currentVersion': 0,
@@ -160,7 +161,8 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('phone climbing pages scroll past long rows and retain results',
+  testWidgets(
+      'phone climbing sections scroll past long rows and retain results',
       (tester) async {
     tester.view.physicalSize = const Size(390, 700);
     tester.view.devicePixelRatio = 1;
@@ -179,11 +181,9 @@ void main() {
     await tester.ensureVisible(completed);
     await tester.tap(completed);
     await tester.pumpAndSettle();
-    final next = find.byKey(const ValueKey('next-exercise-circuit-slot'));
-    await tester.scrollUntilVisible(next, 200, scrollable: scrollable);
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(next);
-    await tester.tap(next);
+    expect(find.text('Next exercise'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Exercise 2 of 2'), 200,
+        scrollable: scrollable);
     await tester.pumpAndSettle();
     expect(find.text('Exercise 2 of 2').hitTestable(), findsOneWidget);
     expect(find.text('Free Climbing'), findsOneWidget);
@@ -195,6 +195,55 @@ void main() {
                 CheckboxListTile, 'Completed prescribed row'))
             .value,
         isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('adding free climbs moves the next exercise with a constant gap',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await container.read(workoutTemplateRepositoryProvider).publishVersion(
+      templateId: 'workout',
+      userId: 'trainer',
+      blocks: [
+        FreeClimbingBlock(
+            blockId: 'first-free', sortOrder: 0, slotId: 'first-free-slot'),
+        FreeClimbingBlock(
+            blockId: 'second-free', sortOrder: 1, slotId: 'second-free-slot'),
+      ],
+    );
+    await firestore.collection('workoutInstances').doc('instance').update({
+      'workoutTemplateVersion': 2,
+    });
+    await pumpScreen(tester);
+    final firstSection =
+        find.byKey(const ValueKey('exercise-section-first-free-slot'));
+    final firstCard = find.descendant(
+        of: firstSection, matching: find.byType(ClimbingCompletionCard));
+    final secondSection =
+        find.byKey(const ValueKey('exercise-section-second-free-slot'));
+    final separator =
+        find.byKey(const ValueKey('exercise-separator-first-free-slot'));
+    final initialBottom = tester.getBottomLeft(firstCard).dy;
+    final initialNextTop = tester.getTopLeft(secondSection).dy;
+    expect(initialNextTop - initialBottom, closeTo(33, 0.01));
+    expect(tester.getTopLeft(separator).dy - initialBottom, closeTo(16, 0.01));
+    final add =
+        find.descendant(of: firstSection, matching: find.text('Add climb'));
+    for (var count = 1; count <= 2; count++) {
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      final bottom = tester.getBottomLeft(firstCard).dy;
+      final nextTop = tester.getTopLeft(secondSection).dy;
+      expect(bottom, greaterThan(initialBottom));
+      expect(nextTop - bottom, closeTo(33, 0.01));
+      expect(nextTop - initialNextTop, closeTo(bottom - initialBottom, 0.01));
+      expect(find.text('Next exercise'), findsNothing);
+      expect(tester.takeException(), isNull);
+    }
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
@@ -336,7 +385,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
     await pumpScreen(tester);
-    expect(find.text('Workout Details'), findsOneWidget);
+    expect(find.byKey(WorkoutCompletionScreen.titleKey), findsOneWidget);
     expect(find.text('Pinned climbing instruction'), findsOneWidget);
     expect(find.text('3 × V2 · Max 2 attempts per climb'), findsOneWidget);
     expect(find.text('Completed · RPE 9'), findsOneWidget);
@@ -397,7 +446,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
     await pumpScreen(tester);
-    expect(find.text('Workout Details'), findsOneWidget);
+    expect(find.byKey(WorkoutCompletionScreen.titleKey), findsOneWidget);
     await expectVideos(tester);
   });
 

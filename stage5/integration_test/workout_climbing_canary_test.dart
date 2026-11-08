@@ -359,8 +359,15 @@ void main() {
     final before = await waits.runStep(
         'read pinned immutable prescription', () => versionRef.get(_server));
     _router(tester).go('/athlete/workouts/$_instanceId');
-    await _wait(tester, waits, find.text('Complete Workout'),
+    await _wait(tester, waits, find.byKey(WorkoutCompletionScreen.titleKey),
         'climbing completion screen');
+    expect(
+        find.descendant(
+            of: find.byKey(WorkoutCompletionScreen.titleKey),
+            matching: find.text('Browser Climbing Workout')),
+        findsOneWidget);
+    expect(find.text('Next exercise'), findsNothing);
+    expect(find.text('Review & complete'), findsNothing);
     await _wait(tester, waits, find.text('3 × V2 · Max 2 attempts per climb'),
         'pinned circuit prescription',
         reveal: true);
@@ -415,11 +422,19 @@ void main() {
     final freeCard = find.ancestor(
         of: find.text('Trainer note: Explore routes'),
         matching: find.byType(ClimbingCompletionCard));
+    final separator =
+        find.byKey(const ValueKey('exercise-separator-slot-free-climbing'));
+    final originalHeight = tester.getSize(freeCard).height;
+    expect(tester.getTopLeft(separator).dy - tester.getBottomLeft(freeCard).dy,
+        closeTo(16, 0.01));
     await _tap(
         tester,
         waits,
         find.descendant(of: freeCard, matching: find.text('Add climb')),
         'add optional free result');
+    expect(tester.getSize(freeCard).height, greaterThan(originalHeight));
+    expect(tester.getTopLeft(separator).dy - tester.getBottomLeft(freeCard).dy,
+        closeTo(16, 0.01));
     await selectClimbingGrade(
         tester,
         waits,
@@ -518,11 +533,11 @@ void main() {
     );
 
     _router(tester).go('/athlete/today');
-    await _wait(
-        tester, waits, find.text('Complete Workout'), 'leave completion',
+    await _wait(tester, waits, find.byKey(WorkoutCompletionScreen.titleKey),
+        'leave completion',
         absent: true);
     _router(tester).go('/athlete/workouts/$_instanceId');
-    await _wait(tester, waits, find.text('Complete Workout'),
+    await _wait(tester, waits, find.byKey(WorkoutCompletionScreen.titleKey),
         'restore canonical completion route');
     await _expectDrillVideo(
         tester, waits, 'block-climbing-circuit', _circuitDrill);
@@ -569,8 +584,8 @@ void main() {
         'reveal completion button');
     await _tap(tester, waits, find.text('Mark as Completed'),
         'submit climbing workout');
-    await _wait(
-        tester, waits, find.text('Complete Workout'), 'completed navigation',
+    await _wait(tester, waits, find.byKey(WorkoutCompletionScreen.titleKey),
+        'completed navigation',
         absent: true);
     final completed = await waits.runStep(
         'verify completed instance', () => instanceRef.get(_server));
@@ -611,7 +626,7 @@ void main() {
         isEmpty);
 
     _router(tester).go('/athlete/workouts/$_instanceId');
-    await _wait(tester, waits, find.text('Workout Details'),
+    await _wait(tester, waits, find.byKey(WorkoutCompletionScreen.titleKey),
         'immutable completed detail');
     await _wait(tester, waits, find.text('3 × V2 · Max 2 attempts per climb'),
         'completed pinned circuit prescription',

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -21,7 +20,7 @@ import 'package:stage5/features/workouts/presentation/workout_timer_widget.dart'
 import 'package:stage5/features/workouts/domain/climbing_completion_input.dart';
 import 'package:stage5/features/workouts/presentation/climbing_completion_card.dart';
 
-/// Screen for completing a scheduled workout.
+/// Screen for recording a scheduled workout as the athlete performs it.
 ///
 /// The athlete enters RPE (1-10), duration, optional notes,
 /// and per-exercise actuals before marking the workout as completed.
@@ -29,6 +28,7 @@ class WorkoutCompletionScreen extends ConsumerStatefulWidget {
   const WorkoutCompletionScreen({required this.instanceId, super.key});
 
   static const listKey = ValueKey<String>('workout-completion-list');
+  static const titleKey = ValueKey<String>('workout-recording-title');
 
   @visibleForTesting
   static void Function(Map<String, Object?> event)? diagnosticObserver;
@@ -44,11 +44,11 @@ class _WorkoutCompletionScreenState
     extends ConsumerState<WorkoutCompletionScreen> with WidgetsBindingObserver {
   final _notesController = TextEditingController();
   final _scrollController = ScrollController();
-  final Map<String, GlobalKey> _exercisePageKeys = {};
   int _rpe = 5;
   int _durationMinutes = 45;
   bool _isLoading = false;
   WorkoutInstance? _instance;
+  String _workoutName = 'Workout';
   bool _isAthlete = false;
   List<WorkoutBlock> _blocks = [];
   final Map<String, ExerciseActual> _actuals = {};
@@ -101,9 +101,9 @@ class _WorkoutCompletionScreenState
     _draftClientId = null;
     _isLoading = false;
     _instance = null;
+    _workoutName = 'Workout';
     _isAthlete = false;
     _blocks = [];
-    _exercisePageKeys.clear();
     _actuals.clear();
     _slotInputs.clear();
     _climbingRestoreRevision++;
@@ -165,6 +165,7 @@ class _WorkoutCompletionScreenState
       }
 
       final workoutRepo = ref.read(workoutTemplateRepositoryProvider);
+      final workout = await workoutRepo.getById(instance.workoutTemplateId);
       final workoutVersion = await workoutRepo.getVersion(
         instance.workoutTemplateId,
         instance.workoutTemplateVersion,
@@ -192,6 +193,7 @@ class _WorkoutCompletionScreenState
       }
       setState(() {
         _instance = instance;
+        _workoutName = workout?.name ?? 'Workout';
         _blocks = workoutVersion?.blocks ?? [];
         _isAthlete = isAthlete;
         // A loaded draft's revision, client, and repository are one session.
@@ -428,17 +430,19 @@ class _WorkoutCompletionScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          _isAthlete && !instance.isCompleted
-              ? 'Complete Workout'
-              : 'Workout Details',
+        title: Column(
+          key: WorkoutCompletionScreen.titleKey,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_workoutName, maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(instance.scheduledDate,
+                style: Theme.of(context).textTheme.bodySmall),
+          ],
         ),
       ),
       body: LayoutBuilder(builder: (context, constraints) {
-        final exercisePageHeight =
-            constraints.maxWidth < 600 && _isAthlete && instance.isScheduled
-                ? constraints.maxHeight
-                : null;
+        final showExerciseNumbers =
+            constraints.maxWidth < 600 && _isAthlete && instance.isScheduled;
         return ListView(
           key: WorkoutCompletionScreen.listKey,
           controller: _scrollController,
@@ -476,7 +480,7 @@ class _WorkoutCompletionScreenState
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 16),
-              ..._buildExerciseSections(instance, exercisePageHeight),
+              ..._buildExerciseSections(instance, showExerciseNumbers),
               const SizedBox(height: 24),
             ] else
               const SizedBox(height: 24),
@@ -671,7 +675,7 @@ class _WorkoutCompletionScreenState
   }
 
   List<Widget> _buildExerciseSections(
-      WorkoutInstance instance, double? pageHeight) {
+      WorkoutInstance instance, bool showExerciseNumbers) {
     final total =
         _blocks.fold<int>(0, (count, block) => count + block.slots.length);
     var index = 0;
@@ -684,7 +688,7 @@ class _WorkoutCompletionScreenState
             slot: slot,
             index: index++,
             total: total,
-            pageHeight: pageHeight,
+            showExerciseNumbers: showExerciseNumbers,
           ),
     ];
   }
@@ -695,20 +699,20 @@ class _WorkoutCompletionScreenState
     required ExercisePrescription slot,
     required int index,
     required int total,
-    required double? pageHeight,
+    required bool showExerciseNumbers,
   }) {
-    final pageKey = _exercisePageKeys.putIfAbsent(slot.slotId, GlobalKey.new);
     final summary = _blockSummary(block);
-    final content = Column(
+    return Column(
+      key: ValueKey('exercise-section-${slot.slotId}'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (pageHeight != null) ...[
+        if (showExerciseNumbers) ...[
           Text('Exercise ${index + 1} of $total',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
         ],
         if (summary != null &&
-            (pageHeight != null || slot == block.slots.first)) ...[
+            (showExerciseNumbers || slot == block.slots.first)) ...[
           Text(summary,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                     color: Theme.of(context).colorScheme.primary,
@@ -740,50 +744,15 @@ class _WorkoutCompletionScreenState
             onActualChanged: _onActualChanged,
             initialActual: _actuals[slot.slotId],
           ),
+        if (index + 1 < total)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Divider(
+              key: ValueKey('exercise-separator-${slot.slotId}'),
+              height: 1,
+            ),
+          ),
       ],
-    );
-    return Padding(
-      key: pageKey,
-      padding: const EdgeInsets.only(bottom: 32),
-      child: ConstrainedBox(
-        constraints:
-            BoxConstraints(minHeight: pageHeight == null ? 0 : pageHeight - 32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            content,
-            if (pageHeight != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 24),
-                child: OutlinedButton.icon(
-                  key: ValueKey('next-exercise-${slot.slotId}'),
-                  onPressed: () => _nextExercise(pageKey),
-                  icon: const Icon(Icons.arrow_downward),
-                  label: Text(index + 1 == total
-                      ? 'Review & complete'
-                      : 'Next exercise'),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _nextExercise(GlobalKey pageKey) async {
-    FocusScope.of(context).unfocus();
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) return;
-    final box = pageKey.currentContext?.findRenderObject();
-    if (box is! RenderBox || !_scrollController.hasClients) return;
-    final viewport = RenderAbstractViewport.of(box);
-    final nextOffset =
-        viewport.getOffsetToReveal(box, 0).offset + box.size.height;
-    await _scrollController.animateTo(
-      nextOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeInOut,
     );
   }
 

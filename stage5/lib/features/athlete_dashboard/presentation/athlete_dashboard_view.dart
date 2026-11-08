@@ -432,7 +432,7 @@ class _TodaysWorkoutTile extends ConsumerWidget {
             ? FilledButton(
                 onPressed: () =>
                     context.push('/athlete/workouts/${instance.id}'),
-                child: const Text('Complete'),
+                child: const Text('Begin'),
               )
             : const Icon(Icons.chevron_right),
         onTap: canOpen

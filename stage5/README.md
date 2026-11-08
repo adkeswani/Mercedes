@@ -24,12 +24,12 @@ Implemented in this slice:
   partial seconds across pause/resume and catching up after browser suspension.
   Countdown actuals stop at the prescribed duration. Completion callbacks run
   when the browser next executes; locked-screen alerts are not guaranteed.
-- On phones (completion content narrower than 600 logical pixels), each
-  exercise occupies at least one viewport-height section. Scroll normally or
-  use **Next exercise**, then **Review & complete** to reach workout feedback.
-  Long climbing activities can exceed a viewport without clipping their rows.
-  Desktop completion remains a continuous list with more separation; builder
-  cards also have larger padding and gaps.
+- Scheduled workouts open with **Begin**. The recording page heading shows the
+  workout name and scheduled date; **Mark as Completed** finishes the workout.
+  Exercises form a continuous list on phones and desktops, with a separator and
+  consistent spacing between them. Adding climbing rows moves the separator and
+  following exercise naturally, without viewport-sized gaps or navigation
+  buttons.
 - Embedded YouTube players stop receiving pointer input while a dropdown or
   other popup route covers their screen, so selecting a grade or RPE cannot
   click through to the video. Closing the popup restores player interaction
@@ -249,7 +249,7 @@ Compatibility behavior:
   relationship is active. Completed and past workouts remain historical;
   athletes must explicitly convert subscriptions before structural changes.
 - Athlete Calendar and My Schedule now share the trainer-style monthly grid.
-  Select a day to see workout names, program/status, and a direct Complete
+  Select a day to see workout names, program/status, and a direct Begin
   button or clickable workout row. Completed workouts open their details;
   today/future scheduled rows retain reschedule/cancel/delete actions.
 - Signed-in template reads remain compatible with Stage 4 while assigned

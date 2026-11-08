@@ -7,6 +7,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'package:stage5/app.dart';
 import 'package:stage5/core/browser_smoke_config.dart';
+import 'package:stage5/features/workouts/presentation/workout_completion_screen.dart';
 import 'package:stage5/features/workouts/presentation/workout_instance_providers.dart';
 import 'package:stage5/main.dart' as app;
 
@@ -67,7 +68,7 @@ void main() {
       await _waitFor(
         tester,
         waits,
-        find.text('Complete Workout'),
+        find.byKey(WorkoutCompletionScreen.titleKey),
         step: 'canonical workout route',
       );
       final initialClientId = ProviderScope.containerOf(
@@ -111,7 +112,8 @@ void main() {
         timeout: null,
       );
 
-      final workoutContext = tester.element(find.text('Complete Workout'));
+      final workoutContext =
+          tester.element(find.byKey(WorkoutCompletionScreen.titleKey));
       GoRouter.of(workoutContext).go('/athlete/today');
       await _waitFor(
         tester,
@@ -122,7 +124,7 @@ void main() {
       await _waitForAbsent(
         tester,
         waits,
-        find.text('Complete Workout'),
+        find.byKey(WorkoutCompletionScreen.titleKey),
         step: 'dispose workout screen',
       );
 
@@ -141,11 +143,12 @@ void main() {
       await _waitFor(
         tester,
         waits,
-        find.text('Complete Workout'),
+        find.byKey(WorkoutCompletionScreen.titleKey),
         step: 'restored canonical workout route',
         timeout: const Duration(seconds: 30),
       );
-      final restoredContext = tester.element(find.text('Complete Workout'));
+      final restoredContext =
+          tester.element(find.byKey(WorkoutCompletionScreen.titleKey));
       expect(
         GoRouter.of(
           restoredContext,
@@ -178,7 +181,7 @@ void main() {
       await _waitForAbsent(
         tester,
         waits,
-        find.text('Complete Workout'),
+        find.byKey(WorkoutCompletionScreen.titleKey),
         step: 'completed workout navigation',
         timeout: const Duration(seconds: 30),
       );

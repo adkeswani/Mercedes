@@ -116,24 +116,24 @@ void main() {
     expect(find.text('today workout'), findsOneWidget);
     expect(find.text('completed workout'), findsOneWidget);
     expect(find.text('tomorrow workout'), findsNothing);
-    expect(find.text('Complete'), findsOneWidget);
+    expect(find.text('Begin'), findsOneWidget);
     expect(find.byType(PopupMenuButton<String>), findsOneWidget);
     expect(find.text('Schedule workout'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
   for (final tapButton in [false, true]) {
-    testWidgets('workout ${tapButton ? 'Complete button' : 'row'} opens detail',
+    testWidgets('workout ${tapButton ? 'Begin button' : 'row'} opens detail',
         (tester) async {
       await mount(tester);
       await openDay(tester, today);
-      await tester.tap(find.text(tapButton ? 'Complete' : 'today workout'));
+      await tester.tap(find.text(tapButton ? 'Begin' : 'today workout'));
       await tester.pumpAndSettle();
       expect(find.text('Workout today'), findsOneWidget);
     });
   }
 
-  testWidgets('completed workout opens history without a Complete button',
+  testWidgets('completed workout opens history without a Begin button',
       (tester) async {
     await mount(tester);
     await openDay(tester, today);
@@ -151,7 +151,7 @@ void main() {
     }
     await openDay(tester, yesterday);
     expect(find.text('past workout'), findsOneWidget);
-    expect(find.text('Complete'), findsOneWidget);
+    expect(find.text('Begin'), findsOneWidget);
     expect(find.byType(PopupMenuButton<String>), findsNothing);
   });
 
@@ -181,7 +181,7 @@ void main() {
     await mount(tester);
     await openDay(tester, today);
     expect(find.text('today workout'), findsOneWidget);
-    expect(find.text('Complete').hitTestable(), findsOneWidget);
+    expect(find.text('Begin').hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
