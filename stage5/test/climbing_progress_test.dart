@@ -233,7 +233,7 @@ void main() {
       expect(summary.highestSend(ClimbingGradingSystem.vScale), 'V10');
       expect(
         summary.gradeCounts(ClimbingGradingSystem.vScale).keys.toList(),
-        ['V2', 'V8', 'V9', 'V10'],
+        ['V2', 'V8', 'V9', 'V10', 'V14'],
       );
     });
     test('optional free results and missing sends remain unrecorded', () {
@@ -246,7 +246,54 @@ void main() {
       expect(ClimbingSummary([]).recordedClimbs, isNull);
       expect(session.recordedClimbs, 4);
     });
-    test('unrecorded route is not zero; a recorded unsent route is zero', () {
+    test(
+        'per-climb free results count once, include sends, and ignore legacy aggregates',
+        () {
+      final actual = ExerciseActual(
+        slotId: 'free',
+        exerciseId: freeClimbingExerciseId,
+        mode: ExerciseMode.reps,
+        climbingType: 'freeClimbing',
+        freeRows: const [
+          FreeClimbingResultRow(
+              rowId: 'sent',
+              gradingSystem: ClimbingGradingSystem.vScale,
+              grade: 'V6',
+              attempts: 3,
+              sent: true),
+          FreeClimbingResultRow(
+              rowId: 'unsent',
+              gradingSystem: ClimbingGradingSystem.vScale,
+              grade: 'V8',
+              attempts: 5,
+              sent: false),
+          FreeClimbingResultRow(
+              rowId: 'legacy',
+              gradingSystem: ClimbingGradingSystem.vScale,
+              grade: 'V10',
+              climbs: 9),
+        ],
+      );
+      final instance = progressInstance(actuals: [actual]);
+      final version = WorkoutTemplateVersion(
+          versionNumber: 1,
+          publishedAt: DateTime(2026),
+          blocks: [progressVersion().blocks.last]);
+      final session = ClimbingSession.fromWorkout(instance, version)!;
+      expect(session.recordedClimbs, 2);
+      expect(session.routes.map((route) => route.attempts), [3, 5]);
+      final summary = ClimbingSummary([session]);
+      expect(summary.highestGrade(ClimbingGradingSystem.vScale), 'V8');
+      expect(summary.highestSend(ClimbingGradingSystem.vScale), 'V6');
+      expect(summary.gradeCounts(ClimbingGradingSystem.vScale),
+          {'V6': 1, 'V8': 1});
+      final filtered = ClimbingSummary([session.sentOnly()]);
+      expect(filtered.recordedClimbs, 1);
+      expect(filtered.highestGrade(ClimbingGradingSystem.vScale), 'V6');
+      expect(filtered.gradeCounts(ClimbingGradingSystem.vScale), {'V6': 1});
+    });
+    test('unsent routes count once by default and zero with sent-only filter',
+        () {
       WorkoutTemplateVersion routeVersion = WorkoutTemplateVersion(
         versionNumber: 1,
         publishedAt: DateTime(2026),
@@ -255,11 +302,12 @@ void main() {
       for (final sent in [null, false]) {
         final instance = progressInstance(sent: sent);
         final session = ClimbingSession.fromWorkout(instance, routeVersion)!;
-        expect(session.recordedClimbs, sent == null ? null : 0);
+        expect(session.recordedClimbs, sent == null ? null : 1);
         expect(
           ClimbingSummary([session]).recordedFor(ClimbingGradingSystem.vScale),
-          sent == null ? null : 0,
+          sent == null ? null : 1,
         );
+        expect(session.sentOnly().recordedClimbs, sent == null ? null : 0);
       }
     });
     test('legacy grades are excluded, not converted from colors', () {

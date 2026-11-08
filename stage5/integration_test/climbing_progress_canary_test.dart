@@ -289,7 +289,20 @@ void main() {
       find.byKey(const Key('progress-highest-send')),
       'highest confirmed send',
     );
+    expect(find.text('V8 - preceding period: V8'), findsOneWidget);
+    await tap(
+        find.byKey(const Key('progress-sent-only')), 'show sent climbs only');
+    await reveal(
+        find.byKey(const Key('progress-highest-send')), 'confirmed sends only');
     expect(find.text('V4 - preceding period: V4'), findsOneWidget);
+    await reveal(
+        find.byKey(const Key('progress-summary-climbs')), 'sent-only volume');
+    expect(summary('climbs', '10'), findsOneWidget);
+    await tap(
+        find.byKey(const Key('progress-sent-only')), 'restore all climbs');
+    await reveal(
+        find.byKey(const Key('progress-summary-climbs')), 'all-climb volume');
+    expect(summary('climbs', '18'), findsOneWidget);
     expect(find.textContaining('V9 - preceding period'), findsNothing);
     await tap(find.byKey(const Key('progress-system-yds')), 'select YDS');
     await reveal(
@@ -328,7 +341,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const Key('progress-source-sheet')),
-        matching: find.textContaining('2 recorded attempts'),
+        matching: find.textContaining('V4 - Sent - 2 recorded attempts'),
       ),
       findsOneWidget,
     );
@@ -424,7 +437,7 @@ void main() {
         'collapse restored contributions',
       );
       await reveal(
-        find.text('Highest grade sent each week'),
+        find.text('Highest grade climbed each week'),
         'send chart screenshot',
       );
       await binding.takeScreenshot('athlete-climbing-progress-performance');

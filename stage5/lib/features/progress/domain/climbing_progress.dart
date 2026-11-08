@@ -64,10 +64,11 @@ class ProgressRange {
 }
 
 class RecordedClimbs {
-  const RecordedClimbs(this.system, this.grade, this.count);
+  const RecordedClimbs(this.system, this.grade, this.count, {this.sent = true});
   final ClimbingGradingSystem system;
   final String grade;
   final int count;
+  final bool sent;
 }
 
 class RoutePerformance {
@@ -135,6 +136,30 @@ class ClimbingSession {
   int? get recordedClimbs => climbs.isEmpty
       ? null
       : climbs.fold<int>(0, (sum, entry) => sum + entry.count);
+
+  ClimbingSession sentOnly() => ClimbingSession(
+        instanceId: instanceId,
+        athleteId: athleteId,
+        templateId: templateId,
+        version: version,
+        date: date,
+        workoutName: workoutName,
+        programId: programId,
+        programName: programName,
+        climbs: [
+          for (final climb in climbs)
+            RecordedClimbs(
+              climb.system,
+              climb.grade,
+              climb.sent ? climb.count : 0,
+              sent: climb.sent,
+            ),
+        ],
+        routes: routes.where((route) => route.sent == true).toList(),
+        circuits: circuits,
+        unrecordedBlocks: unrecordedBlocks,
+        legacyRoutes: legacyRoutes,
+      );
 
   static ClimbingSession? fromWorkout(
     WorkoutInstance instance,
@@ -212,7 +237,8 @@ class ClimbingSession {
         if (actual.sent == null) {
           unrecorded++;
         } else {
-          climbs.add(RecordedClimbs(system, block.grade, actual.sent! ? 1 : 0));
+          climbs
+              .add(RecordedClimbs(system, block.grade, 1, sent: actual.sent!));
         }
       } else if (block is ClimbingCircuitBlock) {
         var completed = 0;
@@ -238,9 +264,21 @@ class ClimbingSession {
           ),
         );
       } else if (block is FreeClimbingBlock) {
-        if (actual.freeRows!.isEmpty) unrecorded++;
+        if (!actual.freeRows!.any((row) => !row.isLegacy)) unrecorded++;
         for (final row in actual.freeRows!) {
-          climbs.add(RecordedClimbs(row.gradingSystem, row.grade, row.climbs));
+          if (row.isLegacy) continue;
+          climbs.add(
+            RecordedClimbs(row.gradingSystem, row.grade, 1, sent: row.sent!),
+          );
+          routes.add(
+            RoutePerformance(
+              system: row.gradingSystem,
+              grade: row.grade,
+              sent: row.sent,
+              attempts: row.attempts,
+              name: 'Free climb',
+            ),
+          );
         }
       }
     }
@@ -333,6 +371,21 @@ class ClimbingSummary {
     return grades.last;
   }
 
+  String? highestGrade(ClimbingGradingSystem system) {
+    final grades = [
+      for (final session in sessions)
+        for (final route in session.routes)
+          if (route.system == system &&
+              (route.sent != null || (route.attempts ?? 0) > 0))
+            route.grade,
+    ];
+    if (grades.isEmpty) return null;
+    grades.sort(
+      (a, b) => system.grades.indexOf(a).compareTo(system.grades.indexOf(b)),
+    );
+    return grades.last;
+  }
+
   int? recordedFor(ClimbingGradingSystem system) {
     final entries = sessions
         .expand((session) => session.climbs)
@@ -395,6 +448,13 @@ class ClimbingProgressReport {
         range: range,
         sessions: [...current.sessions, ...previous.sessions]
             .where((session) => !excluded.contains(session.selectionKey))
+            .toList(),
+      );
+
+  ClimbingProgressReport sentOnly() => ClimbingProgressReport(
+        range: range,
+        sessions: [...current.sessions, ...previous.sessions]
+            .map((session) => session.sentOnly())
             .toList(),
       );
 

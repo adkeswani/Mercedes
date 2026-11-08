@@ -239,23 +239,23 @@ void main() {
   });
 
   testWidgets(
-      'free climbing result rows validate counts and persist canonical grades',
+      'free climbing rows validate attempts and persist individual climbs',
       (tester) async {
     await pumpScreen(tester);
-    final add = find.text('Add result row');
+    final add = find.text('Add climb');
     await tester.scrollUntilVisible(add, 250,
         scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
     await tester.tap(add);
     await tester.pumpAndSettle();
-    final count = find.widgetWithText(TextFormField, 'Climbs completed');
+    final count = find.widgetWithText(TextFormField, 'Attempts');
     await tester.scrollUntilVisible(count, -250,
         scrollable: find.byType(Scrollable).first);
     await tester.enterText(count, '0');
     await tester.pump();
-    expect(find.text('Enter a positive whole number'), findsOneWidget);
+    expect(find.text('Enter 1+'), findsOneWidget);
     await complete(tester);
-    expect(find.textContaining('positive whole number of climbs completed'),
+    expect(find.textContaining('positive whole number of attempts'),
         findsOneWidget);
     expect(
         (await WorkoutInstanceRepository(firestore: firestore)
@@ -278,7 +278,8 @@ void main() {
     await complete(tester);
     final instance = (await WorkoutInstanceRepository(firestore: firestore)
         .getById('instance'))!;
-    expect(instance.actualsBySlot['free-slot']!.freeRows!.single.climbs, 2);
+    expect(instance.actualsBySlot['free-slot']!.freeRows!.single.attempts, 2);
+    expect(instance.actualsBySlot['free-slot']!.freeRows!.single.sent, isFalse);
     expect(instance.actualsBySlot['free-slot']!.freeRows!.single.grade, 'V0');
     expect(instance.actualsBySlot['free-slot']!.attempts, isNull);
     expect((await serverDraft.get()).exists, isFalse);
@@ -291,32 +292,31 @@ void main() {
       (tester) async {
     await pumpScreen(tester);
     await tester.tap(find.byType(Checkbox));
-    final add = find.text('Add result row');
+    final add = find.text('Add climb');
     await tester.scrollUntilVisible(add, 250,
         scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
     await tester.tap(add);
     await tester.pumpAndSettle();
-    final count = find.widgetWithText(TextFormField, 'Climbs completed');
+    final count = find.widgetWithText(TextFormField, 'Attempts');
     await tester.scrollUntilVisible(count, 250,
         scrollable: find.byType(Scrollable).first);
     await tester.enterText(count, '4');
     await tester.enterText(
-        find.widgetWithText(TextFormField, 'Row note (optional)').last,
-        'Recovered row');
+        find.widgetWithText(TextFormField, 'Notes').last, 'Recovered row');
     await tester.pump(const Duration(milliseconds: 800));
     await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
     await pumpScreen(tester);
-    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).first).value, isTrue);
     await tester.scrollUntilVisible(count, 250,
         scrollable: find.byType(Scrollable).first);
     expect(tester.widget<TextFormField>(count).initialValue, '4');
     expect(
         tester
             .widget<TextFormField>(
-                find.widgetWithText(TextFormField, 'Row note (optional)').last)
+                find.widgetWithText(TextFormField, 'Notes').last)
             .initialValue,
         'Recovered row');
     final restored = store.draft!;
@@ -341,20 +341,20 @@ void main() {
     expect(find.text('3 × V2 · Max 2 attempts per climb'), findsOneWidget);
     expect(find.text('Completed · RPE 9'), findsOneWidget);
     expect(find.byType(Checkbox), findsNothing);
-    expect(find.text('Add result row'), findsNothing);
+    expect(find.text('Add climb'), findsNothing);
   });
 
   testWidgets(
       'can remove an optional unfinished free climbing row before completing',
       (tester) async {
     await pumpScreen(tester);
-    await tester.scrollUntilVisible(find.text('Add result row'), 250,
+    await tester.scrollUntilVisible(find.text('Add climb'), 250,
         scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Add result row'));
+    await tester.tap(find.text('Add climb'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Remove result row'));
-    await tester.tap(find.text('Remove result row'));
+    await tester.ensureVisible(find.byTooltip('Remove climb'));
+    await tester.tap(find.byTooltip('Remove climb'));
     await tester.pumpAndSettle();
     await complete(tester);
     expect(find.text('Done'), findsOneWidget);
@@ -585,22 +585,10 @@ void main() {
       of: find.text('Trainer note: Explore routes'),
       matching: find.byType(ClimbingCompletionCard),
     );
-    final add =
-        find.descendant(of: freeCard, matching: find.text('Add result row'));
+    final add = find.descendant(of: freeCard, matching: find.text('Add climb'));
     await revealListTarget(tester, add, scrollable: scrollable);
     await tester.tap(add);
     await tester.pump(const Duration(milliseconds: 400));
-    final system = find.descendant(
-      of: freeCard,
-      matching: find.byType(DropdownButtonFormField<ClimbingGradingSystem>),
-    );
-    await canary.selectClimbingSystem(tester, waits, system);
-    expect(
-      tester
-          .widget<DropdownButtonFormField<ClimbingGradingSystem>>(system)
-          .initialValue,
-      ClimbingGradingSystem.yds,
-    );
     final grade = find.descendant(
       of: freeCard,
       matching: find.byType(DropdownButtonFormField<String>),

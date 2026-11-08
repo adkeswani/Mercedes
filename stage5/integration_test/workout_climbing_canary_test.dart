@@ -418,15 +418,8 @@ void main() {
     await _tap(
         tester,
         waits,
-        find.descendant(of: freeCard, matching: find.text('Add result row')),
+        find.descendant(of: freeCard, matching: find.text('Add climb')),
         'add optional free result');
-    await selectClimbingSystem(
-        tester,
-        waits,
-        find.descendant(
-            of: freeCard,
-            matching:
-                find.byType(DropdownButtonFormField<ClimbingGradingSystem>)));
     await selectClimbingGrade(
         tester,
         waits,
@@ -439,7 +432,7 @@ void main() {
         waits,
         find.descendant(
             of: freeCard,
-            matching: find.widgetWithText(TextFormField, 'Climbs completed')),
+            matching: find.widgetWithText(TextFormField, 'Attempts')),
         '2',
         'record actual rope climbs');
     await _enter(
@@ -447,16 +440,31 @@ void main() {
         waits,
         find.descendant(
             of: freeCard,
-            matching:
-                find.widgetWithText(TextFormField, 'Row note (optional)')),
-        'Two clean climbs',
+            matching: find.widgetWithText(TextFormField, 'Notes')),
+        'Clean climb',
         'record free row note');
+    expect(
+        tester
+            .widget<TextFormField>(find.descendant(
+                of: freeCard,
+                matching: find.widgetWithText(TextFormField, 'Notes')))
+            .initialValue,
+        'Clean climb',
+        reason: 'Free climb notes must reach the completion input');
     await selectClimbingRpe(
         tester,
         waits,
         find.descendant(
             of: freeCard, matching: find.byType(DropdownButtonFormField<int>)),
         7);
+    expect(
+        tester
+            .widget<TextFormField>(find.descendant(
+                of: freeCard,
+                matching: find.widgetWithText(TextFormField, 'Notes')))
+            .initialValue,
+        'Clean climb',
+        reason: 'Changing block RPE must preserve climb notes');
     await _enter(
         tester,
         waits,
@@ -466,6 +474,14 @@ void main() {
                 find.widgetWithText(TextFormField, 'Climbing note (optional)')),
         'Enjoyed the routes',
         'record free climbing note');
+    expect(
+        tester
+            .widget<TextFormField>(find.descendant(
+                of: freeCard,
+                matching: find.widgetWithText(TextFormField, 'Notes')))
+            .initialValue,
+        'Clean climb',
+        reason: 'Changing block notes must preserve climb notes');
 
     var serverDraftSaved = false;
     await waits.waitForCondition(
@@ -491,7 +507,9 @@ void main() {
         final circuitRows = circuitInput.data()?['circuitRows'] as List?;
         serverDraftSaved = freeRows?.isNotEmpty == true &&
             circuitRows?.isNotEmpty == true &&
-            (freeRows!.first as Map)['climbs'] == '2' &&
+            (freeRows!.first as Map)['attempts'] == '2' &&
+            (freeRows.first as Map)['sent'] == false &&
+            (freeRows.first as Map)['notes'] == 'Clean climb' &&
             (circuitRows!.first as Map)['rpe'] == 8;
         await tester.pump(const Duration(milliseconds: 100));
       },
@@ -526,8 +544,7 @@ void main() {
         'reveal recovered free card');
     await _expectDrillVideo(tester, waits, 'block-free-climbing', _freeDrill);
     final count = find.descendant(
-        of: freeCard,
-        matching: find.widgetWithText(TextFormField, 'Climbs completed'));
+        of: freeCard, matching: find.widgetWithText(TextFormField, 'Attempts'));
     await _wait(tester, waits, count, 'recovered free result count',
         reveal: true);
     await waits.waitForCondition(
@@ -538,6 +555,16 @@ void main() {
       timeout: const Duration(seconds: 20),
     );
     expect(tester.widget<TextFormField>(count).initialValue, '2');
+    expect(
+        tester
+            .widget<Checkbox>(
+                find.descendant(of: freeCard, matching: find.byType(Checkbox)))
+            .value,
+        isFalse);
+    await waits.captureAfterAssertions('capture compact free climbing entry',
+        () async {
+      await binding.takeScreenshot('athlete-free-climbing-entry');
+    });
     await _scroll(tester, waits, find.text('Mark as Completed'), 250,
         'reveal completion button');
     await _tap(tester, waits, find.text('Mark as Completed'),
@@ -562,7 +589,8 @@ void main() {
     expect(circuit['sent'], isNull);
     expect(circuit['reps'], isNull);
     expect(bySlot['slot-free-climbing']!['freeRows'][0]['grade'], '5.13a');
-    expect(bySlot['slot-free-climbing']!['freeRows'][0]['climbs'], 2);
+    expect(bySlot['slot-free-climbing']!['freeRows'][0]['attempts'], 2);
+    expect(bySlot['slot-free-climbing']!['freeRows'][0]['sent'], false);
     expect(bySlot['slot-free-climbing']!['rpe'], 7);
     expect(bySlot['slot-free-climbing-optional']!['freeRows'], isEmpty);
     expect((await versionRef.get(_server)).data(), before.data());
@@ -595,7 +623,11 @@ void main() {
     await _expectDrillVideo(
         tester, waits, 'block-climbing-circuit', _circuitDrill);
     expect(find.text('Completed prescribed row'), findsNothing);
-    await _scroll(tester, waits, find.text('2 × 5.13a · Two clean climbs'), 250,
+    await _scroll(
+        tester,
+        waits,
+        find.text('5.13a · 2 attempts · Not sent · Clean climb'),
+        250,
         'free climbing history');
     await _expectDrillVideo(tester, waits, 'block-free-climbing', _freeDrill);
     await waits.captureAfterAssertions('capture completed climbing history',
@@ -731,6 +763,8 @@ Future<void> _reveal(WidgetTester tester, Finder finder) async {
   if (find.byType(WorkoutCompletionScreen).evaluate().isNotEmpty) {
     await revealListTarget(tester, finder,
         scrollable: _workoutScrollables().first);
+    await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
+    await tester.pump(const Duration(milliseconds: 100));
   } else {
     await tester.ensureVisible(finder);
     await tester.pump(const Duration(milliseconds: 100));
@@ -750,6 +784,7 @@ Future<void> _enter(WidgetTester tester, BrowserTestWaitContext waits,
     waits.runStep(label, () async {
       await _reveal(tester, finder);
       await tester.enterText(finder, value);
+      FocusManager.instance.primaryFocus?.unfocus();
       await tester.pump(const Duration(milliseconds: 100));
     });
 

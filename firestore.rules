@@ -503,10 +503,8 @@ service cloud.firestore {
              && rowIds.toSet().size() == rows.size();
     }
 
-    function validFreeClimbingActualRows(rawRows, rawIds) {
-      let rows = rawRows;
-      let rowIds = rawIds;
-      let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'notes'];
+    function validFreeClimbingActualRows(rows, rowIds) {
+      let keys = ['rowId', 'gradingSystem', 'grade', 'attempts', 'sent', 'notes'];
       let patterns = climbingGradePatterns();
       return validFreeClimbingRowsManifest(rows, rowIds)
              && (rows.size() < 1 || validFreeClimbingRow(rows[0], rowIds[0], keys, patterns))
@@ -522,28 +520,26 @@ service cloud.firestore {
 
     function validFreeClimbingRow(row, rowId, keys, patterns) {
       let notes = row.get('notes', null);
-      let climbs = row.climbs;
+      let attempts = row.attempts;
       return row.keys().hasOnly(keys) && row.rowId == rowId
-             && row.rowId.matches('^[^/]+$')
+             && rowId.matches('^[^/]+$')
              && row.grade.matches(patterns[row.gradingSystem])
-             && climbs is int && climbs >= 1
+             && attempts is int && attempts >= 1 && row.sent is bool
              && (notes == null || notes.matches('(?s)^(?:.{0,1000}){0,4}$'));
     }
 
     function validFreeClimbingDraftRow(row, rowId, keys, patterns) {
       let notes = row.get('notes', null);
-      let climbs = row.climbs;
+      let attempts = row.attempts;
       return row.keys().hasOnly(keys) && row.rowId == rowId
-             && row.rowId.matches('^[^/]+$')
+             && rowId.matches('^[^/]+$')
              && row.grade.matches(patterns[row.gradingSystem])
-             && climbs.matches('(?s)^.{0,20}$')
+             && attempts.matches('(?s)^.{0,20}$') && row.sent is bool
              && (notes == null || notes.matches('(?s)^(?:.{0,1000}){0,4}$'));
     }
 
-    function validFreeClimbingDraftRows(rawRows, rawIds) {
-      let rows = rawRows;
-      let rowIds = rawIds;
-      let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'notes'];
+    function validFreeClimbingDraftRows(rows, rowIds) {
+      let keys = ['rowId', 'gradingSystem', 'grade', 'attempts', 'sent', 'notes'];
       let patterns = climbingGradePatterns();
       return validFreeClimbingRowsManifest(rows, rowIds)
              && (rows.size() < 1 || validFreeClimbingDraftRow(rows[0], rowIds[0], keys, patterns))

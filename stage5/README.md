@@ -414,10 +414,11 @@ athlete recovery/completion/history against deterministic emulator fixtures.
 It verifies grades-only circuit creation, optional exercise linking with stable
 row/result IDs, per-row and overall countdown controls, and pinned durations.
 Its fixture includes both grading systems, a newer published version, and a
-second free-climbing block completed without any grade rows. It verifies
-server drafts, immutable version/block documents, and stable-slot actuals.
+second free-climbing block completed without any climb rows. It verifies
+compact Grade/Attempts/Sent entry, per-climb notes, server draft recovery,
+immutable version/block documents, and stable-slot actuals.
 Role-specific tests skip the other identity. Its screenshots are
-`trainer-climbing-authoring.png`, `athlete-climbing-recovery.png`, and
+`trainer-climbing-authoring.png`, `athlete-free-climbing-entry.png`, and
 `athlete-climbing-history.png` in the runner's selected artifact directory.
 
 Browser tests use one headless Chrome instance per invocation. No
@@ -666,13 +667,13 @@ data and failure artifacts.
 ## Web workspace follow-ups
 
 Athlete Progress (`/athlete/progress`) now reports climbing sessions, recorded
-completed-climb volume and canonical grade distribution, highest confirmed
-single-route sent grades, recorded route attempts, and circuit whole-row
+climb volume and canonical grade distribution, highest recorded
+individual-climb grades, recorded attempts, and circuit whole-row
 completion trends against pinned workout versions. The view supports Last 7,
 14, and 30 days, Last 12 months, and an inclusive custom range of 1 to 366 days.
 Dates use actual completion timestamps in the viewer's local timezone, not
 scheduled dates. Summary cards compare the immediately preceding equal-length
-period. Three line charts show the highest confirmed single-route sent grade
+period. Three line charts show the highest recorded individual-climb grade
 each week, total recorded climb volume across grading systems, and weekly
 volume broken down by the selected grading system's grades. Calendar weeks
 start on Monday; the first and last weeks are clipped to the selected range.
@@ -682,6 +683,10 @@ Chart points and circuit/route records open immutable completed detail.
 The UI contains labels, values, filters and workout data, not methodological
 paragraphs or an optional explanation panel. The phone home links to the same
 responsive view; line charts fit the phone width without horizontal scrolling.
+**Sent climbs only** is off by default. It filters individual climbs in the
+charts, summaries, comparisons, and source lists to confirmed sends; completed
+circuit prescriptions still contribute their known volume. Each logged climb
+counts once, not once per attempt. Highest grades do not infer circuit sends.
 **Choose workouts** provides checkboxes for every climbing completion in the
 selected and preceding periods. All are initially included, regardless of
 program or independent assignment; excluding a workout recalculates every
@@ -699,13 +704,24 @@ Selections stay in the current view when changing ranges or refreshing and
 are keyed by both athlete and instance identity. Workout labels use current
 library titles for recognition; all metric inputs use pinned versions/results.
 
-V-scale and YDS are never converted or averaged. Only explicit single-route
-`sent` results establish sent grades; Free Climbing counts and completed circuit
+V-scale and YDS are never converted or averaged. Explicit single-route and
+per-climb Free Climbing `sent` results establish sent grades. Completed circuit
 prescriptions contribute recorded volume, not confirmed sends. Unchecked
 circuit rows may contain unknown partial work and omitted results are not zero.
 Legacy grade/color routes are disclosed but excluded from ranked metrics.
 Route attempts describe that workout, not cumulative attempts across sessions.
 Circuit comparisons stay within the same template/version/block.
+
+Free Climbing completion records one climb per compact row: Grade, Attempts,
+and Sent on the first line, with Notes beneath. Add climb immediately adds a
+row with one attempt, not sent, and the previous grade (V0 initially); the
+single grade dropdown includes both V-scale and YDS. The existing nine-row
+limit remains. Drafts retain unfinished attempt text and completion requires
+positive integer attempts. Existing templates and assigned pinned workouts
+use these results without republishing. Valid historical grade-count rows are
+read for compatibility but omitted from history/progress and discarded when
+restoring/saving a draft, preserving block notes and RPE. No counts are
+converted into invented individual climbs or attempts.
 
 The read-only repository pages all completions in the selected and preceding
 bounded intervals using the existing `(athleteId, status, completedAt DESC)`

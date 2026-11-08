@@ -94,7 +94,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('1 of 2 workouts included in this range'), findsOneWidget);
     await _reveal(tester, find.byKey(const Key('progress-highest-send')));
-    expect(find.text('V4 - preceding period: V4'), findsOneWidget);
+    expect(find.text('V8 - preceding period: V8'), findsOneWidget);
     expect(find.byKey(const Key('progress-workout-second')), findsNothing);
     await _reveal(tester, find.byKey(const Key('progress-include-previous')));
     await tester.tap(find.byKey(const Key('progress-include-previous')));
@@ -219,7 +219,7 @@ void main() {
     expect(find.byKey(const Key('progress-grade-vScale-V2')), findsOneWidget);
     await _reveal(tester, find.byKey(const Key('progress-highest-send')));
     expect(
-      find.text('V4 - preceding period: No recorded sends'),
+      find.text('V8 - preceding period: No recorded climbs'),
       findsOneWidget,
     );
     await _reveal(tester, find.byKey(const Key('progress-system-yds')));
@@ -229,7 +229,7 @@ void main() {
     expect(find.byKey(const Key('progress-grade-vScale-V8')), findsNothing);
     await _reveal(tester, find.byKey(const Key('progress-highest-send')));
     expect(
-      find.text('5.11a - preceding period: No recorded sends'),
+      find.text('5.11a - preceding period: No recorded climbs'),
       findsOneWidget,
     );
   });
@@ -282,7 +282,7 @@ void main() {
         .widget<CustomPaint>(find.byKey(Key('progress-$prefix-lines')))
         .painter! as ProgressLineChartPainter;
     expect(painter('volume').series.single.values, [0, 0, 0, 0, 9]);
-    expect(painter('sends').series.single.values, [null, null, null, null, 6]);
+    expect(painter('sends').series.single.values, [null, null, null, null, 10]);
     expect(
       painter('grade-volume').series.map((line) => line.label).toList(),
       ['V2', 'V4', 'V8'],
@@ -322,6 +322,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Unable to load climbing progress'), findsNothing);
     expect(requests, 2);
+  });
+
+  testWidgets(
+      'sent-only checkbox filters all charts and restores all climbs without a fetch',
+      (tester) async {
+    var requests = 0;
+    await _pump(tester, load: (range) {
+      requests++;
+      return Future.value(ClimbingProgressReport(range: range, sessions: [
+        progressSession(),
+        progressSession(id: 'previous', date: DateTime(2026, 10, 1))
+      ]));
+    });
+    final toggle = find.byKey(const Key('progress-sent-only'));
+    await _reveal(tester, toggle);
+    expect(tester.widget<CheckboxListTile>(toggle).value, isFalse);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    ProgressLineChartPainter painter(String prefix) => tester
+        .widget<CustomPaint>(find.byKey(Key('progress-$prefix-lines')))
+        .painter! as ProgressLineChartPainter;
+    expect(painter('volume').series.single.values.last, 5);
+    expect(painter('sends').series.single.values.last, 6);
+    expect(
+        painter('grade-volume').series.map((line) => line.label), ['V2', 'V4']);
+    await _reveal(tester, find.byKey(const Key('progress-highest-send')));
+    expect(find.text('V4 - preceding period: V4'), findsOneWidget);
+    await _reveal(tester, toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(painter('volume').series.single.values.last, 9);
+    expect(painter('sends').series.single.values.last, 10);
+    expect(painter('grade-volume').series.map((line) => line.label),
+        ['V2', 'V4', 'V8']);
+    expect(requests, 1);
   });
   testWidgets(
       'custom date input applies inclusive range and rejects oversize ranges',

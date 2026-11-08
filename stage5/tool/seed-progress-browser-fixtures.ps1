@@ -117,9 +117,11 @@ function Get-ProgressBrowserFixtureWrites {
                     @{ rowId = 'rope-row'; completed = $false }
                 ) },
             @{ exerciseId = 'builtin-free-climbing'; mode = 'reps'
-                climbingType = 'freeClimbing'; rowIds = @('free-row')
+                climbingType = 'freeClimbing'; rowIds = @(0..3 | ForEach-Object { "free-row-$_" })
                 freeRows = @(
-                    @{ rowId = 'free-row'; gradingSystem = 'vScale'; grade = 'V8'; climbs = 4 }
+                    0..3 | ForEach-Object {
+                        @{ rowId = "free-row-$_"; gradingSystem = 'vScale'; grade = 'V8'; attempts = 2; sent = $false }
+                    }
                 ) }
         )
         if ($age -in @(1, 10)) {

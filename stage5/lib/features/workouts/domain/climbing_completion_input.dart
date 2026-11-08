@@ -22,7 +22,8 @@ void validateClimbingInput(Map<String, dynamic> input) {
   }
   final key = type == 'climbingCircuit' ? 'circuitRows' : 'freeRows';
   if (input.keys.toSet().difference(
-          {'climbingType', 'notes', 'rpe', key, 'rowIds'}).isNotEmpty ||
+        {'climbingType', 'notes', 'rpe', key, 'rowIds'},
+      ).isNotEmpty ||
       input['notes'] is! String ||
       (input['notes'] as String).length > 4000 ||
       (input['rpe'] != null && input['rpe'] is! int)) {
@@ -52,20 +53,24 @@ void validateClimbingInput(Map<String, dynamic> input) {
     if (type == 'climbingCircuit') {
       ClimbingCircuitResultRow.fromMap(row);
     } else {
+      final legacy = row.containsKey('climbs');
       if (row.keys.toSet().difference({
             'rowId',
             'gradingSystem',
             'grade',
-            'climbs',
+            if (legacy) 'climbs' else ...{'attempts', 'sent'},
             'notes',
           }).isNotEmpty ||
-          row['climbs'] is! String ||
-          (row['climbs'] as String).length > 20 ||
+          row[legacy ? 'climbs' : 'attempts'] is! String ||
+          (row[legacy ? 'climbs' : 'attempts'] as String).length > 20 ||
+          (!legacy && row['sent'] is! bool) ||
           row['grade'] is! String) {
         throw const FormatException('Invalid free climbing draft fields');
       }
       validateClimbingGrade(
-          parseGradingSystem(row['gradingSystem']), row['grade'] as String);
+        parseGradingSystem(row['gradingSystem']),
+        row['grade'] as String,
+      );
     }
   }
   if (input.containsKey('rowIds')) {
@@ -73,42 +78,53 @@ void validateClimbingInput(Map<String, dynamic> input) {
   }
 }
 
-Map<String, dynamic> climbingInputForStorage(Map<String, dynamic> input) => {
-      ...input,
-      input.containsKey('circuitRows') ? 'circuitRows' : 'freeRows': [
-        for (final row in (input['circuitRows'] ?? input['freeRows']) as List)
-          Map<String, dynamic>.from(row as Map),
-      ],
-      'rowIds': [
-        for (final row in (input['circuitRows'] ?? input['freeRows']) as List)
-          (row as Map)['rowId'],
-      ],
-    };
+Map<String, dynamic> climbingInputForStorage(Map<String, dynamic> input) {
+  validateClimbingInput(input);
+  final circuit = input.containsKey('circuitRows');
+  // Legacy counts cannot be converted into individual climbs or attempts.
+  final rows = [
+    for (final row in (input[circuit ? 'circuitRows' : 'freeRows']) as List)
+      if (circuit || !(row as Map).containsKey('climbs'))
+        Map<String, dynamic>.from(row as Map),
+  ];
+  return {
+    ...input,
+    circuit ? 'circuitRows' : 'freeRows': rows,
+    'rowIds': [for (final row in rows) row['rowId']],
+  };
+}
 
 void validateClimbingInputForBlock(
-    WorkoutBlock block, Map<String, dynamic> input) {
+  WorkoutBlock block,
+  Map<String, dynamic> input,
+) {
   validateClimbingInput(input);
   if (input['climbingType'] != block.type.name) {
     throw const FormatException(
-        'Recovered climbing type does not match the pinned workout');
+      'Recovered climbing type does not match the pinned workout',
+    );
   }
   if (block is ClimbingCircuitBlock) {
     final rows = input['circuitRows'] as List;
     if (rows.length != block.rows.length) {
       throw const FormatException(
-          'Recovered climbing row count does not match the pinned workout');
+        'Recovered climbing row count does not match the pinned workout',
+      );
     }
     for (var i = 0; i < rows.length; i++) {
       if ((rows[i] as Map)['rowId'] != block.rows[i].rowId) {
         throw const FormatException(
-            'Recovered climbing rows do not match the pinned workout');
+          'Recovered climbing rows do not match the pinned workout',
+        );
       }
     }
   }
 }
 
 ExerciseActual climbingActualFromInput(
-    WorkoutBlock block, Map<String, dynamic> input) {
+  WorkoutBlock block,
+  Map<String, dynamic> input,
+) {
   validateClimbingInput(input);
   final slot = block.slots.single;
   final actual = ExerciseActual(
@@ -123,19 +139,25 @@ ExerciseActual climbingActualFromInput(
     circuitRows: input['circuitRows'] == null
         ? null
         : (input['circuitRows'] as List)
-            .map((r) => ClimbingCircuitResultRow.fromMap(
-                Map<String, dynamic>.from(r as Map)))
+            .map(
+              (r) => ClimbingCircuitResultRow.fromMap(
+                Map<String, dynamic>.from(r as Map),
+              ),
+            )
             .toList(),
     freeRows: input['freeRows'] == null
         ? null
-        : (input['freeRows'] as List).map((raw) {
+        : (climbingInputForStorage(input)['freeRows'] as List).map((raw) {
             final row = Map<String, dynamic>.from(raw as Map);
-            final climbs = int.tryParse((row['climbs'] as String).trim());
-            if (climbs == null || climbs < 1) {
+            final attempts = int.tryParse((row['attempts'] as String).trim());
+            if (attempts == null || attempts < 1) {
               throw ArgumentError(
-                  'Enter a positive whole number of climbs completed for ${row['grade']}');
+                'Enter a positive whole number of attempts for ${row['grade']}',
+              );
             }
-            return FreeClimbingResultRow.fromMap({...row, 'climbs': climbs});
+            return FreeClimbingResultRow.fromMap(
+              {...row, 'attempts': attempts},
+            );
           }).toList(),
   );
   actual.validateForBlock(block);

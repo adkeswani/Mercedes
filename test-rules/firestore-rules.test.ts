@@ -244,7 +244,7 @@ describe('climbing circuit and free climbing', () => {
         climbingType: type, notes: '', rpe: null, rowIds,
         ...(type === 'climbingCircuit'
           ? { circuitRows: rowIds.map(rowId => ({ rowId, completed: true, rpe: 10, notes: 'Controlled' })) }
-          : { freeRows: rowIds.map(rowId => ({ rowId, gradingSystem: 'yds', grade: '5.13a', climbs: '', notes: 'Controlled' })) }),
+          : { freeRows: rowIds.map(rowId => ({ rowId, gradingSystem: 'yds', grade: '5.13a', attempts: '', sent: false, notes: 'Controlled' })) }),
       };
       await assertSucceeds(saveClimbingDraft(draftForInputs(Object.fromEntries(
         Array.from({ length: 9 }, (_, i) => [i === 0 ? 'climbing-slot' : `climbing-slot-${i}`, input]),
@@ -270,7 +270,7 @@ describe('climbing circuit and free climbing', () => {
           ...result(type), slotOrder: order, rowIds,
           ...(type === 'climbingCircuit'
             ? { circuitRows: rowIds.map(rowId => ({ rowId, completed: true, rpe: 10, notes: 'Controlled' })) }
-            : { freeRows: rowIds.map(rowId => ({ rowId, gradingSystem: 'yds', grade: '5.13a', climbs: 2, notes: 'Controlled' })) }),
+            : { freeRows: rowIds.map(rowId => ({ rowId, gradingSystem: 'yds', grade: '5.13a', attempts: 2, sent: true, notes: 'Controlled' })) }),
         });
       }
       await assertSucceeds(batch.commit());
@@ -281,13 +281,13 @@ describe('climbing circuit and free climbing', () => {
     await seedCompletion('freeClimbing');
     const row = {
       rowId: 'row-a', gradingSystem: 'vScale', grade: 'V2',
-      climbs: '\n', notes: 'x'.repeat(3999) + '\n',
+      attempts: '\n', sent: false, notes: 'x'.repeat(3999) + '\n',
     };
     const input = { climbingType: 'freeClimbing', notes: '', rpe: 10, rowIds: ['row-a'], freeRows: [row] };
     await assertSucceeds(saveClimbingDraft(draftForInputs({ 'climbing-slot': input })));
     for (const invalid of [
       { notes: 'x'.repeat(4001) }, { notes: 1 }, { notes: [] },
-      { climbs: '1'.repeat(21) }, { climbs: 2 },
+      { attempts: '1'.repeat(21) }, { attempts: 2 }, { sent: null },
     ]) {
       await assertFails(saveClimbingDraft(draftForInputs({
         'climbing-slot': { ...input, freeRows: [{ ...row, ...invalid }] },
@@ -567,7 +567,7 @@ describe('climbing circuit and free climbing', () => {
     await seedCompletion('freeClimbing');
     await assertSucceeds(complete({
       ...result('freeClimbing'),
-      freeRows: [{ rowId: 'actual-row', gradingSystem: 'yds', grade: '5.13a', climbs: 2, notes: 'Clean' }],
+      freeRows: [{ rowId: 'actual-row', gradingSystem: 'yds', grade: '5.13a', attempts: 2, sent: true, notes: 'Clean' }],
     }));
   });
 
@@ -576,7 +576,7 @@ describe('climbing circuit and free climbing', () => {
     await assertSucceeds(complete({
       ...result('freeClimbing'),
       freeRows: Array.from({ length: 9 }, (_, i) => ({
-        rowId: `actual-${i}`, gradingSystem: 'yds', grade: '5.13a', climbs: 2, notes: null,
+        rowId: `actual-${i}`, gradingSystem: 'yds', grade: '5.13a', attempts: 2, sent: false, notes: null,
       })),
     }));
   });
@@ -606,11 +606,16 @@ describe('climbing circuit and free climbing', () => {
 
   it.each([
     { rpe: 0 },
-    { freeRows: [{ rowId: 'a', gradingSystem: 'vScale', grade: 'V2', climbs: 0 }] },
-    { freeRows: [{ rowId: 'a', gradingSystem: 'vScale', grade: 'Red', climbs: 2 }] },
-    { freeRows: [{ rowId: 'a', gradingSystem: 'yds', grade: '5.13a', climbs: 2, maxAttemptsPerClimb: 3 }] },
-    { freeRows: [0, 1].map(() => ({ rowId: 'duplicate', gradingSystem: 'vScale', grade: 'V2', climbs: 1 })) },
-    { freeRows: Array.from({ length: 10 }, (_, i) => ({ rowId: `a${i}`, gradingSystem: 'vScale', grade: 'V2', climbs: 1 })) },
+    { freeRows: [{ rowId: 'a', gradingSystem: 'vScale', grade: 'V2', attempts: 0, sent: false }] },
+    { freeRows: [{ rowId: 'a', gradingSystem: 'vScale', grade: 'V2', attempts: -1, sent: true }] },
+    { freeRows: [{ rowId: 'a', gradingSystem: 'vScale', grade: 'V2', attempts: 1.5, sent: true }] },
+    { freeRows: [{ rowId: 'a', gradingSystem: 'vScale', grade: 'V2', attempts: 1 }] },
+    { freeRows: [{ rowId: 'a', gradingSystem: 'vScale', grade: 'V2', attempts: 1, sent: 'true' }] },
+    { freeRows: [{ rowId: 'a', gradingSystem: 'vScale', grade: 'V2', climbs: 2 }] },
+    { freeRows: [{ rowId: 'a', gradingSystem: 'vScale', grade: 'Red', attempts: 2, sent: false }] },
+    { freeRows: [{ rowId: 'a', gradingSystem: 'yds', grade: '5.13a', attempts: 2, sent: true, maxAttemptsPerClimb: 3 }] },
+    { freeRows: [0, 1].map(() => ({ rowId: 'duplicate', gradingSystem: 'vScale', grade: 'V2', attempts: 1, sent: false })) },
+    { freeRows: Array.from({ length: 10 }, (_, i) => ({ rowId: `a${i}`, gradingSystem: 'vScale', grade: 'V2', attempts: 1, sent: true })) },
   ])('denies invalid free climbing completion %j', async invalid => {
     await seedCompletion('freeClimbing');
     await assertFails(complete({ ...result('freeClimbing'), ...invalid }));
@@ -660,7 +665,7 @@ describe('climbing circuit and free climbing', () => {
     const draftRef = db.collection('workoutInstances').doc('climbing-instance')
       .collection('completionDrafts').doc('current');
     const input = { climbingType: 'freeClimbing', notes: '', rpe: 6, rowIds: ['a'],
-      freeRows: [{ rowId: 'a', gradingSystem: 'vScale', grade: 'V2', climbs: '', notes: '' }] };
+      freeRows: [{ rowId: 'a', gradingSystem: 'vScale', grade: 'V2', attempts: '', sent: false, notes: '' }] };
     const draft = {
       schemaVersion: 1, instanceId: 'climbing-instance', athleteId: ATHLETE,
       rpe: 5, durationMinutes: 40, athleteNotes: null, currentStep: 0,
@@ -683,7 +688,7 @@ describe('climbing circuit and free climbing', () => {
       climbingType: type, notes: '', rpe: null, rowIds,
       ...(type === 'climbingCircuit'
         ? { circuitRows: rowIds.map(rowId => ({ rowId, completed: false, rpe: null, notes: '' })) }
-        : { freeRows: rowIds.map(rowId => ({ rowId, gradingSystem: 'yds', grade: '5.13a', climbs: '', notes: '' })) }),
+        : { freeRows: rowIds.map(rowId => ({ rowId, gradingSystem: 'yds', grade: '5.13a', attempts: '', sent: false, notes: '' })) }),
     };
     await assertSucceeds(saveClimbingDraft({
         schemaVersion: 1, instanceId: 'climbing-instance', athleteId: ATHLETE,

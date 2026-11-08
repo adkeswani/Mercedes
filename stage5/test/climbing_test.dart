@@ -399,12 +399,15 @@ void main() {
         'rowId': 'actual-row',
         'gradingSystem': 'yds',
         'grade': '5.13a',
-        'climbs': '2',
+        'attempts': '2',
+        'sent': true,
         'notes': 'Two clean climbs',
       }
     ];
     final actual = climbingActualFromInput(block, input);
-    expect(actual.freeRows!.single.climbs, 2);
+    expect(actual.freeRows!.single.attempts, 2);
+    expect(actual.freeRows!.single.sent, isTrue);
+    expect(actual.freeRows!.single.climbs, isNull);
     expect(actual.rpe, 6);
     expect(
         ExerciseActual.fromMap(actual.toMap(), slotId: actual.slotId)
@@ -427,7 +430,8 @@ void main() {
             'rowId': 'actual-row',
             'gradingSystem': 'vScale',
             'grade': 'V2',
-            'climbs': count,
+            'attempts': count,
+            'sent': false,
             'notes': '',
           }
         ];
@@ -463,7 +467,8 @@ void main() {
           'rowId': 'free-result',
           'gradingSystem': 'yds',
           'grade': '5.13a',
-          'climbs': '',
+          'attempts': '',
+          'sent': false,
           'notes': 'Still climbing',
         }
       ];
@@ -491,7 +496,7 @@ void main() {
         WorkoutCompletionDraft.fromMap(draft.toMap()).slotInputs, storedInputs);
     (freeInput['freeRows'] as List).first['grade'] = 'Purple';
     expect(() => WorkoutCompletionDraft.fromMap(draft.toMap()),
-        throwsFormatException);
+        throwsArgumentError);
   });
 
   group('repository climbing persistence', () {

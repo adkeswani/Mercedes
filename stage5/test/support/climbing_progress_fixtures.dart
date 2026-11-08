@@ -67,6 +67,7 @@ WorkoutInstance progressInstance({
   String programId = 'program',
   int programVersion = 0,
   String? programInstanceId,
+  List<ExerciseActual>? actuals,
 }) {
   final time = date ?? DateTime(2026, 11, 6, 12);
   return WorkoutInstance(
@@ -87,43 +88,46 @@ WorkoutInstance progressInstance({
     durationMinutes: 45,
     createdAt: time,
     updatedAt: time,
-    actuals: [
-      ExerciseActual(
-          slotId: 'route',
-          exerciseId: 'route-exercise',
-          mode: ExerciseMode.reps,
-          sent: sent,
-          attempts: attempts),
-      ExerciseActual(
-          slotId: 'rope',
-          exerciseId: 'rope-exercise',
-          mode: ExerciseMode.reps,
-          sent: true,
-          attempts: 3),
-      ExerciseActual(
-          slotId: 'circuit',
-          exerciseId: climbingCircuitExerciseId,
-          mode: ExerciseMode.reps,
-          climbingType: 'climbingCircuit',
-          circuitRows: const [
-            ClimbingCircuitResultRow(rowId: 'boulders', completed: true),
-            ClimbingCircuitResultRow(rowId: 'ropes', completed: false),
-          ]),
-      ExerciseActual(
-          slotId: 'free',
-          exerciseId: freeClimbingExerciseId,
-          mode: ExerciseMode.reps,
-          climbingType: 'freeClimbing',
-          freeRows: freeCounts
-              ? const [
-                  FreeClimbingResultRow(
-                      rowId: 'free-boulders',
-                      gradingSystem: ClimbingGradingSystem.vScale,
-                      grade: 'V8',
-                      climbs: 4),
-                ]
-              : const []),
-    ],
+    actuals: actuals ??
+        [
+          ExerciseActual(
+              slotId: 'route',
+              exerciseId: 'route-exercise',
+              mode: ExerciseMode.reps,
+              sent: sent,
+              attempts: attempts),
+          ExerciseActual(
+              slotId: 'rope',
+              exerciseId: 'rope-exercise',
+              mode: ExerciseMode.reps,
+              sent: true,
+              attempts: 3),
+          ExerciseActual(
+              slotId: 'circuit',
+              exerciseId: climbingCircuitExerciseId,
+              mode: ExerciseMode.reps,
+              climbingType: 'climbingCircuit',
+              circuitRows: const [
+                ClimbingCircuitResultRow(rowId: 'boulders', completed: true),
+                ClimbingCircuitResultRow(rowId: 'ropes', completed: false),
+              ]),
+          ExerciseActual(
+              slotId: 'free',
+              exerciseId: freeClimbingExerciseId,
+              mode: ExerciseMode.reps,
+              climbingType: 'freeClimbing',
+              freeRows: freeCounts
+                  ? [
+                      for (var i = 0; i < 4; i++)
+                        FreeClimbingResultRow(
+                            rowId: 'free-boulders-$i',
+                            gradingSystem: ClimbingGradingSystem.vScale,
+                            grade: 'V8',
+                            attempts: 2,
+                            sent: false),
+                    ]
+                  : const []),
+        ],
   );
 }
 

@@ -687,12 +687,13 @@ deletion/anonymization plus explicit relationship/history handling.
   the pinned prescription. They do not record partial climbs or actual
   attempts. Free actuals have `climbingType: freeClimbing`, nullable block
   `notes`/`rpe`, and optional `freeRows` (`rowId`, `gradingSystem`, `grade`,
-  positive actual `climbs`, nullable `notes`). Free rows have no prescribed
+  positive integer `attempts`, boolean `sent`, nullable `notes`). Each free row
+  is one climb, not an aggregate count per grade. Free rows have no prescribed
   attempt cap. All optional RPE values use the existing integer 1–10 scale.
 - Local/server drafts retain raw unfinished free-row number text and stable
   row identities. The draft codec checks shape, canonical grades, RPE, and
   manifest integrity; restoration checks pinned circuit rows. Submission
-  additionally validates positive counts. Both new kinds require a result
+  additionally validates positive attempts. Both new kinds require a result
   document, but free climbing may complete with an empty `freeRows` list.
   Local drafts remain complete inline DTOs. Server climbing inputs are
   separate `completionDrafts/current/climbingInputs/{slotId}` children, read
@@ -701,6 +702,12 @@ deletion/anonymization plus explicit relationship/history handling.
   with fresh server timestamps. This bounds per-document rules validation
   while supporting nine slots with nine rows each. Completion removes all
   declared children and the primary draft atomically.
+- Free Climbing prescriptions and pinned assignments are unchanged. Historical
+  grade-count results (`climbs`) remain readable but are not displayed or used
+  in progress. Recognized legacy draft rows are discarded on restore/save;
+  block notes and RPE are retained, and invalid data still fails validation.
+  New writes require per-climb attempts and sent status. No backfill invents
+  individual climbs from old aggregate counts.
 - New single climbing routes carry `gradingSystem` and a canonical `grade`,
   with empty color. Absence of `gradingSystem` identifies legacy grade/color
   routes; their existing nonempty grade/color validation is retained.
@@ -783,8 +790,11 @@ implementation:
   headings, tri-state group checkboxes, and an Independent workouts group.
   Program names are display metadata only; unavailable historical names never
   remove completed-workout contributions or change pinned metric inputs.
-  Progress charts use calendar weeks for highest confirmed sent grade, overall
-  recorded climb volume, and per-grade recorded volume. Missing values remain
+  Progress charts use calendar weeks for highest recorded individual-climb
+  grade, overall recorded climb volume, and per-grade recorded volume.
+  Sent climbs only defaults off and applies to individual climbs in current
+  and preceding periods; circuit volume still comes from completed rows.
+  A logged climb counts once irrespective of attempts. Missing values remain
   gaps; no-activity weeks have zero volume. Methodological detail belongs in
   documentation, not explanatory panels in the app.
 - The full personal-best comparator catalog.

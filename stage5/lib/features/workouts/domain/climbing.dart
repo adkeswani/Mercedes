@@ -227,19 +227,33 @@ class FreeClimbingResultRow {
     required this.rowId,
     required this.gradingSystem,
     required this.grade,
-    required this.climbs,
+    this.attempts,
+    this.sent,
+    this.climbs,
     this.notes,
   });
   final String rowId;
   final ClimbingGradingSystem gradingSystem;
   final String grade;
-  final int climbs;
+  final int? attempts;
+  final bool? sent;
+  // Read-only compatibility for historical grade-count results.
+  final int? climbs;
+  bool get isLegacy => climbs != null;
   final String? notes;
 
   void validate() {
     validateClimbingRowId(rowId);
     validateClimbingGrade(gradingSystem, grade);
-    if (climbs < 1) throw ArgumentError('Climbs completed must be positive');
+    if (isLegacy) {
+      if (climbs! < 1 || attempts != null || sent != null) {
+        throw ArgumentError('Invalid legacy free climbing result');
+      }
+    } else if (attempts == null || attempts! < 1 || sent == null) {
+      throw ArgumentError(
+        'Each climb requires positive attempts and sent status',
+      );
+    }
     validateClimbingNote(notes);
   }
 
@@ -247,7 +261,12 @@ class FreeClimbingResultRow {
         'rowId': rowId,
         'gradingSystem': gradingSystem.name,
         'grade': grade,
-        'climbs': climbs,
+        if (isLegacy)
+          'climbs': climbs
+        else ...{
+          'attempts': attempts,
+          'sent': sent,
+        },
         'notes': notes,
       };
 
@@ -257,6 +276,8 @@ class FreeClimbingResultRow {
       'gradingSystem',
       'grade',
       'climbs',
+      'attempts',
+      'sent',
       'notes',
     }).isEmpty) {
       throw const FormatException('Unexpected free climbing result fields');
@@ -265,7 +286,9 @@ class FreeClimbingResultRow {
       rowId: map['rowId'] as String,
       gradingSystem: parseGradingSystem(map['gradingSystem']),
       grade: map['grade'] as String,
-      climbs: map['climbs'] as int,
+      climbs: map['climbs'] as int?,
+      attempts: map['attempts'] as int?,
+      sent: map['sent'] as bool?,
       notes: map['notes'] as String?,
     );
     row.validate();

@@ -22,6 +22,7 @@ class _ClimbingProgressScreenState
   ProgressPreset? _preset = ProgressPreset.month;
   late ProgressRange _range;
   ClimbingGradingSystem _system = ClimbingGradingSystem.vScale;
+  bool _sentOnly = false;
   final _excludedWorkouts = <(String, String)>{};
 
   @override
@@ -174,11 +175,14 @@ class _ClimbingProgressScreenState
                         _selectWorkouts(group.sessions, include),
                   ),
                   _ProgressContent(
-                    report: selected,
+                    report: _sentOnly ? selected.sentOnly() : selected,
                     hasAvailableWorkouts: report.current.sessionCount > 0,
                     system: _system,
                     onSystemChanged: (system) =>
                         setState(() => _system = system),
+                    sentOnly: _sentOnly,
+                    onSentOnlyChanged: (value) =>
+                        setState(() => _sentOnly = value),
                   ),
                 ],
               );
@@ -280,11 +284,15 @@ class _ProgressContent extends StatelessWidget {
     required this.system,
     required this.onSystemChanged,
     required this.hasAvailableWorkouts,
+    required this.sentOnly,
+    required this.onSentOnlyChanged,
   });
   final ClimbingProgressReport report;
   final ClimbingGradingSystem system;
   final ValueChanged<ClimbingGradingSystem> onSystemChanged;
   final bool hasAvailableWorkouts;
+  final bool sentOnly;
+  final ValueChanged<bool> onSentOnlyChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -293,17 +301,19 @@ class _ProgressContent extends StatelessWidget {
     final gradeCounts = current.gradeCounts(system);
     final weeks = report.weeklyBuckets;
     final sendChart = _ProgressChartCard(
-      title: 'Highest grade sent each week',
+      title: sentOnly
+          ? 'Highest grade sent each week'
+          : 'Highest grade climbed each week',
       children: [
         Text(
-          '${current.highestSend(system) ?? 'No recorded sends'}'
-          ' - preceding period: ${previous.highestSend(system) ?? 'No recorded sends'}',
+          '${current.highestGrade(system) ?? 'No recorded climbs'}'
+          ' - preceding period: ${previous.highestGrade(system) ?? 'No recorded climbs'}',
           key: const Key('progress-highest-send'),
         ),
         ProgressLineChart(
           keyPrefix: 'sends',
           buckets: weeks,
-          emptyLabel: 'No confirmed sends in this range.',
+          emptyLabel: 'No recorded climbs in this range.',
           valueLabel: (rank) => rank == 0 ? '-' : system.grades[rank - 1],
           series: [
             ProgressLineSeries(
@@ -311,7 +321,7 @@ class _ProgressContent extends StatelessWidget {
               label: system.label,
               values: [
                 for (final week in weeks)
-                  if (week.summary.highestSend(system) case final String grade)
+                  if (week.summary.highestGrade(system) case final String grade)
                     system.grades.indexOf(grade) + 1
                   else
                     null,
@@ -325,11 +335,13 @@ class _ProgressContent extends StatelessWidget {
                 .sessions
                 .where(
                   (session) => session.routes.any(
-                    (route) => route.system == system && route.sent == true,
+                    (route) =>
+                        route.system == system &&
+                        (route.sent != null || (route.attempts ?? 0) > 0),
                   ),
                 )
                 .toList(),
-            'Confirmed sends: ${weeks[index].range.label}',
+            '${sentOnly ? 'Sent climbs' : 'Climbs'}: ${weeks[index].range.label}',
           ),
         ),
       ],
@@ -379,7 +391,7 @@ class _ProgressContent extends StatelessWidget {
             Expanded(
               child: _SummaryCard(
                 key: const Key('progress-summary-climbs'),
-                title: 'Recorded completed climbs',
+                title: sentOnly ? 'Recorded sent climbs' : 'Recorded climbs',
                 value: current.recordedClimbs?.toString() ?? 'Not recorded',
                 comparison:
                     '${previous.recordedClimbs?.toString() ?? 'Not recorded'} in preceding period',
@@ -398,6 +410,16 @@ class _ProgressContent extends StatelessWidget {
             ),
           ),
         if (current.sessions.isNotEmpty) ...[
+          CheckboxListTile(
+            key: const Key('progress-sent-only'),
+            value: sentOnly,
+            title: const Text('Sent climbs only'),
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            onChanged: (value) {
+              if (value != null) onSentOnlyChanged(value);
+            },
+          ),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -475,11 +497,11 @@ class _ProgressContent extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          const _Heading('Single-route attempts and sends'),
+          const _Heading('Attempts and sends'),
           if (!current.sessions.any(
             (session) => session.routes.any((route) => route.system == system),
           ))
-            const Text('No single-route results for this grading system.'),
+            const Text('No climb results for this grading system.'),
           for (final session in current.sessions)
             for (final route in session.routes.where((r) => r.system == system))
               ListTile(
