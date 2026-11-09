@@ -4,6 +4,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:stage5/features/athlete_dashboard/domain/athlete_activity_event.dart';
 import 'package:stage5/features/athlete_dashboard/presentation/athlete_dashboard_providers.dart';
@@ -17,6 +18,123 @@ import 'package:stage5/features/workouts/presentation/workout_instance_providers
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
 void main() {
+  for (final started in [false, true]) {
+    testWidgets('${started ? 'Continue' : 'Begin'} opens the same workout',
+        (tester) async {
+      final router = GoRouter(routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, __) => const Scaffold(
+            body: SingleChildScrollView(child: AthleteDashboardView()),
+          ),
+        ),
+        GoRoute(
+          path: '/athlete/workouts/:id',
+          builder: (_, state) =>
+              Scaffold(body: Text('Workout ${state.pathParameters['id']}')),
+        ),
+      ]);
+      addTearDown(router.dispose);
+      await _pumpDashboard(
+        tester,
+        router: router,
+        schedule: (_) => Stream.value([_todayWorkout()]),
+        progress: (_) => Stream.value(started),
+        load: () async =>
+            const AthleteDashboardPage(events: [], isBounded: false),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(started ? 'Continue' : 'Begin'), findsOneWidget);
+      expect(find.text(started ? 'In progress' : 'Scheduled'), findsOneWidget);
+      await tester
+          .tap(find.byKey(const ValueKey('workout-start-action-today')));
+      await tester.pumpAndSettle();
+      expect(find.text('Workout today'), findsOneWidget);
+    });
+  }
+
+  testWidgets('dashboard updates Continue as saved draft state changes',
+      (tester) async {
+    final progress = StreamController<bool>();
+    addTearDown(progress.close);
+    progress.add(false);
+    await _pumpDashboard(
+      tester,
+      progress: (_) => progress.stream,
+      schedule: (_) => Stream.value([_todayWorkout()]),
+      load: () async =>
+          const AthleteDashboardPage(events: [], isBounded: false),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Begin'), findsOneWidget);
+    progress.add(true);
+    await tester.pumpAndSettle();
+    expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('In progress'), findsOneWidget);
+    progress.add(false);
+    await tester.pumpAndSettle();
+    expect(find.text('Begin'), findsOneWidget);
+    expect(find.text('Continue'), findsNothing);
+  });
+
+  testWidgets('loading saved progress uses Open rather than guessing Begin',
+      (tester) async {
+    final progress = Completer<bool>();
+    await _pumpDashboard(
+      tester,
+      progress: (_) => Stream.fromFuture(progress.future),
+      schedule: (_) => Stream.value([_todayWorkout()]),
+      load: () async =>
+          const AthleteDashboardPage(events: [], isBounded: false),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Open'), findsOneWidget);
+    expect(find.text('Begin'), findsNothing);
+    progress.complete(true);
+    await tester.pumpAndSettle();
+    expect(find.text('Continue'), findsOneWidget);
+  });
+
+  testWidgets('failed saved-progress lookup is explicit and retryable',
+      (tester) async {
+    var attempts = 0;
+    await _pumpDashboard(
+      tester,
+      progress: (_) => ++attempts == 1
+          ? Stream.error(StateError('progress unavailable'))
+          : Stream.value(true),
+      schedule: (_) => Stream.value([_todayWorkout()]),
+      load: () async =>
+          const AthleteDashboardPage(events: [], isBounded: false),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Open'), findsOneWidget);
+    expect(find.text('Begin'), findsNothing);
+    await tester.tap(find.byTooltip('Unable to load saved progress. Retry'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('progress unavailable'), findsOneWidget);
+    expect(find.text('Continue'), findsOneWidget);
+    expect(attempts, 2);
+  });
+
+  testWidgets('completed workouts do not load drafts or show start actions',
+      (tester) async {
+    await _pumpDashboard(
+      tester,
+      progress: (_) =>
+          throw StateError('Completed workouts must not read drafts'),
+      schedule: (_) => Stream.value([
+        _todayWorkout(status: WorkoutInstanceStatus.completed),
+      ]),
+      load: () async =>
+          const AthleteDashboardPage(events: [], isBounded: false),
+    );
+    await tester.pumpAndSettle();
+    expect(
+        find.byKey(const ValueKey('workout-start-action-today')), findsNothing);
+    expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+  });
+
   testWidgets(
     "defaults to All and switches to Today's Workouts, Completed, Comments, "
     'and Reactions',
@@ -250,6 +368,8 @@ Future<void> _pumpDashboard(
   WidgetTester tester, {
   required Future<AthleteDashboardPage> Function() load,
   Stream<List<WorkoutInstance>> Function(DateRange range)? schedule,
+  Stream<bool> Function(String instanceId)? progress,
+  GoRouter? router,
 }) {
   final firestore = FakeFirebaseFirestore();
   return tester.pumpWidget(
@@ -258,20 +378,26 @@ Future<void> _pumpDashboard(
         athleteDashboardProvider.overrideWith((ref) => load()),
         athleteScheduleProvider.overrideWith(
             (ref, range) => schedule?.call(range) ?? Stream.value([])),
+        workoutHasSavedDraftProvider.overrideWith(
+            (ref, id) => progress?.call(id) ?? Stream.value(false)),
         workoutTemplateRepositoryProvider
             .overrideWithValue(WorkoutTemplateRepository(firestore: firestore)),
         programRepositoryProvider
             .overrideWithValue(ProgramRepository(firestore: firestore)),
       ],
-      child: const MaterialApp(
-        home: Scaffold(
-            body: SingleChildScrollView(child: AthleteDashboardView())),
-      ),
+      child: router == null
+          ? const MaterialApp(
+              home: Scaffold(
+                  body: SingleChildScrollView(child: AthleteDashboardView())),
+            )
+          : MaterialApp.router(routerConfig: router),
     ),
   );
 }
 
-WorkoutInstance _todayWorkout() {
+WorkoutInstance _todayWorkout({
+  WorkoutInstanceStatus status = WorkoutInstanceStatus.scheduled,
+}) {
   final now = DateTime.now();
   return WorkoutInstance(
     id: 'today',
@@ -282,7 +408,7 @@ WorkoutInstance _todayWorkout() {
     scheduledDate: now.toIso8601String().substring(0, 10),
     assignedBy: 'trainer-1',
     assignedAt: now,
-    status: WorkoutInstanceStatus.scheduled,
+    status: status,
     workoutType: WorkoutType.fullBody,
     createdAt: now,
     updatedAt: now,

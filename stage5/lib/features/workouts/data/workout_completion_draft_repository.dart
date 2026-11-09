@@ -96,6 +96,28 @@ class WorkoutCompletionDraftRepository {
   DocumentReference<Map<String, dynamic>> _draft(String instanceId) =>
       _instance(instanceId).collection('completionDrafts').doc('current');
 
+  Stream<bool> watchHasSavedDraft({
+    required String instanceId,
+    required String athleteId,
+  }) async* {
+    final local = await _localStore.read(instanceId);
+    if (local != null) {
+      _verifyIdentity(local, instanceId, athleteId);
+      yield true;
+    }
+    await for (final snapshot in _draft(instanceId).snapshots()) {
+      final data = snapshot.data();
+      if (data != null) {
+        _verifyIdentity(
+          WorkoutCompletionDraft.fromMap(data),
+          instanceId,
+          athleteId,
+        );
+      }
+      yield data != null || local != null;
+    }
+  }
+
   Future<WorkoutCompletionDraft?> _readServerDraft(
     Transaction transaction,
     DocumentSnapshot<Map<String, dynamic>> snapshot,

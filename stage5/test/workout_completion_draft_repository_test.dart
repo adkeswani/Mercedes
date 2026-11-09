@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -86,6 +88,115 @@ void main() {
         },
     });
   }
+
+  test('saved draft indicator follows server creation and removal', () async {
+    final values = StreamIterator(repository.watchHasSavedDraft(
+      instanceId: 'instance-1',
+      athleteId: 'athlete-1',
+    ));
+    addTearDown(values.cancel);
+    await values.moveNext();
+    expect(values.current, isFalse);
+    final header = firestore
+        .collection('workoutInstances')
+        .doc('instance-1')
+        .collection('completionDrafts')
+        .doc('current');
+    await header.set(draft().toMap());
+    await values.moveNext();
+    expect(values.current, isTrue);
+    await header.delete();
+    await values.moveNext();
+    expect(values.current, isFalse);
+    expect(localStore.value, isNull);
+  });
+
+  test('saved draft indicator recognizes device-only progress without writing',
+      () async {
+    localStore.value = draft();
+    expect(
+      await repository
+          .watchHasSavedDraft(
+            instanceId: 'instance-1',
+            athleteId: 'athlete-1',
+          )
+          .first,
+      isTrue,
+    );
+    final header = await firestore
+        .collection('workoutInstances')
+        .doc('instance-1')
+        .collection('completionDrafts')
+        .doc('current')
+        .get();
+    expect(header.exists, isFalse);
+  });
+
+  test('saved draft indicator reads climbing metadata without child hydration',
+      () async {
+    await firestore
+        .collection('workoutInstances')
+        .doc('instance-1')
+        .collection('completionDrafts')
+        .doc('current')
+        .set({
+      ...draft().toMap(),
+      'climbingSlotIds': ['climbing-slot'],
+    });
+    expect(
+      await repository
+          .watchHasSavedDraft(
+            instanceId: 'instance-1',
+            athleteId: 'athlete-1',
+          )
+          .first,
+      isTrue,
+    );
+    expect(localStore.value, isNull);
+  });
+
+  test('saved draft indicator rejects another athlete device draft', () async {
+    localStore.value = draft(athleteId: 'athlete-2');
+    await expectLater(
+      repository.watchHasSavedDraft(
+        instanceId: 'instance-1',
+        athleteId: 'athlete-1',
+      ),
+      emitsError(isA<StateError>()),
+    );
+  });
+
+  test('saved draft indicator surfaces invalid server metadata', () async {
+    await firestore
+        .collection('workoutInstances')
+        .doc('instance-1')
+        .collection('completionDrafts')
+        .doc('current')
+        .set({'schemaVersion': 99});
+    await expectLater(
+      repository.watchHasSavedDraft(
+        instanceId: 'instance-1',
+        athleteId: 'athlete-1',
+      ),
+      emitsError(isA<FormatException>()),
+    );
+  });
+
+  test('saved draft indicator rejects mismatched server ownership', () async {
+    await firestore
+        .collection('workoutInstances')
+        .doc('instance-1')
+        .collection('completionDrafts')
+        .doc('current')
+        .set(draft(athleteId: 'athlete-2').toMap());
+    await expectLater(
+      repository.watchHasSavedDraft(
+        instanceId: 'instance-1',
+        athleteId: 'athlete-1',
+      ),
+      emitsError(isA<StateError>()),
+    );
+  });
 
   test(
       'diagnostics retain exact attempted and authoritative conflict revisions',

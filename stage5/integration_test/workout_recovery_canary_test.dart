@@ -20,7 +20,7 @@ const _artifactPath = String.fromEnvironment(
 );
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
     'athlete completion draft survives app recreation and clears on completion',
@@ -62,6 +62,14 @@ void main() {
       );
 
       final authenticatedContext = tester.element(find.text('Today').first);
+      final startAction = find.byKey(
+          const ValueKey('workout-start-action-browser-calendar-workout'));
+      await _waitFor(
+        tester,
+        waits,
+        find.descendant(of: startAction, matching: find.text('Begin')),
+        step: 'new dashboard workout shows Begin',
+      );
       GoRouter.of(authenticatedContext).go(
         '/athlete/workouts/browser-calendar-workout',
       );
@@ -127,6 +135,17 @@ void main() {
         find.byKey(WorkoutCompletionScreen.titleKey),
         step: 'dispose workout screen',
       );
+      await _waitFor(
+        tester,
+        waits,
+        find.descendant(of: startAction, matching: find.text('Continue')),
+        step: 'saved dashboard workout shows Continue',
+      );
+      expect(find.text('In progress'), findsWidgets);
+      await waits.captureAfterAssertions('capture dashboard Continue action',
+          () async {
+        await binding.takeScreenshot('athlete-workout-continue');
+      });
 
       final recreatedClientId = ProviderScope.containerOf(
         tester.element(find.byType(MercedesApp)),

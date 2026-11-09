@@ -122,7 +122,11 @@ void main() {
                     find.byKey(const Key('athlete-dashboard-filter-all')))
                 .selected,
             isTrue);
-        expect(find.widgetWithText(FilledButton, 'Begin'), findsWidgets);
+        await wait(
+          'new workout start action resolves to Begin',
+          () =>
+              find.widgetWithText(FilledButton, 'Begin').evaluate().isNotEmpty,
+        );
         await tester.tap(
             find.byKey(const Key('athlete-dashboard-filter-todaysWorkouts')));
         await wait(

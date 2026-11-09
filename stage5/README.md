@@ -24,7 +24,11 @@ Implemented in this slice:
   partial seconds across pause/resume and catching up after browser suspension.
   Countdown actuals stop at the prescribed duration. Completion callbacks run
   when the browser next executes; locked-screen alerts are not guaranteed.
-- Scheduled workouts open with **Begin**. The recording page heading shows the
+- Dashboard workouts show **Begin** before a draft is saved and **Continue**
+  with **In progress** once a device or server draft exists. This reuses existing
+  draft data without introducing a separate started status. **Open** is shown
+  while progress is loading or cannot be determined; failed lookups expose a
+  retry action. The recording page heading shows the
   workout name and scheduled date; **Mark as Completed** finishes the workout.
   Exercises form a continuous list on phones and desktops, with a 3-pixel
   higher-contrast separator and 32 logical pixels of space on either side.
@@ -420,6 +424,10 @@ immutable version/block documents, and stable-slot actuals.
 Role-specific tests skip the other identity. Its screenshots are
 `trainer-climbing-authoring.png`, `athlete-free-climbing-entry.png`, and
 `athlete-climbing-history.png` in the runner's selected artifact directory.
+
+The workout-recovery canary also captures `athlete-workout-continue.png` after
+saving a draft and returning to the dashboard, verifying the Begin-to-Continue
+transition against real Firestore draft data.
 
 Browser tests use one headless Chrome instance per invocation. No
 foreground-window acknowledgment or user interaction is required.

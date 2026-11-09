@@ -49,6 +49,15 @@ final workoutDraftClientIdProvider = Provider<String>((ref) {
   return ref.watch(workoutDraftClientSessionProvider).getOrCreateClientId();
 });
 
+final workoutHasSavedDraftProvider =
+    StreamProvider.autoDispose.family<bool, String>((ref, instanceId) {
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) return const Stream.empty();
+  return ref
+      .watch(workoutCompletionDraftRepositoryProvider)
+      .watchHasSavedDraft(instanceId: instanceId, athleteId: user.uid);
+});
+
 /// Streams workout instances for the current user within a date range.
 ///
 /// Use with `ref.watch(athleteScheduleProvider(DateRange(start, end)))`.

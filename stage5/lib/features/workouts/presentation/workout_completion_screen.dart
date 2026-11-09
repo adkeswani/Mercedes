@@ -299,6 +299,9 @@ class _WorkoutCompletionScreenState
         },
       );
       final result = await repository.save(draft);
+      if (mounted) {
+        ref.invalidate(workoutHasSavedDraftProvider(instance.id));
+      }
       if (!mounted ||
           generation != _loadGeneration ||
           widget.instanceId != instance.id ||

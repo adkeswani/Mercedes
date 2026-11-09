@@ -415,6 +415,15 @@ class _TodaysWorkoutTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final color = _statusColor(context);
     final canOpen = instance.isScheduled || instance.isCompleted;
+    final progressProvider = workoutHasSavedDraftProvider(instance.id);
+    final savedDraft =
+        instance.isScheduled ? ref.watch(progressProvider) : null;
+    final started = savedDraft?.valueOrNull == true;
+    final actionLabel = started
+        ? 'Continue'
+        : savedDraft?.hasValue == true
+            ? 'Begin'
+            : 'Open';
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -427,12 +436,34 @@ class _TodaysWorkoutTile extends ConsumerWidget {
             return Text(workoutProgramLabel(names[0], names[1]));
           },
         ),
-        subtitle: Text(workoutStatusLabel(instance.status)),
+        subtitle:
+            Text(started ? 'In progress' : workoutStatusLabel(instance.status)),
         trailing: instance.isScheduled
-            ? FilledButton(
-                onPressed: () =>
-                    context.push('/athlete/workouts/${instance.id}'),
-                child: const Text('Begin'),
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (savedDraft?.hasError == true)
+                    IconButton(
+                      tooltip: 'Unable to load saved progress. Retry',
+                      icon: Icon(Icons.error_outline,
+                          color: Theme.of(context).colorScheme.error),
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                                'Unable to load saved progress: ${savedDraft!.error}'),
+                          ),
+                        );
+                        ref.invalidate(progressProvider);
+                      },
+                    ),
+                  FilledButton(
+                    key: ValueKey('workout-start-action-${instance.id}'),
+                    onPressed: () =>
+                        context.push('/athlete/workouts/${instance.id}'),
+                    child: Text(actionLabel),
+                  ),
+                ],
               )
             : const Icon(Icons.chevron_right),
         onTap: canOpen

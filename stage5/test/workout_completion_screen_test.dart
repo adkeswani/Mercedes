@@ -267,6 +267,20 @@ void main() {
     );
   });
 
+  testWidgets('autosave refreshes the dashboard saved-draft signal',
+      (tester) async {
+    final signal = workoutHasSavedDraftProvider('instance-1');
+    final subscription = container.listen(signal, (_, __) {});
+    addTearDown(subscription.close);
+    expect(await container.read(signal.future), isFalse);
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+    tester.widget<Slider>(find.byType(Slider)).onChanged!(8);
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+    expect(await container.read(signal.future), isTrue);
+  });
+
   testWidgets(
       'provider recreation retains active draft identity and genuine conflicts',
       (tester) async {
