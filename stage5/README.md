@@ -467,6 +467,10 @@ major. ChromeDriver's existing BSD-3-Clause notice remains in
 
 The former manual-focus workaround is obsolete now that browser automation
 uses a single headless Chrome instance.
+Browser condition waits share a bounded 20-second deadline with their Flutter
+pumps, so a slow frame is not rejected by a separate two-second cutoff. An
+explicit shorter pump deadline is still supported and cannot exceed the
+remaining condition deadline.
 
 ## Release authorization contract
 

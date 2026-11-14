@@ -55,19 +55,25 @@ class BrowserTestWaitContext {
     required bool Function() isSatisfied,
     required Future<void> Function() pump,
     Duration timeout = const Duration(seconds: 20),
-    Duration pumpTimeout = const Duration(seconds: 2),
+    Duration? pumpTimeout,
     String Function()? details,
   }) async {
     final stopwatch = Stopwatch()..start();
     _writeProgress('START', condition, stopwatch.elapsed);
     while (!isSatisfied() && stopwatch.elapsed < timeout) {
+      final remaining = timeout - stopwatch.elapsed;
+      if (remaining <= Duration.zero) break;
+      final effectivePumpTimeout =
+          pumpTimeout == null || pumpTimeout > remaining
+              ? remaining
+              : pumpTimeout;
       try {
         await pump().timeout(
-          pumpTimeout,
+          effectivePumpTimeout,
           onTimeout: () => throw TimeoutException(
             _timeoutMessage(
               '$condition (Flutter pump stalled)',
-              pumpTimeout,
+              effectivePumpTimeout,
               stopwatch.elapsed,
             ),
           ),

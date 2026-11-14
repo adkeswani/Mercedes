@@ -195,4 +195,50 @@ void main() {
       ),
     );
   });
+  test('a slow frame can use the remaining condition deadline', () async {
+    var ready = false;
+    final waits = BrowserTestWaitContext(
+      identity: 'trainer',
+      testFile: 'integration_test/workspace_surfaces_canary_test.dart',
+      artifactPath: 'artifacts',
+      currentRoute: () => '/trainer/dashboard',
+    );
+    await waits.waitForCondition(
+      condition: 'populated dashboard',
+      isSatisfied: () => ready,
+      pump: () async {
+        await Future<void>.delayed(const Duration(milliseconds: 2100));
+        ready = true;
+      },
+      timeout: const Duration(seconds: 5),
+    );
+    expect(ready, isTrue);
+  });
+  for (final pumpTimeout in [null, const Duration(seconds: 10)]) {
+    test('a stalled pump cannot exceed the condition deadline ($pumpTimeout)',
+        () async {
+      final waits = BrowserTestWaitContext(
+        identity: 'trainer',
+        testFile: 'integration_test/workspace_surfaces_canary_test.dart',
+        artifactPath: 'artifacts',
+        currentRoute: () => '/trainer/dashboard',
+      );
+      final stopwatch = Stopwatch()..start();
+      await expectLater(
+        waits.waitForCondition(
+          condition: 'populated dashboard',
+          isSatisfied: () => false,
+          pump: () => Completer<void>().future,
+          timeout: const Duration(milliseconds: 40),
+          pumpTimeout: pumpTimeout,
+        ),
+        throwsA(isA<TimeoutException>().having(
+          (error) => error.message,
+          'condition',
+          contains('populated dashboard (Flutter pump stalled)'),
+        )),
+      );
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 1)));
+    });
+  }
 }
