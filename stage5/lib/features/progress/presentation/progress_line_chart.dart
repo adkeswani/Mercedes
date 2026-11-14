@@ -23,6 +23,7 @@ class ProgressLineChart extends StatefulWidget {
     required this.series,
     required this.onTap,
     this.showLegend = false,
+    this.interval = ProgressInterval.week,
     this.valueLabel,
     this.emptyLabel = 'No recorded data in this range.',
     super.key,
@@ -33,6 +34,7 @@ class ProgressLineChart extends StatefulWidget {
   final List<ProgressLineSeries> series;
   final void Function(int, Set<String>) onTap;
   final bool showLegend;
+  final ProgressInterval interval;
   final String Function(int)? valueLabel;
   final String emptyLabel;
 
@@ -47,7 +49,8 @@ class _ProgressLineChartState extends State<ProgressLineChart> {
   Widget build(BuildContext context) {
     for (final series in widget.series) {
       if (series.values.length != widget.buckets.length) {
-        throw StateError('Each progress line must have one value per week.');
+        throw StateError(
+            'Each progress line must have one value per interval.');
       }
       if (series.values.any((value) => value != null && value < 0)) {
         throw StateError('Progress line values must be nonnegative.');
@@ -147,8 +150,20 @@ class _ProgressLineChartState extends State<ProgressLineChart> {
                         width: 60,
                         bottom: 2,
                         child: Text(
-                          calendarDate(widget.buckets[index].range.start)
-                              .substring(5),
+                          switch (widget.interval) {
+                            ProgressInterval.year =>
+                              '${widget.buckets[index].range.start.year}',
+                            ProgressInterval.month =>
+                              calendarDate(widget.buckets[index].range.start)
+                                  .substring(0, 7),
+                            _ => calendarDate(widget.buckets[index].range.start)
+                                  .substring(
+                                widget.buckets.first.range.start.year ==
+                                        widget.buckets.last.range.end.year
+                                    ? 5
+                                    : 2,
+                              ),
+                          },
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
@@ -157,10 +172,8 @@ class _ProgressLineChartState extends State<ProgressLineChart> {
                       Positioned(
                         left: math.max(plot.left, x(index) - step / 2),
                         top: plot.top,
-                        width: math.min(
-                          step,
-                          plot.right - math.max(plot.left, x(index) - step / 2),
-                        ),
+                        width: math.min(plot.right, x(index) + step / 2) -
+                            math.max(plot.left, x(index) - step / 2),
                         height: plot.height,
                         child: Tooltip(
                           message: '${widget.buckets[index].range.label}\n'
@@ -292,7 +305,7 @@ class ProgressLineChartPainter extends CustomPainter {
         }
         final count = end - start;
         if (count > 1) {
-          // Keep displaced markers inside their week and the plot.
+          // Keep displaced markers inside their interval and the plot.
           final span = math.min(
             (count - 1) * markerRadius * 2,
             math.min(

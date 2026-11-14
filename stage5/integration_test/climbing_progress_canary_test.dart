@@ -304,6 +304,44 @@ void main() {
       }
     }
     expect(overlappingWeeks, greaterThan(0));
+    for (final interval in ProgressInterval.values) {
+      await tap(
+        find.byKey(Key('progress-interval-${interval.name}')),
+        'select ${interval.name} chart interval',
+      );
+      await reveal(
+        find.byKey(const Key('progress-grade-volume-lines')),
+        '${interval.name} chart data',
+      );
+      for (final prefix in ['sends', 'volume', 'grade-volume']) {
+        final chart = tester.widget<ProgressLineChart>(
+          find.byWidgetPredicate((widget) =>
+              widget is ProgressLineChart && widget.keyPrefix == prefix),
+        );
+        expect(chart.interval, interval);
+        expect(
+            ProgressRange(
+              start: chart.buckets.first.range.start,
+              end: chart.buckets.last.range.end,
+            ).days,
+            30);
+        if (interval == ProgressInterval.day) {
+          expect(chart.buckets, hasLength(30));
+        }
+        if (prefix == 'volume') {
+          expect(
+            chart.series.single.values
+                .whereType<int>()
+                .fold<int>(0, (sum, value) => sum + value),
+            18,
+          );
+        }
+      }
+    }
+    await tap(
+      find.byKey(const Key('progress-interval-week')),
+      'restore weekly chart interval',
+    );
     expect(find.textContaining('Counts combine'), findsNothing);
     expect(find.textContaining('Grades are ordered'), findsNothing);
     await reveal(
@@ -467,6 +505,27 @@ void main() {
         'grade volume line screenshot',
       );
       await binding.takeScreenshot('athlete-climbing-progress-grade-volume');
+      for (final interval in [
+        ProgressInterval.day,
+        ProgressInterval.month,
+        ProgressInterval.year,
+      ]) {
+        await tap(
+          find.byKey(Key('progress-interval-${interval.name}')),
+          '${interval.name} interval screenshot',
+        );
+        await reveal(
+          find.text('Recorded climbs by grade each ${interval.name}'),
+          '${interval.name} grade volume screenshot',
+        );
+        await binding.takeScreenshot(
+          'athlete-climbing-progress-${interval.name}',
+        );
+      }
+      await tap(
+        find.byKey(const Key('progress-interval-week')),
+        'restore weekly screenshots',
+      );
       await reveal(
         find.textContaining('Climbing Circuit - workout version 1'),
         'circuit screenshot',

@@ -20,6 +20,7 @@ class ClimbingProgressScreen extends ConsumerStatefulWidget {
 class _ClimbingProgressScreenState
     extends ConsumerState<ClimbingProgressScreen> {
   ProgressPreset? _preset = ProgressPreset.month;
+  ProgressInterval _interval = ProgressInterval.week;
   late ProgressRange _range;
   ClimbingGradingSystem _system = ClimbingGradingSystem.vScale;
   bool _sentOnly = false;
@@ -121,6 +122,22 @@ class _ClimbingProgressScreenState
           ),
           const SizedBox(height: 12),
           Text(_range.label, key: const Key('progress-range-label')),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const Text('Chart interval'),
+              for (final interval in ProgressInterval.values)
+                ChoiceChip(
+                  key: Key('progress-interval-${interval.name}'),
+                  label: Text(interval.label),
+                  selected: _interval == interval,
+                  onSelected: (_) => setState(() => _interval = interval),
+                ),
+            ],
+          ),
           const SizedBox(height: 16),
           progress.when(
             loading: () => const Padding(
@@ -175,6 +192,7 @@ class _ClimbingProgressScreenState
                         _selectWorkouts(group.sessions, include),
                   ),
                   _ProgressContent(
+                    interval: _interval,
                     report: _sentOnly ? selected.sentOnly() : selected,
                     hasAvailableWorkouts: report.current.sessionCount > 0,
                     system: _system,
@@ -280,6 +298,7 @@ class _WorkoutSelector extends StatelessWidget {
 
 class _ProgressContent extends StatelessWidget {
   const _ProgressContent({
+    required this.interval,
     required this.report,
     required this.system,
     required this.onSystemChanged,
@@ -288,6 +307,7 @@ class _ProgressContent extends StatelessWidget {
     required this.onSentOnlyChanged,
   });
   final ClimbingProgressReport report;
+  final ProgressInterval interval;
   final ClimbingGradingSystem system;
   final ValueChanged<ClimbingGradingSystem> onSystemChanged;
   final bool hasAvailableWorkouts;
@@ -299,11 +319,11 @@ class _ProgressContent extends StatelessWidget {
     final current = report.current;
     final previous = report.previous;
     final gradeCounts = current.gradeCounts(system);
-    final weeks = report.weeklyBuckets;
+    final buckets = report.bucketsFor(interval);
     final sendChart = _ProgressChartCard(
       title: sentOnly
-          ? 'Highest grade sent each week'
-          : 'Highest grade climbed each week',
+          ? 'Highest grade sent each ${interval.name}'
+          : 'Highest grade climbed each ${interval.name}',
       children: [
         Text(
           '${current.highestGrade(system) ?? 'No recorded climbs'}'
@@ -312,7 +332,8 @@ class _ProgressContent extends StatelessWidget {
         ),
         ProgressLineChart(
           keyPrefix: 'sends',
-          buckets: weeks,
+          buckets: buckets,
+          interval: interval,
           emptyLabel: 'No recorded climbs in this range.',
           valueLabel: (rank) => rank == 0 ? '-' : system.grades[rank - 1],
           series: [
@@ -320,8 +341,9 @@ class _ProgressContent extends StatelessWidget {
               id: 'sends',
               label: system.label,
               values: [
-                for (final week in weeks)
-                  if (week.summary.highestGrade(system) case final String grade)
+                for (final bucket in buckets)
+                  if (bucket.summary.highestGrade(system)
+                      case final String grade)
                     system.grades.indexOf(grade) + 1
                   else
                     null,
@@ -330,7 +352,7 @@ class _ProgressContent extends StatelessWidget {
           ],
           onTap: (index, _) => _showSources(
             context,
-            weeks[index]
+            buckets[index]
                 .summary
                 .sessions
                 .where(
@@ -341,33 +363,34 @@ class _ProgressContent extends StatelessWidget {
                   ),
                 )
                 .toList(),
-            '${sentOnly ? 'Sent climbs' : 'Climbs'}: ${weeks[index].range.label}',
+            '${sentOnly ? 'Sent climbs' : 'Climbs'}: ${buckets[index].range.label}',
           ),
         ),
       ],
     );
     final volumeChart = _ProgressChartCard(
-      title: 'Total recorded climbs each week',
+      title: 'Total recorded climbs each ${interval.name}',
       children: [
         ProgressLineChart(
           keyPrefix: 'volume',
-          buckets: weeks,
+          buckets: buckets,
+          interval: interval,
           series: [
             ProgressLineSeries(
               id: 'volume',
               label: 'Climbs',
               values: [
-                for (final week in weeks)
-                  week.summary.sessions.isEmpty
+                for (final bucket in buckets)
+                  bucket.summary.sessions.isEmpty
                       ? 0
-                      : week.summary.recordedClimbs,
+                      : bucket.summary.recordedClimbs,
               ],
             ),
           ],
           onTap: (index, _) => _showSources(
             context,
-            weeks[index].summary.sessions,
-            weeks[index].range.label,
+            buckets[index].summary.sessions,
+            buckets[index].range.label,
           ),
         ),
       ],
@@ -454,12 +477,13 @@ class _ProgressContent extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _ProgressChartCard(
-            title: 'Recorded climbs by grade each week',
+            title: 'Recorded climbs by grade each ${interval.name}',
             children: [
               ProgressLineChart(
                 key: const Key('progress-grade-chart'),
                 keyPrefix: 'grade-volume',
-                buckets: weeks,
+                buckets: buckets,
+                interval: interval,
                 showLegend: true,
                 emptyLabel: 'No recorded climbs for this grading system.',
                 series: [
@@ -468,17 +492,17 @@ class _ProgressContent extends StatelessWidget {
                       id: '${system.name}-$grade',
                       label: grade,
                       values: [
-                        for (final week in weeks)
-                          week.summary.sessions.isNotEmpty &&
-                                  week.summary.recordedFor(system) == null
+                        for (final bucket in buckets)
+                          bucket.summary.sessions.isNotEmpty &&
+                                  bucket.summary.recordedFor(system) == null
                               ? null
-                              : week.summary.gradeCounts(system)[grade] ?? 0,
+                              : bucket.summary.gradeCounts(system)[grade] ?? 0,
                       ],
                     ),
                 ],
                 onTap: (index, visibleGrades) => _showSources(
                   context,
-                  weeks[index]
+                  buckets[index]
                       .summary
                       .sessions
                       .where(
@@ -491,7 +515,7 @@ class _ProgressContent extends StatelessWidget {
                         ),
                       )
                       .toList(),
-                  '${system.label}: ${weeks[index].range.label}',
+                  '${system.label}: ${buckets[index].range.label}',
                 ),
               ),
             ],

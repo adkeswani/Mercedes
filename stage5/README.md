@@ -696,15 +696,18 @@ completion trends against pinned workout versions. The view supports Last 7,
 14, and 30 days, Last 12 months, and an inclusive custom range of 1 to 366 days.
 Dates use actual completion timestamps in the viewer's local timezone, not
 scheduled dates. Summary cards compare the immediately preceding equal-length
-period. Three line charts show the highest recorded individual-climb grade
-each week, total recorded climb volume across grading systems, and weekly
-volume broken down by the selected grading system's grades. Calendar weeks
-start on Monday; the first and last weeks are clipped to the selected range.
+period. Three line charts show the highest recorded individual-climb grade,
+total recorded climb volume across grading systems, and volume broken down by
+the selected grading system's grades. **Chart interval** selects Day, Week
+(default), Month, or Year independently of the date range. Calendar weeks
+start on Monday, months on the first, and years on January 1; the first and
+last intervals are clipped to the selected range. Interval changes regroup
+already-loaded results without refetching or changing summary comparisons.
 Grade legend chips toggle individual lines. Missing observations leave gaps,
 not invented grades or climb counts; empty activity weeks have zero volume.
-Overlapping dots are separated horizontally within their week, with stable
+Overlapping dots are separated horizontally within their interval, with stable
 ordering and unchanged vertical values. Lines retain their true coordinates;
-tooltips and workout drill-down retain the actual week and values.
+tooltips and workout drill-down retain the actual interval and values.
 Chart points and circuit/route records open immutable completed detail.
 The UI contains labels, values, filters and workout data, not methodological
 paragraphs or an optional explanation panel. The phone home links to the same

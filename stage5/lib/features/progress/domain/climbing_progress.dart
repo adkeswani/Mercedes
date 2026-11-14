@@ -31,6 +31,24 @@ enum ProgressPreset {
   }
 }
 
+enum ProgressInterval {
+  day('Day'),
+  week('Week'),
+  month('Month'),
+  year('Year');
+
+  const ProgressInterval(this.label);
+  final String label;
+
+  DateTime nextBoundary(DateTime start) => switch (this) {
+        day => DateTime(start.year, start.month, start.day + 1),
+        week =>
+          DateTime(start.year, start.month, start.day + 8 - start.weekday),
+        month => DateTime(start.year, start.month + 1),
+        year => DateTime(start.year + 1),
+      };
+}
+
 class ProgressRange {
   ProgressRange({required DateTime start, required DateTime end})
       : start = DateTime(start.year, start.month, start.day),
@@ -485,15 +503,13 @@ class ClimbingProgressReport {
     return result;
   }
 
-  List<ProgressBucket> get weeklyBuckets {
+  List<ProgressBucket> get weeklyBuckets => bucketsFor(ProgressInterval.week);
+
+  List<ProgressBucket> bucketsFor(ProgressInterval interval) {
     final result = <ProgressBucket>[];
     var start = range.start;
     while (!start.isAfter(range.end)) {
-      final next = DateTime(
-        start.year,
-        start.month,
-        start.day + 8 - start.weekday,
-      );
+      final next = interval.nextBoundary(start);
       final last = DateTime(next.year, next.month, next.day - 1);
       final bucketRange = ProgressRange(
         start: start,

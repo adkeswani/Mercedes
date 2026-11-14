@@ -63,6 +63,124 @@ Future<void> _reveal(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
+  testWidgets('intervals regroup all charts locally and preserve comparisons',
+      (tester) async {
+    var requests = 0;
+    await _pump(tester, load: (range) async {
+      requests++;
+      return ClimbingProgressReport(range: range, sessions: [
+        progressSession(id: 'oct-start', date: DateTime(2026, 10, 10)),
+        progressSession(id: 'oct-end', date: DateTime(2026, 10, 25)),
+        progressSession(id: 'nov-start', date: DateTime(2026, 11, 2)),
+        progressSession(id: 'nov-end', date: DateTime(2026, 11, 7)),
+        progressSession(id: 'previous', date: DateTime(2026, 10, 5)),
+      ]);
+    });
+    expect(
+        tester
+            .widget<ChoiceChip>(
+              find.byKey(const Key('progress-interval-week')),
+            )
+            .selected,
+        isTrue);
+    for (final (interval, count) in [
+      (ProgressInterval.day, 30),
+      (ProgressInterval.month, 2),
+      (ProgressInterval.year, 1),
+      (ProgressInterval.week, 5),
+    ]) {
+      await _reveal(
+          tester, find.byKey(Key('progress-interval-${interval.name}')));
+      await tester.tap(find.byKey(Key('progress-interval-${interval.name}')));
+      await tester.pumpAndSettle();
+      expect(find.text('1 in preceding 30 days'), findsOneWidget);
+      expect(
+          find.text('4 of 4 workouts included in this range'), findsOneWidget);
+      await _reveal(tester, find.byKey(const Key('progress-grade-chart')));
+      for (final prefix in ['volume', 'sends', 'grade-volume']) {
+        final chart = tester.widget<ProgressLineChart>(
+          find.byWidgetPredicate((widget) =>
+              widget is ProgressLineChart && widget.keyPrefix == prefix),
+        );
+        expect(chart.interval, interval);
+        expect(chart.buckets, hasLength(count));
+        expect(
+            chart.series.every((line) => line.values.length == count), isTrue);
+        if (prefix == 'volume') {
+          expect(
+              chart.series.single.values
+                  .whereType<int>()
+                  .fold<int>(0, (sum, value) => sum + value),
+              36);
+          if (interval == ProgressInterval.month) {
+            expect(chart.series.single.values, [18, 18]);
+          }
+        }
+      }
+      expect(requests, 1);
+    }
+    await _reveal(tester, find.byKey(const Key('progress-interval-month')));
+    await tester.tap(find.byKey(const Key('progress-interval-month')));
+    await tester.pumpAndSettle();
+    await _reveal(tester, find.byKey(const Key('progress-range-week')));
+    await tester.tap(find.byKey(const Key('progress-range-week')));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<ChoiceChip>(
+              find.byKey(const Key('progress-interval-month')),
+            )
+            .selected,
+        isTrue);
+    expect(requests, 2);
+  });
+  for (final (interval, bucket, expected) in [
+    (ProgressInterval.day, 16, ['oct-end']),
+    (ProgressInterval.month, 0, ['oct-start', 'oct-end']),
+    (ProgressInterval.year, 0, ['oct-start', 'oct-end', 'nov']),
+  ]) {
+    testWidgets('${interval.name} drill-down uses the selected bucket',
+        (tester) async {
+      await _pump(tester, sessions: [
+        progressSession(id: 'oct-start', date: DateTime(2026, 10, 10)),
+        progressSession(id: 'oct-end', date: DateTime(2026, 10, 25)),
+        progressSession(id: 'nov', date: DateTime(2026, 11, 2)),
+      ]);
+      await tester.tap(find.byKey(Key('progress-interval-${interval.name}')));
+      await tester.pumpAndSettle();
+      final target = find.byKey(Key('progress-volume-$bucket'));
+      await _reveal(tester, target);
+      final chart = tester.widget<ProgressLineChart>(
+        find.byWidgetPredicate((widget) =>
+            widget is ProgressLineChart && widget.keyPrefix == 'volume'),
+      );
+      expect(
+        chart.buckets[bucket].summary.sessions
+            .map((session) => session.instanceId),
+        expected,
+      );
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+      final sheet = find.byKey(const Key('progress-source-sheet'));
+      for (final id in ['oct-start', 'oct-end', 'nov'].reversed) {
+        final workout = find.descendant(
+          of: sheet,
+          matching: find.byKey(Key('progress-workout-$id')),
+        );
+        if (expected.contains(id)) {
+          await tester.scrollUntilVisible(workout, 200,
+              scrollable: find
+                  .descendant(
+                    of: sheet,
+                    matching: find.byType(Scrollable),
+                  )
+                  .first);
+          await tester.pumpAndSettle();
+        }
+        expect(workout, expected.contains(id) ? findsOneWidget : findsNothing);
+      }
+    });
+  }
   testWidgets(
       'workout checkboxes update charts, comparison and sources without refetching',
       (tester) async {
@@ -282,6 +400,15 @@ void main() {
         .widget<CustomPaint>(find.byKey(Key('progress-$prefix-lines')))
         .painter! as ProgressLineChartPainter;
     expect(painter('volume').series.single.values, [0, 0, 0, 0, 9]);
+    expect(
+      painter('volume')
+          .segmentsFor(
+            painter('volume').series.single,
+            const Size(320, 240),
+          )
+          .single,
+      hasLength(5),
+    );
     expect(painter('sends').series.single.values, [null, null, null, null, 10]);
     expect(
       painter('grade-volume').series.map((line) => line.label).toList(),

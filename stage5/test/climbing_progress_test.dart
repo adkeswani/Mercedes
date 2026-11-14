@@ -8,6 +8,86 @@ import 'support/climbing_progress_fixtures.dart';
 
 void main() {
   group('progress dates', () {
+    for (final interval in ProgressInterval.values) {
+      for (final range in [
+        ProgressRange(start: DateTime(2024), end: DateTime(2024, 12, 31)),
+        ProgressRange(start: DateTime(2023, 12, 30), end: DateTime(2024, 3, 2)),
+        ProgressRange(start: DateTime(2026, 3, 7), end: DateTime(2026, 3, 10)),
+        ProgressRange(start: DateTime(2026, 11, 7), end: DateTime(2026, 11, 7)),
+      ]) {
+        test('${interval.name} intervals partition ${range.label}', () {
+          final sessions = [
+            for (var day = 0; day < range.days; day++)
+              progressSession(
+                id: '$day',
+                date: DateTime(
+                  range.start.year,
+                  range.start.month,
+                  range.start.day + day,
+                  23,
+                  59,
+                ),
+              ),
+            progressSession(id: 'previous', date: range.previous.end),
+            progressSession(id: 'after', date: range.endExclusive),
+          ];
+          final report =
+              ClimbingProgressReport(range: range, sessions: sessions);
+          final buckets = report.bucketsFor(interval);
+          expect(buckets.first.range.start, range.start);
+          expect(buckets.last.range.end, range.end);
+          expect(
+            buckets
+                .expand((bucket) => bucket.summary.sessions)
+                .map((session) => session.instanceId)
+                .toSet(),
+            {for (var day = 0; day < range.days; day++) '$day'},
+          );
+          expect(buckets.fold<int>(0, (sum, b) => sum + b.summary.sessionCount),
+              range.days);
+          expect(
+              buckets.fold<int>(0, (sum, b) => sum + b.range.days), range.days);
+          expect(
+            buckets.fold<int>(0, (sum, b) => sum + b.summary.recordedClimbs!),
+            report.current.recordedClimbs,
+          );
+          expect(report.previous.sessionCount, 1);
+          for (var index = 1; index < buckets.length; index++) {
+            final start = buckets[index].range.start;
+            expect(buckets[index - 1].range.endExclusive, start);
+            switch (interval) {
+              case ProgressInterval.day:
+                expect(buckets[index].range.days, 1);
+              case ProgressInterval.week:
+                expect(start.weekday, DateTime.monday);
+              case ProgressInterval.month:
+                expect(start.day, 1);
+              case ProgressInterval.year:
+                expect(start.month, 1);
+                expect(start.day, 1);
+            }
+          }
+          if (interval == ProgressInterval.day) {
+            expect(buckets, hasLength(range.days));
+          }
+        });
+      }
+    }
+    test('calendar months clip partial boundaries and include leap day', () {
+      final report = ClimbingProgressReport(
+        range: ProgressRange(
+          start: DateTime(2024, 1, 31),
+          end: DateTime(2024, 3, 2),
+        ),
+        sessions: [],
+      );
+      expect(
+        report.bucketsFor(ProgressInterval.month).map((b) => b.range.days),
+        [1, 29, 2],
+      );
+      expect(report.bucketsFor(ProgressInterval.year), hasLength(1));
+      expect(report.bucketsFor(ProgressInterval.day), hasLength(32));
+    });
     for (final range in [
       ProgressPreset.week.range(DateTime(2026, 11, 7)),
       ProgressPreset.fortnight.range(DateTime(2026, 11, 7)),

@@ -38,6 +38,21 @@ void main() {
       Offset(plot.center.dx, plot.bottom),
     );
   });
+  test('zero connects adjacent observations but missing grades break the line',
+      () {
+    final volume =
+        ProgressLineSeries(id: 'volume', label: 'Climbs', values: [2, 0, 3]);
+    final grade =
+        ProgressLineSeries(id: 'grade', label: 'Grade', values: [2, null, 3]);
+    const size = Size(320, 240);
+    final volumeSegments = painter(volume).segmentsFor(volume, size);
+    expect(volumeSegments, hasLength(1));
+    expect(volumeSegments.single, hasLength(3));
+    expect(volumeSegments.single[1].dy,
+        ProgressLineChartPainter.plotRect(size).bottom);
+    expect(
+        painter(grade).segmentsFor(grade, size).map((s) => s.length), [1, 1]);
+  });
 
   ProgressLineChartPainter multiPainter(
     List<ProgressLineSeries> series, {
@@ -151,6 +166,7 @@ void main() {
     bool legend = false,
     ValueChanged<int>? onTap,
     ProgressRange? range,
+    ProgressInterval interval = ProgressInterval.week,
   }) async {
     final selectedRange = range ??
         ProgressRange(start: DateTime(2026, 10, 9), end: DateTime(2026, 11, 7));
@@ -163,7 +179,8 @@ void main() {
               keyPrefix: 'test',
               buckets:
                   ClimbingProgressReport(range: selectedRange, sessions: [])
-                      .weeklyBuckets,
+                      .bucketsFor(interval),
+              interval: interval,
               series: [
                 ProgressLineSeries(id: 'V4', label: 'V4', values: values),
               ],
@@ -239,6 +256,40 @@ void main() {
     expect(tester.takeException(), isA<StateError>());
     await pump(tester, values: [1, 2, -1, 2, 1]);
     expect(tester.takeException(), isA<StateError>());
+  });
+  testWidgets('daily year data fits phone width with readable date ticks',
+      (tester) async {
+    final range =
+        ProgressRange(start: DateTime(2024), end: DateTime(2024, 12, 31));
+    await pump(tester,
+        range: range,
+        interval: ProgressInterval.day,
+        values: List.filled(366, 1));
+    expect(tester.getSize(find.byKey(const Key('progress-test-lines'))).width,
+        320);
+    expect(find.byType(SingleChildScrollView), findsNothing);
+    final dates = find.byWidgetPredicate((widget) =>
+        widget is Text &&
+        widget.data != null &&
+        RegExp(r'^\d{2}-\d{2}$').hasMatch(widget.data!));
+    expect(dates.evaluate().length, lessThanOrEqualTo(5));
+    await tester.tap(find.byKey(const Key('progress-test-365')));
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('month and year ticks distinguish calendar years',
+      (tester) async {
+    final range =
+        ProgressRange(start: DateTime(2025, 12, 15), end: DateTime(2026, 2, 1));
+    await pump(tester,
+        range: range, interval: ProgressInterval.month, values: [1, 2, 3]);
+    for (final label in ['2025-12', '2026-01', '2026-02']) {
+      expect(find.text(label), findsOneWidget);
+    }
+    await pump(tester,
+        range: range, interval: ProgressInterval.year, values: [1, 2]);
+    expect(find.text('2025'), findsOneWidget);
+    expect(find.text('2026'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
   testWidgets('point drill-down identifies only visible grade lines',
       (tester) async {
