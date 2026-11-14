@@ -39,6 +39,112 @@ void main() {
     );
   });
 
+  ProgressLineChartPainter multiPainter(
+    List<ProgressLineSeries> series, {
+    int maximum = 4,
+  }) =>
+      ProgressLineChartPainter(
+        series: series,
+        colors: {for (final line in series) line.id: Colors.blue},
+        maximum: maximum,
+        gridColor: Colors.grey,
+      );
+
+  test('overlapping markers separate without changing lines or vertical values',
+      () {
+    const size = Size(320, 240);
+    final lines = [
+      for (final id in ['V6', 'V4', 'V5'])
+        ProgressLineSeries(id: id, label: id, values: [2, 2, 2]),
+    ];
+    final chart = multiPainter(lines);
+    final positions = chart.markerPositions(size);
+    final plot = ProgressLineChartPainter.plotRect(size);
+    for (var week = 0; week < 3; week++) {
+      final actual = chart.segmentsFor(lines.first, size).single[week];
+      final dots = [
+        for (final id in ['V4', 'V5', 'V6']) positions[id]![week]!,
+      ];
+      expect(dots.map((point) => point.dy), everyElement(actual.dy));
+      expect(dots[1].dx - dots[0].dx, 7);
+      expect(dots[2].dx - dots[1].dx, 7);
+      expect(dots.first.dx, greaterThanOrEqualTo(plot.left));
+      expect(dots.last.dx, lessThanOrEqualTo(plot.right));
+    }
+    expect(positions['V5']![1]!.dx, plot.center.dx);
+    expect(chart.segmentsFor(lines.first, size).single.first.dx, plot.left);
+    expect(chart.segmentsFor(lines.first, size).single.last.dx, plot.right);
+    expect(
+      multiPainter(lines.reversed.toList()).markerPositions(size),
+      positions,
+    );
+  });
+
+  test(
+      'only colliding markers move; missing points and known zeros are retained',
+      () {
+    const size = Size(320, 240);
+    final lines = [
+      ProgressLineSeries(id: 'a', label: 'a', values: [10, 0, null]),
+      ProgressLineSeries(id: 'b', label: 'b', values: [11, 0, null]),
+      ProgressLineSeries(id: 'c', label: 'c', values: [30, null, 20]),
+    ];
+    final chart = multiPainter(lines, maximum: 100);
+    final positions = chart.markerPositions(size);
+    expect(positions['a']![0]!.dx, isNot(positions['b']![0]!.dx));
+    expect(
+      positions['a']![0]!.dy,
+      chart.segmentsFor(lines[0], size).single.first.dy,
+    );
+    expect(
+      positions['b']![0]!.dy,
+      chart.segmentsFor(lines[1], size).single.first.dy,
+    );
+    expect(positions['c']![0], chart.segmentsFor(lines[2], size).first.single);
+    expect(positions['c']![2], chart.segmentsFor(lines[2], size).last.single);
+    expect(positions['a']![2], isNull);
+    expect(
+        positions['a']![1]!.dy, ProgressLineChartPainter.plotRect(size).bottom);
+    expect(positions['a']![1]!.dx, isNot(positions['b']![1]!.dx));
+    final filtered = multiPainter([lines.first], maximum: 100);
+    expect(filtered.markerPositions(size)['a']![0],
+        filtered.segmentsFor(lines.first, size).single.first);
+    expect(multiPainter([]).markerPositions(size), isEmpty);
+  });
+
+  test('single-week collisions center and dense weeks keep distinct positions',
+      () {
+    const size = Size(320, 240);
+    final single = multiPainter([
+      for (final id in ['a', 'b'])
+        ProgressLineSeries(id: id, label: id, values: [1]),
+    ]).markerPositions(size);
+    final plot = ProgressLineChartPainter.plotRect(size);
+    expect(single['a']!.single!.dx, plot.center.dx - 3.5);
+    expect(single['b']!.single!.dx, plot.center.dx + 3.5);
+    final dense = multiPainter([
+      for (var grade = 0; grade < 20; grade++)
+        ProgressLineSeries(
+          id: '$grade',
+          label: '$grade',
+          values: List.filled(53, 1),
+        ),
+    ]).markerPositions(size);
+    final step = plot.width / 52;
+    for (var week = 0; week < 53; week++) {
+      final xs = dense.values.map((points) => points[week]!.dx).toList()
+        ..sort();
+      expect(xs.toSet(), hasLength(20));
+      expect(xs.last - xs.first,
+          closeTo(step * (week == 0 || week == 52 ? .4 : .8), .00001));
+      expect(xs.first, greaterThanOrEqualTo(plot.left));
+      expect(xs.last, lessThanOrEqualTo(plot.right));
+      final x = plot.left + week * step;
+      expect(xs.first, greaterThan(x - step / 2));
+      expect(xs.last, lessThan(x + step / 2));
+    }
+  });
+
   Future<void> pump(
     WidgetTester tester, {
     List<int?> values = const [1, 2, 3, 4, 2],
@@ -154,7 +260,7 @@ void main() {
               ProgressLineSeries(
                 id: 'V6',
                 label: 'V6',
-                values: [0, 1, 0, 1, 0],
+                values: [1, 2, 3, 2, 1],
               ),
             ],
             showLegend: true,
@@ -164,6 +270,33 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    final chart = tester
+        .widget<CustomPaint>(
+          find.byKey(const Key('progress-test-lines')),
+        )
+        .painter! as ProgressLineChartPainter;
+    final size = tester.getSize(find.byKey(const Key('progress-test-lines')));
+    final markers = chart.markerPositions(size);
+    expect(markers['V4']![3]!.dx, isNot(markers['V6']![3]!.dx));
+    final tooltip = tester.widget<Tooltip>(find.ancestor(
+      of: find.byKey(const Key('progress-test-3')),
+      matching: find.byType(Tooltip),
+    ));
+    expect(tooltip.message, contains('V4: 2\nV6: 2'));
+    final painting = paints
+      ..path(strokeWidth: 2.5)
+      ..path(strokeWidth: 2.5);
+    for (final id in ['V4', 'V6']) {
+      for (final point in markers[id]!) {
+        painting.circle(
+          x: point!.dx,
+          y: point.dy,
+          radius: 3.5,
+          color: chart.colors[id],
+        );
+      }
+    }
+    expect(find.byKey(const Key('progress-test-lines')), painting);
     await tester.tap(find.byKey(const Key('progress-grade-V4')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('progress-test-3')));

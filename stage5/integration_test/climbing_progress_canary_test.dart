@@ -283,6 +283,27 @@ void main() {
           .toList(),
       [4, 4],
     );
+    final gradeSize = tester.getSize(
+      find.byKey(const Key('progress-grade-volume-lines')),
+    );
+    final markers = gradePainter.markerPositions(gradeSize);
+    var overlappingWeeks = 0;
+    for (var week = 0; week < gradePainter.series.first.values.length; week++) {
+      final groups = <int, List<Offset>>{};
+      for (final line in gradePainter.series) {
+        final value = line.values[week];
+        if (value != null) {
+          (groups[value] ??= []).add(markers[line.id]![week]!);
+        }
+      }
+      for (final points in groups.values.where((points) => points.length > 1)) {
+        overlappingWeeks++;
+        expect(
+            points.map((point) => point.dx).toSet(), hasLength(points.length));
+        expect(points.map((point) => point.dy).toSet(), hasLength(1));
+      }
+    }
+    expect(overlappingWeeks, greaterThan(0));
     expect(find.textContaining('Counts combine'), findsNothing);
     expect(find.textContaining('Grades are ordered'), findsNothing);
     await reveal(

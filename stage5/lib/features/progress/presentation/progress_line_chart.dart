@@ -231,8 +231,19 @@ class ProgressLineChartPainter extends CustomPainter {
   static Rect plotRect(Size size) =>
       Rect.fromLTRB(48, 12, size.width - 32, size.height - 34);
 
-  List<List<Offset>> segmentsFor(ProgressLineSeries line, Size size) {
+  static const markerRadius = 3.5;
+
+  Offset _pointFor(ProgressLineSeries line, int index, Size size) {
     final plot = plotRect(size);
+    return Offset(
+      line.values.length == 1
+          ? plot.center.dx
+          : plot.left + index / (line.values.length - 1) * plot.width,
+      plot.bottom - line.values[index]! / maximum * plot.height,
+    );
+  }
+
+  List<List<Offset>> segmentsFor(ProgressLineSeries line, Size size) {
     final result = <List<Offset>>[];
     List<Offset>? segment;
     for (var index = 0; index < line.values.length; index++) {
@@ -245,16 +256,67 @@ class ProgressLineChartPainter extends CustomPainter {
         segment = [];
         result.add(segment);
       }
-      segment.add(
-        Offset(
-          line.values.length == 1
-              ? plot.center.dx
-              : plot.left + index / (line.values.length - 1) * plot.width,
-          plot.bottom - value / maximum * plot.height,
-        ),
-      );
+      segment.add(_pointFor(line, index, size));
     }
     return result;
+  }
+
+  Map<String, List<Offset?>> markerPositions(Size size) {
+    final positions = {
+      for (final line in series)
+        line.id: [
+          for (var index = 0; index < line.values.length; index++)
+            line.values[index] == null ? null : _pointFor(line, index, size),
+        ],
+    };
+    if (series.isEmpty) return positions;
+    final plot = plotRect(size);
+    final weeks = series.first.values.length;
+    final step = weeks <= 1 ? plot.width : plot.width / (weeks - 1);
+    for (var index = 0; index < weeks; index++) {
+      final visible =
+          series.where((line) => positions[line.id]![index] != null).toList()
+            ..sort((a, b) {
+              final order = positions[a.id]![index]!
+                  .dy
+                  .compareTo(positions[b.id]![index]!.dy);
+              return order == 0 ? a.id.compareTo(b.id) : order;
+            });
+      for (var start = 0; start < visible.length;) {
+        var end = start + 1;
+        while (end < visible.length &&
+            positions[visible[end].id]![index]!.dy -
+                    positions[visible[end - 1].id]![index]!.dy <
+                markerRadius * 2) {
+          end++;
+        }
+        final count = end - start;
+        if (count > 1) {
+          // Keep displaced markers inside their week and the plot.
+          final span = math.min(
+            (count - 1) * markerRadius * 2,
+            math.min(
+              step *
+                  (weeks > 1 && (index == 0 || index == weeks - 1) ? .4 : .8),
+              plot.width,
+            ),
+          );
+          final center = positions[visible[start].id]![index]!
+              .dx
+              .clamp(plot.left + span / 2, plot.right - span / 2);
+          for (var rank = 0; rank < count; rank++) {
+            final points = positions[visible[start + rank].id]!;
+            points[index] = Offset(
+              (center - span / 2 + rank * span / (count - 1))
+                  .clamp(plot.left, plot.right),
+              points[index]!.dy,
+            );
+          }
+        }
+        start = end;
+      }
+    }
+    return positions;
   }
 
   @override
@@ -283,9 +345,16 @@ class ProgressLineChartPainter extends CustomPainter {
         if (segment.length > 1) {
           canvas.drawPath(path, paint);
         }
-        for (final point in segment) {
-          canvas.drawCircle(point, 3.5, Paint()..color = paint.color);
-        }
+      }
+    }
+    final markers = markerPositions(size);
+    for (final line in series) {
+      for (final point in markers[line.id]!.whereType<Offset>()) {
+        canvas.drawCircle(
+          point,
+          markerRadius,
+          Paint()..color = colors[line.id]!,
+        );
       }
     }
   }

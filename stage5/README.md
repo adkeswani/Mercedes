@@ -702,6 +702,9 @@ volume broken down by the selected grading system's grades. Calendar weeks
 start on Monday; the first and last weeks are clipped to the selected range.
 Grade legend chips toggle individual lines. Missing observations leave gaps,
 not invented grades or climb counts; empty activity weeks have zero volume.
+Overlapping dots are separated horizontally within their week, with stable
+ordering and unchanged vertical values. Lines retain their true coordinates;
+tooltips and workout drill-down retain the actual week and values.
 Chart points and circuit/route records open immutable completed detail.
 The UI contains labels, values, filters and workout data, not methodological
 paragraphs or an optional explanation panel. The phone home links to the same
