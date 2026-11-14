@@ -236,6 +236,104 @@ describe('climbing circuit and free climbing', () => {
     };
   }
 
+  function documentRow(i, revision = 1) {
+    return {
+      rowId: `climb-${i}`, order: i, gradingSystem: 'vScale', grade: 'V2',
+      attempts: '1', sent: false, notes: '', revision, clientId: 'client',
+    };
+  }
+
+  async function saveDocumentRows(count, revision, changedIds, override = {}, deletedIds = []) {
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    const draft = db.collection('workoutInstances').doc('climbing-instance')
+      .collection('completionDrafts').doc('current');
+    const child = draft.collection('climbingInputs').doc('climbing-slot');
+    const batch = db.batch();
+    batch.set(draft, {
+      ...draftForInputs({}, revision), climbingSlotIds: ['climbing-slot'],
+      climbRowsStorageFormat: 'climbDocumentsV1',
+    });
+    batch.set(child, {
+      climbingType: 'freeClimbing', notes: '', rpe: 7, slotOrder: 0,
+      rowsStorageFormat: 'climbDocumentsV1', rowCount: count,
+      revision, clientId: 'client', serverUpdatedAt: serverTimestamp(),
+    });
+    for (const i of changedIds) {
+      batch.set(child.collection('climbs').doc(`climb-${i}`),
+        {...documentRow(i, revision), ...override});
+    }
+    for (const i of deletedIds) {
+      batch.delete(child.collection('climbs').doc(`climb-${i}`));
+    }
+    return batch.commit();
+  }
+
+  it('allows 100 climb documents and an incremental single-row update', async () => {
+    await seedCompletion('freeClimbing');
+    await assertSucceeds(saveDocumentRows(100, 1,
+      Array.from({length: 100}, (_, i) => i)));
+    await assertSucceeds(saveDocumentRows(100, 2, [0], {attempts: '3'}));
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    const child = db.collection('workoutInstances').doc('climbing-instance')
+      .collection('completionDrafts').doc('current')
+      .collection('climbingInputs').doc('climbing-slot');
+    expect((await child.collection('climbs').get()).size).toBe(100);
+    expect((await child.collection('climbs').doc('climb-1').get()).data().revision).toBe(1);
+    await assertFails(child.collection('climbs').doc('climb-0')
+      .update({attempts: '4', revision: 3}));
+    await assertFails(child.collection('climbs').doc('climb-99').delete());
+    await assertSucceeds(saveDocumentRows(99, 3, [], {}, [99]));
+    expect((await child.collection('climbs').get()).size).toBe(99);
+    await assertFails(testEnv.authenticatedContext(STRANGER).firestore()
+      .doc('workoutInstances/climbing-instance/completionDrafts/current/climbingInputs/climbing-slot/climbs/climb-0').get());
+  });
+
+  it.each([
+    {grade: 'purple'}, {gradingSystem: 'unknown'}, {sent: 'yes'},
+    {attempts: 1}, {rowId: 'different'}, {extra: true}, {order: -1},
+  ])('rejects malformed individual climb %j', async override => {
+    await seedCompletion('freeClimbing');
+    await assertFails(saveDocumentRows(20, 1, [0], override));
+  });
+
+  it('only completes sealed climbs matching the current draft revision', async () => {
+    await seedCompletion('freeClimbing');
+    await assertSucceeds(saveDocumentRows(20, 1, Array.from({length: 20}, (_, i) => i)));
+    const db = testEnv.authenticatedContext(ATHLETE).firestore();
+    const instance = db.collection('workoutInstances').doc('climbing-instance');
+    const completeSealed = () => {
+      const batch = db.batch();
+      batch.update(instance, {
+        status: 'completed', rpe: 7, durationMinutes: 60,
+        actualsStorageFormat: 'slotResultsSubcollection',
+        actualSlotIds: ['climbing-slot'], actuals: deleteField(),
+        updatedAt: serverTimestamp(),
+      });
+      batch.delete(instance.collection('completionDrafts').doc('current'));
+      return batch.commit();
+    };
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      await ctx.firestore().doc('workoutInstances/climbing-instance').update({
+        freeClimbingSeal: {revision: 0, clientId: 'client', slotIds: ['climbing-slot']},
+      });
+      await ctx.firestore().doc('workoutInstances/climbing-instance/slotResults/climbing-slot').set({
+        rowsStorageFormat: 'climbDocumentsV1', draftRevision: 0,
+        draftClientId: 'client', rowCount: 20,
+      });
+    });
+    await assertFails(completeSealed());
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      await ctx.firestore().doc('workoutInstances/climbing-instance').update({
+        freeClimbingSeal: {revision: 1, clientId: 'client', slotIds: ['climbing-slot']},
+      });
+      await ctx.firestore().doc('workoutInstances/climbing-instance/slotResults/climbing-slot')
+        .update({draftRevision: 1});
+    });
+    await assertSucceeds(completeSealed());
+    await assertFails(instance.collection('slotResults').doc('climbing-slot')
+      .collection('climbs').doc('climb-0').set(documentRow(0)));
+  });
+
   it.each(['climbingCircuit', 'freeClimbing'])(
     'allows nine climbing slots with nine recovery rows per slot: %s', async type => {
       await seedCompletion(type, 9, 9);
