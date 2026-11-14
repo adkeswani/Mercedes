@@ -311,6 +311,77 @@ void main() {
         value.slotInputs['slot-8']!['circuitRows']);
   });
 
+  for (final count in [20, 50, 100]) {
+    test('restores $count free climbs and only writes modified rows', () async {
+      final base = await climbingDraft(revision: 1);
+      final version = firestore
+          .collection('workoutTemplates')
+          .doc('workout')
+          .collection('workoutTemplateVersions')
+          .doc('1');
+      final pinned = (await version.get()).data()!;
+      final blocks = (pinned['blocks'] as List).cast<Map<String, dynamic>>();
+      blocks[0] = {'type': 'freeClimbing'};
+      await version.update({'blocks': blocks});
+      final input = {
+        'climbingType': 'freeClimbing',
+        'notes': 'Session',
+        'rpe': 7,
+        'freeRows': <Map<String, dynamic>>[
+          for (var i = 0; i < count; i++)
+            {
+              'rowId': 'climb-$i',
+              'gradingSystem': 'vScale',
+              'grade': 'V2',
+              'attempts': '1',
+              'sent': false,
+              'notes': 'Row $i'
+            },
+        ],
+      };
+      final first = base.copyWith(slotInputs: {'slot-0': input});
+      await repository.save(first);
+      final ref = firestore
+          .collection('workoutInstances')
+          .doc('instance-1')
+          .collection('completionDrafts')
+          .doc('current')
+          .collection('climbingInputs')
+          .doc('slot-0');
+      expect((await ref.get()).data()!['freeRows'], isNull);
+      expect((await ref.collection('climbs').get()).docs, hasLength(count));
+      localStore.value = null;
+      final restored = await repository.load(
+          instanceId: 'instance-1',
+          athleteId: 'athlete-1',
+          currentClientId: 'client-a');
+      expect(
+          restored.draft!.slotInputs['slot-0']!['freeRows'], input['freeRows']);
+      final rows = (input['freeRows'] as List).cast<Map<String, dynamic>>();
+      rows[0] = {...rows[0], 'attempts': '3'};
+      await repository
+          .save(first.copyWith(revision: 2, slotInputs: {'slot-0': input}));
+      final stored = await ref.collection('climbs').get();
+      expect(stored.docs.where((doc) => doc.data()['revision'] == 2),
+          hasLength(1));
+      expect(
+          (await ref.collection('climbs').doc('climb-0').get())
+              .data()!['attempts'],
+          '3');
+      rows.removeAt(1);
+      await repository
+          .save(first.copyWith(revision: 3, slotInputs: {'slot-0': input}));
+      expect((await ref.collection('climbs').doc('climb-1').get()).exists,
+          isFalse);
+      localStore.value = null;
+      final afterDelete = await repository.load(
+          instanceId: 'instance-1',
+          athleteId: 'athlete-1',
+          currentClientId: 'client-a');
+      expect(afterDelete.draft!.slotInputs['slot-0']!['freeRows'], rows);
+    });
+  }
+
   test('sharded conflict retains authoritative climbing inputs', () async {
     final current = await climbingDraft(revision: 4, clientId: 'other-tab');
     await repository.save(current);
@@ -344,6 +415,10 @@ void main() {
         .collection('climbingInputs')
         .doc('slot-8');
     localStore.value = null;
+    repository = WorkoutCompletionDraftRepository(
+      firestore: firestore,
+      localStore: localStore,
+    );
     await child.update({'revision': 1});
     await expectLater(
       repository.load(

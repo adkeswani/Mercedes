@@ -1,4 +1,5 @@
-import * as admin from "firebase-admin";
+import type * as admin from "firebase-admin";
+import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import {HttpsError} from "firebase-functions/v2/https";
 
 export async function repairWorkoutLocalDay(
@@ -50,7 +51,7 @@ export async function repairWorkoutLocalDay(
     }
     if (workout.status !== "scheduled" ||
         workout.scheduledDate !== localToday ||
-        !(workout.scheduledAt instanceof admin.firestore.Timestamp)) {
+        !(workout.scheduledAt instanceof Timestamp)) {
       throw new HttpsError("failed-precondition", "Only today's scheduled workouts can be repaired.");
     }
     if (workout.scheduledAt.toMillis() + 86_400_000 > now.getTime()) {
@@ -61,8 +62,8 @@ export async function repairWorkoutLocalDay(
       utcOffsetMinutes * 60_000,
     );
     transaction.update(ref, {
-      scheduledAt: admin.firestore.Timestamp.fromDate(localStart),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      scheduledAt: Timestamp.fromDate(localStart),
+      updatedAt: FieldValue.serverTimestamp(),
     });
   });
 }

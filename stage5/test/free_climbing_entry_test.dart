@@ -14,6 +14,66 @@ final _block =
     FreeClimbingBlock(blockId: 'old-free', sortOrder: 0, slotId: 'old-slot');
 
 void main() {
+  for (final count in [20, 50, 100]) {
+    test('$count individual climbs validate and round-trip', () {
+      final input = initialClimbingInput(_block)
+        ..['freeRows'] = [
+          for (var i = 0; i < count; i++)
+            {
+              'rowId': 'climb-$i',
+              'gradingSystem': 'vScale',
+              'grade': 'V2',
+              'attempts': '${i + 1}',
+              'sent': i.isEven,
+              'notes': 'Climb $i',
+            },
+        ];
+      final actual = climbingActualFromInput(_block, input);
+      expect(actual.freeRows, hasLength(count));
+      expect(
+          ExerciseActual.fromMap(actual.toMap(),
+                  slotId: _block.slots.single.slotId)
+              .toMap(),
+          actual.toMap());
+    });
+  }
+
+  testWidgets('Add climb remains enabled after nine climbs', (tester) async {
+    final input = initialClimbingInput(_block)
+      ..['freeRows'] = [
+        for (var i = 0; i < 9; i++)
+          {
+            'rowId': 'r-$i',
+            'gradingSystem': 'vScale',
+            'grade': 'V2',
+            'attempts': '1',
+            'sent': false,
+            'notes': ''
+          },
+      ];
+    Map<String, dynamic>? changed;
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        workoutTemplateRepositoryProvider.overrideWithValue(
+            WorkoutTemplateRepository(firestore: FakeFirebaseFirestore())),
+      ],
+      child: MaterialApp(
+          home: Scaffold(
+              body: SingleChildScrollView(
+        child: ClimbingCompletionCard(
+            block: _block,
+            recordingEnabled: true,
+            initialInput: input,
+            onChanged: (value) => changed = value),
+      ))),
+    ));
+    final button = find.widgetWithText(TextButton, 'Add climb');
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pump();
+    expect(changed!['freeRows'], hasLength(10));
+    expect(tester.takeException(), isNull);
+  });
   testWidgets(
       '320px entry is compact, one-tap, and preserves row identity on removal',
       (tester) async {

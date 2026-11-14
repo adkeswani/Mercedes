@@ -1155,7 +1155,8 @@ service cloud.firestore {
              && draft.climbingSlotIds.hasAny([slotId])
              && data.keys().hasOnly([
                   'climbingType', 'notes', 'rpe', 'circuitRows', 'freeRows', 'rowIds',
-                  'slotOrder', 'revision', 'clientId', 'serverUpdatedAt'
+                  'slotOrder', 'revision', 'clientId', 'serverUpdatedAt',
+                  'rowsStorageFormat', 'rowCount'
                 ])
              && data.serverUpdatedAt == request.time
              && data.notes is string && data.notes.size() <= 4000
@@ -1163,7 +1164,12 @@ service cloud.firestore {
              && ((data.climbingType == 'climbingCircuit'
                   && data.rowIds == version.blocks[version.slots[data.slotOrder].blockSortOrder].rowIds
                   && validCircuitClimbingPayload(data))
-                 || (data.climbingType == 'freeClimbing' && validFreeClimbingDraftPayload(data)));
+                 || (data.climbingType == 'freeClimbing'
+                     && ((data.get('rowsStorageFormat', '') == 'climbDocumentsV1'
+                          && !data.keys().hasAny(['freeRows', 'rowIds', 'circuitRows'])
+                          && data.rowCount is int && data.rowCount >= 0
+                          && validClimbingRpe(data))
+                         || validFreeClimbingDraftPayload(data))));
     }
 
     function validClimbingDraftInputs(inputs) {
@@ -1186,7 +1192,8 @@ service cloud.firestore {
                  'schemaVersion', 'instanceId', 'athleteId', 'rpe',
                  'durationMinutes', 'athleteNotes', 'currentStep',
                  'slotInputs', 'revision', 'clientId', 'updatedAt',
-                 'serverUpdatedAt', 'sourceRoute', 'climbingSlotIds'
+                 'serverUpdatedAt', 'sourceRoute', 'climbingSlotIds',
+                 'climbRowsStorageFormat'
                ])
              && data.schemaVersion == 1
              && data.instanceId == instanceId
@@ -1470,6 +1477,7 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys();
       return request.resource.data.status == 'completed'
              && resource.data.status == 'scheduled'
+             && validFreeClimbingSeal(instanceId, request.resource.data)
              && hasRequiredClimbingResults(instanceId, request.resource.data)
              && (!exists(
                    /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current
@@ -1553,6 +1561,42 @@ service cloud.firestore {
              || existsAfter(
                  /databases/$(database)/documents/workoutInstances/$(instanceId)/slotResults/$(data.actualSlotIds[index])
                 );
+    }
+
+    function validFreeClimbingSeal(instanceId, data) {
+      let path = /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current;
+      return !resource.data.keys().hasAny(['freeClimbingSeal'])
+             || (data.actualSlotIds.hasAll(resource.data.freeClimbingSeal.slotIds)
+                 && ((!exists(path) && resource.data.freeClimbingSeal.revision == null
+                   && resource.data.freeClimbingSeal.clientId == null)
+                 || (exists(path)
+                     && resource.data.freeClimbingSeal.revision == get(path).data.revision
+                     && resource.data.freeClimbingSeal.clientId == get(path).data.clientId)));
+    }
+
+    function canWriteFreeClimbDraft(instanceId, slotId, rowId, data) {
+      let parent = getAfter(
+        /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current/climbingInputs/$(slotId)
+      ).data;
+      let draft = getAfter(
+        /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current
+      ).data;
+      let instance = workoutInstanceData(instanceId);
+      let version = workoutVersionData(instance);
+      return instance.athleteId == request.auth.uid && instance.status == 'scheduled'
+             && parent.rowsStorageFormat == 'climbDocumentsV1'
+             && parent.climbingType == 'freeClimbing'
+             && version.slots[parent.slotOrder].slotId == slotId
+             && version.blocks[version.slots[parent.slotOrder].blockSortOrder].type == 'freeClimbing'
+             && parent.serverUpdatedAt == request.time
+             && parent.revision == draft.revision
+             && data.revision == draft.revision && data.clientId == draft.clientId
+             && data.order is int && data.order >= 0 && data.order < parent.rowCount
+             && data.keys().hasOnly([
+                  'rowId', 'gradingSystem', 'grade', 'attempts', 'sent', 'notes',
+                  'order', 'revision', 'clientId'
+                ])
+             && validFreeClimbingDraftRow(data, rowId, data.keys(), climbingGradePatterns());
     }
 
     function hasCompleteDeclaredSlotResults(instanceId, data) {
@@ -2469,6 +2513,7 @@ service cloud.firestore {
       allow read: if isSignedIn()
                     && canReadWorkout(resource.data);
       allow create: if isSignedIn()
+                      && !('freeClimbingSeal' in request.resource.data)
                       && request.resource.data.assignedBy == request.auth.uid
                       && (!('actuals' in request.resource.data)
                           || (request.resource.data.actuals is list
@@ -2542,6 +2587,8 @@ service cloud.firestore {
                          == resource.data.athleteId
                       && request.resource.data.revision
                          > resource.data.revision
+                      && (resource.data.get('climbRowsStorageFormat', '') != 'climbDocumentsV1'
+                          || request.resource.data.get('climbRowsStorageFormat', '') == 'climbDocumentsV1')
                       && workoutInstanceData(instanceId).status == 'scheduled';
         allow delete: if draftId == 'current'
                       && isSignedIn()
@@ -2569,10 +2616,30 @@ service cloud.firestore {
                             || !getAfter(
                              /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current
                             ).data.get('climbingSlotIds', []).hasAny([slotId]));
+          match /climbs/{rowId} {
+            allow read: if draftId == 'current' && isSignedIn()
+                        && workoutInstanceData(instanceId).athleteId == request.auth.uid;
+            allow create, update: if draftId == 'current' && isSignedIn()
+                                  && canWriteFreeClimbDraft(instanceId, slotId, rowId, request.resource.data)
+                                  && (resource == null || request.resource.data.revision > resource.data.revision);
+            allow delete: if draftId == 'current' && isSignedIn()
+                          && workoutInstanceData(instanceId).athleteId == request.auth.uid
+                          && workoutInstanceData(instanceId).status == 'scheduled'
+                          && getAfter(
+                               /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current/climbingInputs/$(slotId)
+                             ).data.serverUpdatedAt == request.time
+                          && getAfter(
+                               /databases/$(database)/documents/workoutInstances/$(instanceId)/completionDrafts/current/climbingInputs/$(slotId)
+                             ).data.revision > resource.data.revision;
+          }
         }
       }
 
       match /slotResults/{slotId} {
+        match /climbs/{rowId} {
+          allow read: if isSignedIn() && canReadWorkout(workoutInstanceData(instanceId));
+          allow write: if false;
+        }
         allow read: if isSignedIn()
                     && canReadWorkout(workoutInstanceData(instanceId));
         allow create, update: if isSignedIn()

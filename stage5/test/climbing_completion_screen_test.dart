@@ -25,6 +25,7 @@ import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 import '../integration_test/support/list_test_utils.dart';
 import '../integration_test/support/browser_test_wait.dart';
 import '../integration_test/workout_climbing_canary_test.dart' as canary;
+import 'support/free_climbing_preparer.dart';
 
 void main() {
   late FakeFirebaseFirestore firestore;
@@ -107,7 +108,10 @@ void main() {
       exerciseTemplateRepositoryProvider
           .overrideWithValue(ExerciseTemplateRepository(firestore: firestore)),
       workoutInstanceRepositoryProvider
-          .overrideWithValue(WorkoutInstanceRepository(firestore: firestore)),
+          .overrideWithValue(WorkoutInstanceRepository(
+        firestore: firestore,
+        prepareFreeClimbs: (data) => prepareFreeClimbsForTest(firestore, data),
+      )),
       workoutCompletionDraftRepositoryProvider.overrideWithValue(
           WorkoutCompletionDraftRepository(
               firestore: firestore, localStore: store)),

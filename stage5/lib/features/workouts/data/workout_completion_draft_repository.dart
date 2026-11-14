@@ -8,6 +8,8 @@ import 'package:stage5/features/workouts/domain/workout_completion_draft.dart';
 
 enum WorkoutDraftSaveStatus { saved, offline, conflict }
 
+class _ConcurrentDraftRead implements Exception {}
+
 class WorkoutDraftSaveResult {
   const WorkoutDraftSaveResult(this.status, {this.authoritativeDraft});
 
@@ -124,6 +126,13 @@ class WorkoutCompletionDraftRepository {
   ) async {
     final data = snapshot.data();
     if (!snapshot.exists || data == null) return null;
+    final acknowledged =
+        _acknowledgedDrafts[snapshot.reference.parent.parent!.id];
+    if (acknowledged != null &&
+        acknowledged.revision == data['revision'] &&
+        acknowledged.clientId == data['clientId']) {
+      return WorkoutCompletionDraft.fromMap(acknowledged.toMap());
+    }
     final ids = data['climbingSlotIds'];
     if (ids == null) return WorkoutCompletionDraft.fromMap(data);
     if (ids is! List ||
@@ -150,8 +159,74 @@ class WorkoutCompletionDraftRepository {
         ..remove('revision')
         ..remove('clientId')
         ..remove('serverUpdatedAt');
+      if (input['rowsStorageFormat'] == 'climbDocumentsV1') {
+        // Client transactions cannot query; the header revision fences this
+        // discovery query and each returned row is then read transactionally.
+        final rows =
+            await child.reference.collection('climbs').orderBy('order').get();
+        if (rows.docs.length != input['rowCount']) {
+          await _checkDraftReadRevision(snapshot, data);
+          throw const FormatException(
+              'Climbing draft changed while loading; retry');
+        }
+        final hydrated = <Map<String, dynamic>>[];
+        for (final row in rows.docs) {
+          final stored = (await transaction.get(row.reference)).data();
+          if (stored == null ||
+              stored['rowId'] != row.id ||
+              stored['revision'] is! int ||
+              (stored['revision'] as int) > (data['revision'] as int)) {
+            await _checkDraftReadRevision(snapshot, data);
+            throw const FormatException('Incomplete climbing draft rows');
+          }
+          if (stored['order'] != hydrated.length) {
+            await _checkDraftReadRevision(snapshot, data);
+            throw const FormatException('Invalid climbing draft row order');
+          }
+          hydrated.add(Map<String, dynamic>.from(stored)
+            ..remove('order')
+            ..remove('revision')
+            ..remove('clientId'));
+        }
+        inputs[id]
+          ..remove('rowsStorageFormat')
+          ..remove('rowCount')
+          ..['freeRows'] = hydrated;
+      }
     }
-    return WorkoutCompletionDraft.fromMap({...data, 'slotInputs': inputs});
+    final draft =
+        WorkoutCompletionDraft.fromMap({...data, 'slotInputs': inputs});
+    _acknowledgedDrafts[draft.instanceId] =
+        WorkoutCompletionDraft.fromMap(draft.toMap());
+    return draft;
+  }
+
+  final _acknowledgedDrafts = <String, WorkoutCompletionDraft>{};
+
+  Future<void> _checkDraftReadRevision(
+    DocumentSnapshot<Map<String, dynamic>> snapshot,
+    Map<String, dynamic> data,
+  ) async {
+    final latest = (await snapshot.reference.get()).data();
+    if (latest?['revision'] != data['revision'] ||
+        latest?['clientId'] != data['clientId']) {
+      throw _ConcurrentDraftRead();
+    }
+  }
+
+  Future<T> _runDraftTransaction<T>(
+    Future<T> Function(Transaction) operation,
+  ) async {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await _firestore.runTransaction(operation);
+      } on _ConcurrentDraftRead {
+        if (attempt == 2) {
+          throw StateError('Saved progress changed while loading. Retry.');
+        }
+      }
+    }
+    throw StateError('Could not read saved progress');
   }
 
   Future<WorkoutDraftRestoreResult> load({
@@ -201,7 +276,7 @@ class WorkoutCompletionDraftRepository {
 
     WorkoutCompletionDraft? server;
     try {
-      server = await _firestore.runTransaction((transaction) async {
+      server = await _runDraftTransaction((transaction) async {
         final snapshot = await transaction.get(_draft(instanceId));
         return _readServerDraft(transaction, snapshot);
       });
@@ -290,7 +365,7 @@ class WorkoutCompletionDraftRepository {
     _diagnose(operation, 'save-local-written', draft.instanceId, draft: draft);
     try {
       var transactionAttempt = 0;
-      final result = await _firestore.runTransaction<WorkoutDraftSaveResult>((
+      final result = await _runDraftTransaction<WorkoutDraftSaveResult>((
         transaction,
       ) async {
         transactionAttempt++;
@@ -372,10 +447,49 @@ class WorkoutCompletionDraftRepository {
           }
         }
         for (final entry in climbing.entries) {
+          final childRef = draftRef.collection('climbingInputs').doc(entry.key);
+          final payload = Map<String, dynamic>.from(entry.value);
+          if (payload['climbingType'] == 'freeClimbing') {
+            final rows = (payload.remove('freeRows') as List)
+                .cast<Map<String, dynamic>>();
+            payload.remove('rowIds');
+            payload['rowsStorageFormat'] = 'climbDocumentsV1';
+            payload['rowCount'] = rows.length;
+            final previous = serverSnapshot.data()?['climbRowsStorageFormat'] ==
+                    'climbDocumentsV1'
+                ? (server?.slotInputs[entry.key]?['freeRows'] as List? ?? [])
+                : [];
+            final oldRows = {
+              for (var i = 0; i < previous.length; i++)
+                (previous[i] as Map)['rowId'] as String: {
+                  ...Map<String, dynamic>.from(previous[i] as Map),
+                  'order': i,
+                },
+            };
+            final newIds = rows.map((row) => row['rowId']).toSet();
+            for (final id in oldRows.keys) {
+              if (!newIds.contains(id)) {
+                transaction.delete(childRef.collection('climbs').doc(id));
+              }
+            }
+            for (var i = 0; i < rows.length; i++) {
+              final row = {...rows[i], 'order': i};
+              if (!mapEquals(oldRows[row['rowId']], row)) {
+                transaction.set(
+                  childRef.collection('climbs').doc(row['rowId'] as String),
+                  {
+                    ...row,
+                    'revision': draft.revision,
+                    'clientId': draft.clientId
+                  },
+                );
+              }
+            }
+          }
           transaction.set(
-            draftRef.collection('climbingInputs').doc(entry.key),
+            childRef,
             {
-              ...entry.value,
+              ...payload,
               'slotOrder': slotOrders[entry.key],
               'revision': draft.revision,
               'clientId': draft.clientId,
@@ -385,6 +499,7 @@ class WorkoutCompletionDraftRepository {
         }
         final data = draft.toMap(includeServerTimestamp: true);
         if (climbing.isNotEmpty || previousIds.isNotEmpty) {
+          data['climbRowsStorageFormat'] = 'climbDocumentsV1';
           data['climbingSlotIds'] = climbing.keys.toList();
           data['slotInputs'] = {
             for (final entry in draft.slotInputs.entries)
@@ -395,6 +510,11 @@ class WorkoutCompletionDraftRepository {
         return decision.result;
       });
       final authoritative = result.authoritativeDraft;
+      if (result.status == WorkoutDraftSaveStatus.saved) {
+        final acknowledged = authoritative ?? draft;
+        _acknowledgedDrafts[draft.instanceId] =
+            WorkoutCompletionDraft.fromMap(acknowledged.toMap());
+      }
       _diagnose(operation, 'save-result', draft.instanceId,
           draft: draft, server: authoritative, status: result.status);
       if (authoritative != null) {
@@ -440,6 +560,7 @@ class WorkoutCompletionDraftRepository {
       throw StateError('Instance $instanceId must be completed');
     }
     await _localStore.delete(instanceId);
+    _acknowledgedDrafts.remove(instanceId);
   }
 
   void _verifyInstance(

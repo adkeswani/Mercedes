@@ -69,6 +69,10 @@ if (-not $InsideEmulators) {
 
     Push-Location $repoRoot
     try {
+        & npm --prefix functions run build
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Browser validation Functions build failed.'
+        }
         $innerCommand = 'powershell -NoProfile -ExecutionPolicy Bypass ' +
             "-File `"$stageName\tool\run-browser-login-smoke.ps1`" " +
             "-InsideEmulators -Identity $Identity"
@@ -76,7 +80,7 @@ if (-not $InsideEmulators) {
             $innerCommand += ' -SkipPubGet'
         }
         & firebase emulators:exec `
-            --only auth,firestore `
+            --only auth,firestore,functions `
             --project $projectId `
             $innerCommand
         if ($LASTEXITCODE -ne 0) {

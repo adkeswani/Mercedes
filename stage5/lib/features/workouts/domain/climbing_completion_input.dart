@@ -35,7 +35,7 @@ void validateClimbingInput(Map<String, dynamic> input) {
   }
   final rows = input[key];
   if (rows is! List ||
-      rows.length > maxClimbingRows ||
+      (type == 'climbingCircuit' && rows.length > maxClimbingRows) ||
       (type == 'climbingCircuit' && rows.isEmpty)) {
     throw const FormatException('Invalid climbing draft rows');
   }

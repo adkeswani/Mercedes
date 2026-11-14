@@ -329,6 +329,15 @@ try {
         }
     }
 
+    if (Test-Path -LiteralPath (Join-Path $repoRoot 'functions\package.json')) {
+        & firebase emulators:exec --only firestore `
+            --project mercedes-app-11ce2 `
+            'npm --prefix functions test'
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Backend function tests failed.'
+        }
+    }
+
     $integrationPath = Join-Path $stagePath 'integration_test'
     $integrationTests = @()
     if (Test-Path -LiteralPath $integrationPath -PathType Container) {

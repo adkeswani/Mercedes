@@ -1,4 +1,5 @@
-import * as admin from "firebase-admin";
+import type * as admin from "firebase-admin";
+import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import {logger} from "firebase-functions";
 
 import {
@@ -29,7 +30,7 @@ interface ProgramVersionEntry {
   sortOrder: number;
 }
 
-const serverTimestamp = admin.firestore.FieldValue.serverTimestamp;
+const serverTimestamp = FieldValue.serverTimestamp;
 const leaseDurationMs = 9 * 60 * 1000;
 
 export async function propagateProgramVersion(
@@ -64,7 +65,7 @@ export async function propagateProgramVersion(
 
   await versionRef.update({
     propagationState: "running",
-    propagationAttempt: admin.firestore.FieldValue.increment(1),
+    propagationAttempt: FieldValue.increment(1),
     propagationStartedAt: serverTimestamp(),
     propagationCompletedAt: null,
     propagationFailedAt: null,
@@ -337,7 +338,7 @@ async function claimInstance(
     if (
       data.propagationState === "running" &&
       activeOperation !== operationId &&
-      lease instanceof admin.firestore.Timestamp &&
+      lease instanceof Timestamp &&
       lease.toDate() > now
     ) {
       throw new Error(`Program instance ${instanceRef.id} is already reconciling`);
@@ -345,9 +346,9 @@ async function claimInstance(
     transaction.update(instanceRef, {
       propagationState: "running",
       propagationTargetVersion: versionNumber,
-      propagationAttempt: admin.firestore.FieldValue.increment(1),
+      propagationAttempt: FieldValue.increment(1),
       propagationOperationId: operationId,
-      propagationLeaseExpiresAt: admin.firestore.Timestamp.fromDate(
+      propagationLeaseExpiresAt: Timestamp.fromDate(
         new Date(now.valueOf() + leaseDurationMs),
       ),
       propagationStartedAt: serverTimestamp(),
@@ -454,7 +455,7 @@ async function executeOperation(args: {
       workoutTemplateVersion: operation.desired.workoutTemplateVersion,
       workoutType: operation.desired.workoutType,
       scheduledDate: operation.desired.scheduledDate,
-      scheduledAt: admin.firestore.Timestamp.fromDate(
+      scheduledAt: Timestamp.fromDate(
         new Date(`${operation.desired.scheduledDate}T00:00:00.000Z`),
       ),
       propagationAppliedVersion: versionNumber,
@@ -486,7 +487,7 @@ function newWorkoutData(
     workoutTemplateId: desired.workoutTemplateId,
     workoutTemplateVersion: desired.workoutTemplateVersion,
     scheduledDate: desired.scheduledDate,
-    scheduledAt: admin.firestore.Timestamp.fromDate(
+    scheduledAt: Timestamp.fromDate(
       new Date(`${desired.scheduledDate}T00:00:00.000Z`),
     ),
     workoutType: desired.workoutType,

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'support/free_climbing_preparer.dart';
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
 import 'package:stage5/features/workouts/data/workout_template_repository.dart';
@@ -506,7 +507,10 @@ void main() {
     setUp(() async {
       firestore = FakeFirebaseFirestore();
       templates = WorkoutTemplateRepository(firestore: firestore);
-      instances = WorkoutInstanceRepository(firestore: firestore);
+      instances = WorkoutInstanceRepository(
+        firestore: firestore,
+        prepareFreeClimbs: (data) => prepareFreeClimbsForTest(firestore, data),
+      );
       await firestore
           .collection('exerciseTemplates')
           .doc('climb-exercise')
@@ -604,6 +608,104 @@ void main() {
               .single
               .slotId,
           'circuit-slot');
+    });
+
+    test(
+        '100 climbs complete and bounded progress uses summaries, not row reads',
+        () async {
+      final version = (await templates.getVersion('workout', 1))!;
+      final input = initialClimbingInput(version.blocks.last)
+        ..['freeRows'] = [
+          for (var i = 0; i < 100; i++)
+            {
+              'rowId': 'r-$i',
+              'gradingSystem': 'vScale',
+              'grade': 'V${i % 4}',
+              'attempts': '${i % 3 + 1}',
+              'sent': i.isEven,
+              'notes': 'Note $i'
+            },
+        ];
+      await instances.completeWorkout(
+          instanceId: 'instance',
+          athleteId: 'athlete',
+          rpe: 7,
+          durationMinutes: 60,
+          actuals: [
+            climbingActualFromInput(version.blocks.first,
+                initialClimbingInput(version.blocks.first)),
+            climbingActualFromInput(version.blocks.last, input),
+          ]);
+      final detail = (await instances.getById('instance'))!;
+      expect(detail.actualsBySlot['free-slot']!.freeRows, hasLength(100));
+      expect(
+          detail.actualsBySlot['free-slot']!.freeRows!.last.notes, 'Note 99');
+      final ref = firestore
+          .collection('workoutInstances')
+          .doc('instance')
+          .collection('slotResults')
+          .doc('free-slot');
+      expect((await ref.get()).data()!['gradeSummary'].length, lessThan(100));
+      // Missing raw detail must not cause chart-summary reads to hydrate rows.
+      await ref.collection('climbs').doc('r-0').delete();
+      final chart = (await instances.getCompletedInRange(
+              athleteId: 'athlete',
+              start: DateTime.utc(2020),
+              endExclusive: DateTime.utc(2035)))
+          .single;
+      Map<String, int> counts(List<FreeClimbingResultRow> rows) {
+        final result = <String, int>{};
+        for (final row in rows) {
+          final key =
+              '${row.gradingSystem}/${row.grade}/${row.sent}/${row.attempts}';
+          result.update(key, (count) => count + 1, ifAbsent: () => 1);
+        }
+        return result;
+      }
+
+      expect(counts(chart.actualsBySlot['free-slot']!.freeRows!),
+          counts(detail.actualsBySlot['free-slot']!.freeRows!));
+      await expectLater(instances.getById('instance'), throwsFormatException);
+    });
+
+    test('failed preparation or changed draft never partially completes',
+        () async {
+      final version = (await templates.getVersion('workout', 1))!;
+      final actuals = [
+        for (final block in version.blocks)
+          climbingActualFromInput(block, initialClimbingInput(block)),
+      ];
+      final draft = firestore
+          .collection('workoutInstances')
+          .doc('instance')
+          .collection('completionDrafts')
+          .doc('current');
+      await draft.set({'revision': 1, 'clientId': 'tab'});
+      for (final changeDraft in [false, true]) {
+        final repository = WorkoutInstanceRepository(
+            firestore: firestore,
+            prepareFreeClimbs: (request) async {
+              if (!changeDraft) throw StateError('Preparation failed');
+              await prepareFreeClimbsForTest(firestore, request);
+              await draft.update({'revision': 2});
+            });
+        await expectLater(
+            repository.completeWorkout(
+                instanceId: 'instance',
+                athleteId: 'athlete',
+                rpe: 7,
+                durationMinutes: 60,
+                actuals: actuals),
+            throwsStateError);
+        expect(
+            (await firestore
+                    .collection('workoutInstances')
+                    .doc('instance')
+                    .get())
+                .data()!['status'],
+            'scheduled');
+        expect((await draft.get()).exists, isTrue);
+      }
     });
 
     test('duplicate draft and republish retain both immutable drill videos',

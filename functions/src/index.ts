@@ -3,9 +3,13 @@ import {logger} from "firebase-functions";
 import {defineSecret} from "firebase-functions/params";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
 import {onSchedule} from "firebase-functions/v2/scheduler";
-import * as admin from "firebase-admin";
+import {initializeApp} from "firebase-admin/app";
+import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
+import type {UserRecord} from "firebase-admin/auth";
 import {propagateProgramVersion} from "./subscription_propagation";
 import {repairWorkoutLocalDay as repairLocalDay} from "./workout_local_day";
+import {prepareFreeClimbingCompletion as prepareFreeClimbs} from "./free_climbing_completion";
+import {onDocumentUpdated} from "firebase-functions/v2/firestore";
 import {
   assertYoutubeCallableRateLimit,
   handleYoutubePublicRequest,
@@ -18,12 +22,34 @@ import {
   FirestoreYoutubeCatalogueStore,
 } from "./youtube_catalogue_firestore";
 
-admin.initializeApp();
+initializeApp();
 
-const db = admin.firestore();
+const db = getFirestore();
 const youtubeApiKey = defineSecret("YOUTUBE_API_KEY");
 let youtubeService: YoutubePublicService | undefined;
 const youtubeCatalogueStore = new FirestoreYoutubeCatalogueStore(db);
+
+export const prepareFreeClimbingCompletion = onCall(
+  {region: "us-central1", timeoutSeconds: 120, maxInstances: 10, cors: true},
+  async (request) => {
+    try {
+      await prepareFreeClimbs(db, request.auth?.uid ?? "", request.data);
+      return {prepared: true};
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      logger.error("Free-climbing completion preparation failed", {error});
+      throw new HttpsError("internal", "Could not save climbs. Your workout is not completed.");
+    }
+  },
+);
+
+export const cleanupCompletedWorkoutDraft = onDocumentUpdated(
+  {document: "workoutInstances/{instanceId}", region: "us-central1", retry: true},
+  async (event) => {
+    if (event.data?.after.data().status !== "completed") return;
+    await db.recursiveDelete(event.data.after.ref.collection("completionDrafts"));
+  },
+);
 
 export const repairWorkoutLocalDay = onCall(
   {region: "us-central1", maxInstances: 10, cors: true},
@@ -72,9 +98,9 @@ async function consumeYoutubeRateLimit(uid: string): Promise<void> {
     transaction.set(reference, {
       windowStart: activeWindow ?
         data?.windowStart :
-        admin.firestore.Timestamp.fromMillis(now),
+        Timestamp.fromMillis(now),
       count: count + 1,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
   });
 }
@@ -147,7 +173,7 @@ export const cleanupYoutubeCatalogues = onSchedule(
  *   without overwriting.
  */
 export const onUserCreated = auth.user().onCreate(
-  async (user: admin.auth.UserRecord) => {
+  async (user: UserRecord) => {
     const {uid, displayName, email, photoURL} = user;
 
     const userData = {
@@ -157,9 +183,9 @@ export const onUserCreated = auth.user().onCreate(
       email: email || "",
       photoUrl: photoURL || null,
       discoverable: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
       createdBy: "system",
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
       updatedBy: "system",
       deletedAt: null,
       deletedBy: null,

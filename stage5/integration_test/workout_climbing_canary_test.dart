@@ -518,11 +518,17 @@ void main() {
         final freeInput = await children.doc('slot-free-climbing').get(_server);
         final circuitInput =
             await children.doc('slot-climbing-circuit').get(_server);
-        final freeRows = freeInput.data()?['freeRows'] as List?;
+        final freeRows = (await freeInput.reference
+                .collection('climbs')
+                .orderBy('order')
+                .get(_server))
+            .docs
+            .map((doc) => doc.data())
+            .toList();
         final circuitRows = circuitInput.data()?['circuitRows'] as List?;
-        serverDraftSaved = freeRows?.isNotEmpty == true &&
+        serverDraftSaved = freeRows.isNotEmpty &&
             circuitRows?.isNotEmpty == true &&
-            (freeRows!.first as Map)['attempts'] == '2' &&
+            (freeRows.first as Map)['attempts'] == '2' &&
             (freeRows.first as Map)['sent'] == false &&
             (freeRows.first as Map)['notes'] == 'Clean climb' &&
             (circuitRows!.first as Map)['rpe'] == 8;
@@ -580,6 +586,29 @@ void main() {
         () async {
       await binding.takeScreenshot('athlete-free-climbing-entry');
     });
+    final addClimb =
+        find.descendant(of: freeCard, matching: find.text('Add climb'));
+    for (var i = 1; i < 20; i++) {
+      await _scroll(tester, waits, addClimb, 250, 'reveal Add climb $i');
+      await _tap(tester, waits, addClimb, 'add climb ${i + 1}');
+    }
+    var manyRowsSaved = false;
+    await waits.waitForCondition(
+      condition: 'twenty climbs saved in individual server documents',
+      isSatisfied: () => manyRowsSaved,
+      pump: () async {
+        final input = await instanceRef
+            .collection('completionDrafts')
+            .doc('current')
+            .collection('climbingInputs')
+            .doc('slot-free-climbing')
+            .get(_server);
+        manyRowsSaved = input.data()?['rowCount'] == 20;
+        await tester.pump(const Duration(milliseconds: 100));
+      },
+      timeout: const Duration(seconds: 20),
+    );
+    await binding.takeScreenshot('athlete-free-climbing-many-rows');
     await _scroll(tester, waits, find.text('Mark as Completed'), 250,
         'reveal completion button');
     await _tap(tester, waits, find.text('Mark as Completed'),
@@ -603,11 +632,18 @@ void main() {
     expect(circuit['attempts'], isNull);
     expect(circuit['sent'], isNull);
     expect(circuit['reps'], isNull);
-    expect(bySlot['slot-free-climbing']!['freeRows'][0]['grade'], '5.13a');
-    expect(bySlot['slot-free-climbing']!['freeRows'][0]['attempts'], 2);
-    expect(bySlot['slot-free-climbing']!['freeRows'][0]['sent'], false);
+    final climbResults = await instanceRef
+        .collection('slotResults')
+        .doc('slot-free-climbing')
+        .collection('climbs')
+        .orderBy('order')
+        .get(_server);
+    expect(climbResults.docs, hasLength(20));
+    expect(climbResults.docs.first.data()['grade'], '5.13a');
+    expect(climbResults.docs.first.data()['attempts'], 2);
+    expect(climbResults.docs.first.data()['sent'], false);
     expect(bySlot['slot-free-climbing']!['rpe'], 7);
-    expect(bySlot['slot-free-climbing-optional']!['freeRows'], isEmpty);
+    expect(bySlot['slot-free-climbing-optional']!['rowCount'], 0);
     expect((await versionRef.get(_server)).data(), before.data());
     expect(
         (await instanceRef
@@ -624,6 +660,23 @@ void main() {
                 .get(_server))
             .docs,
         isEmpty);
+    var rowsCleaned = false;
+    await waits.waitForCondition(
+      condition: 'backend removes nested completed draft climbs',
+      isSatisfied: () => rowsCleaned,
+      pump: () async {
+        final rows = await instanceRef
+            .collection('completionDrafts')
+            .doc('current')
+            .collection('climbingInputs')
+            .doc('slot-free-climbing')
+            .collection('climbs')
+            .get(_server);
+        rowsCleaned = rows.docs.isEmpty;
+        await tester.pump(const Duration(milliseconds: 100));
+      },
+      timeout: const Duration(seconds: 30),
+    );
 
     _router(tester).go('/athlete/workouts/$_instanceId');
     await _wait(tester, waits, find.byKey(WorkoutCompletionScreen.titleKey),

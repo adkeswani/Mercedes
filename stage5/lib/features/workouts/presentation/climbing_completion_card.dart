@@ -140,27 +140,24 @@ class _ClimbingCompletionCardState extends ConsumerState<ClimbingCompletionCard>
               for (var i = 0; i < _rows.length; i++) _buildRow(i),
               if (!_isCircuit)
                 TextButton.icon(
-                  onPressed: _rows.length < maxClimbingRows
-                      ? () {
-                          setState(
-                            () => _rows.add({
-                              'rowId': ref
-                                  .read(workoutTemplateRepositoryProvider)
-                                  .generateExerciseSlotId(),
-                              'gradingSystem': _rows.isEmpty
-                                  ? ClimbingGradingSystem.vScale.name
-                                  : (_rows.last as Map)['gradingSystem'],
-                              'grade': _rows.isEmpty
-                                  ? 'V0'
-                                  : (_rows.last as Map)['grade'],
-                              'attempts': '1',
-                              'sent': false,
-                              'notes': '',
-                            }),
-                          );
-                          _emit();
-                        }
-                      : null,
+                  onPressed: () {
+                    setState(
+                      () => _rows.add({
+                        'rowId': ref
+                            .read(workoutTemplateRepositoryProvider)
+                            .generateExerciseSlotId(),
+                        'gradingSystem': _rows.isEmpty
+                            ? ClimbingGradingSystem.vScale.name
+                            : (_rows.last as Map)['gradingSystem'],
+                        'grade':
+                            _rows.isEmpty ? 'V0' : (_rows.last as Map)['grade'],
+                        'attempts': '1',
+                        'sent': false,
+                        'notes': '',
+                      }),
+                    );
+                    _emit();
+                  },
                   icon: const Icon(Icons.add),
                   label: const Text('Add climb'),
                 ),

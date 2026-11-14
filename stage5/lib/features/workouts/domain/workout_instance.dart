@@ -479,8 +479,7 @@ class ExerciseActual {
       throw ArgumentError('Climbing results must identify their type');
     }
     final ids = <String>{};
-    if ((circuitRows?.length ?? 0) > maxClimbingRows ||
-        (freeRows?.length ?? 0) > maxClimbingRows) {
+    if ((circuitRows?.length ?? 0) > maxClimbingRows) {
       throw ArgumentError(
           'At most $maxClimbingRows climbing rows are supported');
     }

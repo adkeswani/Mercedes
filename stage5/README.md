@@ -140,11 +140,21 @@ Implemented in this slice:
 - Climbing result inputs, including unfinished free-row counts, recover from
   athlete-only local/server drafts. Local drafts keep complete inline inputs;
   server drafts store one `climbingInputs/{slotId}` child per climbing slot
-  beneath `completionDrafts/current`, supporting nine slots with nine rows
-  each. Atomic revision/client-ID and server-timestamp generations prevent
-  partial or mixed recovery. Completion validates pinned row identities,
-  writes immutable actuals, and deletes the primary draft and its children
-  transactionally. Completed details retain the original prescription and
+  beneath `completionDrafts/current`. Free-climbing rows live in that child's
+  `climbs/{rowId}` collection, without the former nine-climb cap; circuit
+  prescriptions retain their nine-row limit. Autosave writes only changed
+  climb documents alongside the revision/client-ID headers. Recovery verifies
+  row count, ordering, identities, and revisions.
+  Successful saves retain a detached acknowledged snapshot; subsequent
+  autosaves read the server revision header and reuse it while that revision
+  is unchanged, rather than rereading every climb on every edit.
+  The authenticated `prepareFreeClimbingCompletion` callable validates free
+  climbs against the pinned slot and seals immutable results and summaries.
+  A final rules-validated transaction checks the seal's draft revision,
+  writes the remaining actuals, marks the workout completed, and removes
+  draft headers. Retried backend cleanup removes nested draft documents.
+  Failed preparation/finalization leaves the workout scheduled and recoverable.
+  Completed details retain the original prescription and
   pinned exercise instructions/media after newer versions are published.
 - Stable exercise-slot IDs that pin both the logical exercise ID and immutable
   exercise version for every occurrence.
@@ -568,12 +578,17 @@ match the client query contract.
 
 Copilot's repository-local stage completion skill lives at
 `.github/skills/stage-completion-testing/SKILL.md`. Its validation entry point
-automatically runs the full Flutter suite, analyzer, Firestore rules suite, and
+automatically runs the full Flutter suite, analyzer, Firestore rules suite,
+backend function tests, and
 every browser integration scenario for both emulator identities:
 
 ```powershell
 .\scripts\run-stage-validation.ps1 -Stage stage5
 ```
+
+Browser scenarios build the existing Functions package and run Auth,
+Firestore, and Functions emulators together so callable completion and
+recursive draft cleanup are verified without contacting production.
 
 The script writes browser output to a unique
 `stage5/test-artifacts/stage-validation/<UTC timestamp>-<run ID>/` directory
@@ -723,8 +738,9 @@ Circuit comparisons stay within the same template/version/block.
 Free Climbing completion records one climb per compact row: Grade, Attempts,
 and Sent on the first line, with Notes beneath. Add climb immediately adds a
 row with one attempt, not sent, and the previous grade (V0 initially); the
-single grade dropdown includes both V-scale and YDS. The existing nine-row
-limit remains. Drafts retain unfinished attempt text and completion requires
+single grade dropdown includes both V-scale and YDS. Free-climbing recording
+has no application-level row cap (normal Firestore transaction/document size
+limits still apply and failures are surfaced). Drafts retain unfinished attempt text and completion requires
 positive integer attempts. Existing templates and assigned pinned workouts
 use these results without republishing. Valid historical grade-count rows are
 read for compatibility but omitted from history/progress and discarded when
@@ -734,9 +750,17 @@ converted into invented individual climbs or attempts.
 The read-only repository pages all completions in the selected and preceding
 bounded intervals using the existing `(athleteId, status, completedAt DESC)`
 index, hydrates slot results, and caches each pinned version once per load.
+New free-climbing results keep individual rows under
+`slotResults/{slotId}/climbs/{rowId}`. Bounded chart queries use server-generated
+grade/sent/attempt-count summaries rather than reading each climb; workout
+details load the individual rows and notes. Existing inline individual-climb
+results remain readable using the existing codec, without a bulk migration.
 There is no document-count truncation. Loading/empty/error/Retry/Refresh states
-are explicit; no new write path, rules relaxation, dependency, or index is
-introduced. `integration_test/climbing_progress_canary_test.dart` covers
+are explicit. No new dependency or composite index is needed.
+`integration_test/workout_climbing_canary_test.dart` additionally verifies
+twenty climbs, server autosave/recovery, trusted finalization, immutable
+detail, and `athlete-free-climbing-many-rows.png`.
+`integration_test/climbing_progress_canary_test.dart` covers
 presets/custom dates, contribution checkboxes and select-all/none, missing-data
 interpretation, grade separation, immutable
 source navigation, and 105 equal-timestamp completions across page boundaries.

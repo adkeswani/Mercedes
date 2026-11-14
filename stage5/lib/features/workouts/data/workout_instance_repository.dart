@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/programs/domain/program.dart';
@@ -19,9 +20,19 @@ class WorkoutInstanceRepository {
     FirebaseFirestore? firestore,
     DateTime Function()? now,
     WorkoutLocalDay localDay = const WorkoutLocalDay(),
+    Future<void> Function(Map<String, dynamic>)? prepareFreeClimbs,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _now = now ?? DateTime.now,
-        _localDay = localDay;
+        _localDay = localDay,
+        _prepareFreeClimbs = prepareFreeClimbs ?? _callPrepareFreeClimbs;
+
+  final Future<void> Function(Map<String, dynamic>) _prepareFreeClimbs;
+
+  static Future<void> _callPrepareFreeClimbs(Map<String, dynamic> data) async {
+    await FirebaseFunctions.instance
+        .httpsCallable('prepareFreeClimbingCompletion')
+        .call<void>(data);
+  }
 
   final FirebaseFirestore _firestore;
   final DateTime Function() _now;
@@ -975,11 +986,33 @@ class WorkoutInstanceRepository {
       instanceId: instanceId,
       actuals: actuals,
     );
+    final freeClimbs = <String, dynamic>{
+      for (final entry in actualsBySlot.entries)
+        if ((entry.value as Map)['climbingType'] == 'freeClimbing')
+          entry.key: entry.value,
+    };
+    final completionToken = freeClimbs.isEmpty ? null : _collection.doc().id;
+    if (freeClimbs.isNotEmpty) {
+      final draft = (await _collection
+              .doc(instanceId)
+              .collection('completionDrafts')
+              .doc('current')
+              .get())
+          .data();
+      await _prepareFreeClimbs({
+        'instanceId': instanceId,
+        'actuals': freeClimbs,
+        'revision': draft?['revision'],
+        'clientId': draft?['clientId'],
+        'completionToken': completionToken,
+      });
+    }
     await _writeCompletion(
       instanceId: instanceId,
       athleteId: athleteId,
       requiredStatus: WorkoutInstanceStatus.scheduled,
       actualsBySlot: actualsBySlot,
+      completionToken: completionToken,
       parentFields: {
         'status': WorkoutInstanceStatus.completed.name,
         'completedAt': FieldValue.serverTimestamp(),
@@ -1246,7 +1279,9 @@ class WorkoutInstanceRepository {
       final pageQuery =
           cursor == null ? query : query.startAfterDocument(cursor);
       final page = await pageQuery.limit(100).get();
-      instances.addAll(await _instancesFromSnapshot(page));
+      instances.addAll(await Future.wait(
+        page.docs.map((doc) => _fromDocument(doc, summaryOnly: true)),
+      ));
       if (page.docs.length < 100) break;
       cursor = page.docs.last;
     }
@@ -1544,12 +1579,15 @@ class WorkoutInstanceRepository {
   Future<List<WorkoutInstance>> _instancesFromSnapshot(
     QuerySnapshot<Map<String, dynamic>> snapshot,
   ) {
-    return Future.wait(snapshot.docs.map(_fromDocument));
+    return Future.wait(
+      snapshot.docs.map((doc) => _fromDocument(doc, summaryOnly: true)),
+    );
   }
 
   Future<WorkoutInstance> _fromDocument(
-    DocumentSnapshot<Map<String, dynamic>> doc,
-  ) async {
+    DocumentSnapshot<Map<String, dynamic>> doc, {
+    bool summaryOnly = false,
+  }) async {
     final data = doc.data()!;
     final declaredSlotIds = data['actualSlotIds'];
     final Map<String, ExerciseActual> actualsBySlot;
@@ -1560,10 +1598,15 @@ class WorkoutInstanceRepository {
       if (slotIds.length != declaredSlotIds.length) {
         throw StateError('Actual slot IDs must be strings');
       }
-      actualsBySlot = await _readSlotResults(doc.reference, slotIds: slotIds);
+      actualsBySlot = await _readSlotResults(
+        doc.reference,
+        slotIds: slotIds,
+        summaryOnly: summaryOnly,
+      );
     } else if (data['actualsStorageFormat'] == 'slotResultsSubcollection' &&
         declaredSlotIds is! List) {
-      actualsBySlot = await _readSlotResults(doc.reference);
+      actualsBySlot =
+          await _readSlotResults(doc.reference, summaryOnly: summaryOnly);
     } else {
       actualsBySlot = _parseActualsBySlot(data);
     }
@@ -1627,6 +1670,7 @@ class WorkoutInstanceRepository {
   Future<Map<String, ExerciseActual>> _readSlotResults(
     DocumentReference<Map<String, dynamic>> instanceRef, {
     List<String>? slotIds,
+    bool summaryOnly = false,
   }) async {
     if (slotIds != null) {
       final documents = await Future.wait(
@@ -1639,18 +1683,57 @@ class WorkoutInstanceRepository {
         if (!document.exists || document.data() == null) {
           throw StateError('Missing result for slot ${document.id}');
         }
-        results[document.id] = _actualFromMap(
-          document.data()!,
-          slotId: document.id,
-        );
+        results[document.id] =
+            await _readSlotActual(document, summaryOnly: summaryOnly);
       }
       return results;
     }
     final snapshot = await instanceRef.collection('slotResults').get();
-    return {
-      for (final doc in snapshot.docs)
-        doc.id: _actualFromMap(doc.data(), slotId: doc.id),
-    };
+    final results = <String, ExerciseActual>{};
+    for (final doc in snapshot.docs) {
+      results[doc.id] = await _readSlotActual(doc, summaryOnly: summaryOnly);
+    }
+    return results;
+  }
+
+  Future<ExerciseActual> _readSlotActual(
+    DocumentSnapshot<Map<String, dynamic>> doc, {
+    required bool summaryOnly,
+  }) async {
+    final data = Map<String, dynamic>.from(doc.data()!);
+    if (data['rowsStorageFormat'] == 'climbDocumentsV1') {
+      final rows = <Map<String, dynamic>>[];
+      if (summaryOnly) {
+        final summary = data['gradeSummary'];
+        if (summary is! List)
+          throw const FormatException('Missing climbing summary');
+        for (var i = 0; i < summary.length; i++) {
+          final entry = Map<String, dynamic>.from(summary[i] as Map);
+          final count = entry.remove('count');
+          if (count is! int || count < 1) {
+            throw const FormatException('Invalid climbing summary count');
+          }
+          for (var j = 0; j < count; j++) {
+            rows.add({...entry, 'rowId': 'summary-$i-$j', 'notes': null});
+          }
+        }
+      } else {
+        final snapshot =
+            await doc.reference.collection('climbs').orderBy('order').get();
+        for (final row in snapshot.docs) {
+          if (row.data()['rowId'] != row.id) {
+            throw const FormatException('Climbing result identity mismatch');
+          }
+          rows.add(Map<String, dynamic>.from(row.data())..remove('order'));
+        }
+      }
+      if (rows.length != data['rowCount']) {
+        throw const FormatException('Incomplete climbing results');
+      }
+      data['freeRows'] = rows;
+      data['rowIds'] = rows.map((row) => row['rowId']).toList();
+    }
+    return _actualFromMap(data, slotId: doc.id);
   }
 
   Map<String, ExerciseActual> _parseActualsBySlot(Map<String, dynamic> data) {
@@ -1789,6 +1872,7 @@ class WorkoutInstanceRepository {
     required WorkoutInstanceStatus requiredStatus,
     required Map<String, dynamic> actualsBySlot,
     required Map<String, dynamic> parentFields,
+    String? completionToken,
   }) async {
     final instanceRef = _collection.doc(instanceId);
     final storedResults = await instanceRef.collection('slotResults').get();
@@ -1808,18 +1892,39 @@ class WorkoutInstanceRepository {
       final draftRef =
           instanceRef.collection('completionDrafts').doc('current');
       final draftSnapshot = await transaction.get(draftRef);
+      final sealed = <String, Map<String, dynamic>>{};
+      for (final entry in actualsBySlot.entries) {
+        if ((entry.value as Map)['climbingType'] == 'freeClimbing') {
+          final header = (await transaction.get(
+            instanceRef.collection('slotResults').doc(entry.key),
+          ))
+              .data();
+          if (header == null ||
+              header['rowsStorageFormat'] != 'climbDocumentsV1' ||
+              header['completionToken'] != completionToken ||
+              header['draftRevision'] != draftSnapshot.data()?['revision'] ||
+              header['draftClientId'] != draftSnapshot.data()?['clientId']) {
+            throw StateError(
+                'Saved progress changed; retry workout completion');
+          }
+          sealed[entry.key] = header;
+        }
+      }
 
       final previousSlotIds =
           (data['actualSlotIds'] as List<dynamic>? ?? const [])
               .whereType<String>();
       for (final slotId in {...storedSlotIds, ...previousSlotIds}) {
-        transaction.delete(instanceRef.collection('slotResults').doc(slotId));
+        if (!sealed.containsKey(slotId)) {
+          transaction.delete(instanceRef.collection('slotResults').doc(slotId));
+        }
       }
       for (final entry in actualsBySlot.entries) {
-        transaction.set(
-          instanceRef.collection('slotResults').doc(entry.key),
-          entry.value as Map<String, dynamic>,
-        );
+        if (!sealed.containsKey(entry.key))
+          transaction.set(
+            instanceRef.collection('slotResults').doc(entry.key),
+            entry.value as Map<String, dynamic>,
+          );
       }
       if (draftSnapshot.exists) {
         final climbingIds =
