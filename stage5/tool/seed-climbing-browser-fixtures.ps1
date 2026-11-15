@@ -105,10 +105,20 @@ function Get-ClimbingBrowserFixtureWrites {
         status = 'scheduled'; workoutType = 'skill'; createdAt = $time; updatedAt = $time
         actualsStorageFormat = 'slotResultsSubcollection'; actualSlotIds = @(); actuals = @()
     }
+    # The recovery canary represents a started recording, pinned before version 2.
+    $draft = @{
+        schemaVersion = 1; instanceId = $workoutId; athleteId = $AthleteId
+        workoutTemplateId = $workoutId; workoutTemplateVersion = 1
+        rpe = 5; durationMinutes = 45; athleteNotes = $null; currentStep = 0
+        slotInputs = @{}; revision = 1; clientId = 'browser-climbing-fixture'
+        updatedAt = $time; serverUpdatedAt = $time
+        sourceRoute = "/athlete/workouts/$workoutId"
+    }
     $documents = @(
         @{ path = "workoutTemplates/$workoutId"; data = $header },
         @{ path = "workoutTemplates/$workoutId/workoutTemplateVersions/1"; data = $version },
         @{ path = 'workoutInstances/browser-climbing-workout'; data = $instance }
+        @{ path = "workoutInstances/$workoutId/completionDrafts/current"; data = $draft }
         for ($i = 0; $i -lt $blocks.Count; $i++) {
             @{ path = "workoutTemplates/$workoutId/workoutTemplateVersions/1/workoutBlocks/$($blocks[$i].blockId)"; data = $blocks[$i] }
             @{ path = "workoutTemplates/$workoutId/workoutTemplateVersions/1/exerciseSlots/$($slots[$i].slotId)"; data = $slots[$i] }
