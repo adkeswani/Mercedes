@@ -308,7 +308,7 @@ class WorkoutCompletionDraftRepository {
     final selected = result.draft;
     if (selected != null) {
       verifyWorkoutVersion(
-        instance: instanceData!,
+        instance: instanceData,
         templateId: selected.workoutTemplateId,
         version: selected.workoutTemplateVersion,
       );
