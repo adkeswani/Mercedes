@@ -89,6 +89,51 @@ void main() {
     });
   }
 
+  test('rejects stale editor saves and preserves the device draft', () async {
+    final pinned = draft().copyWith(
+      workoutTemplateId: 'workout',
+      workoutTemplateVersion: 1,
+    );
+    final instance = firestore.collection('workoutInstances').doc('instance-1');
+    await instance.update({
+      'workoutTemplateId': 'workout',
+      'workoutTemplateVersion': 2,
+    });
+    await expectLater(repository.save(pinned), throwsStateError);
+    expect(localStore.value?.workoutTemplateVersion, 1);
+    expect(
+        (await instance.collection('completionDrafts').doc('current').get())
+            .exists,
+        isFalse);
+    await expectLater(
+      repository.load(
+        instanceId: 'instance-1',
+        athleteId: 'athlete-1',
+        currentClientId: 'client-a',
+      ),
+      throwsStateError,
+    );
+    expect(localStore.value?.workoutTemplateVersion, 1);
+  });
+
+  test('saves and restores progress against the same pinned workout', () async {
+    await firestore.collection('workoutInstances').doc('instance-1').update({
+      'workoutTemplateId': 'workout',
+      'workoutTemplateVersion': 2,
+    });
+    await repository.save(draft().copyWith(
+      workoutTemplateId: 'workout',
+      workoutTemplateVersion: 2,
+    ));
+    localStore.value = null;
+    final restored = await repository.load(
+      instanceId: 'instance-1',
+      athleteId: 'athlete-1',
+      currentClientId: 'client-a',
+    );
+    expect(restored.draft?.workoutTemplateVersion, 2);
+  });
+
   test('saved draft indicator follows server creation and removal', () async {
     final values = StreamIterator(repository.watchHasSavedDraft(
       instanceId: 'instance-1',

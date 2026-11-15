@@ -2,6 +2,28 @@ import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
 import 'package:stage5/features/workouts/domain/workout_block.dart';
 
+class WorkoutVersionChanged extends StateError {
+  WorkoutVersionChanged()
+      : super('This workout was updated before your progress was synced. '
+            'Your device draft is preserved, but cannot be applied to the '
+            'updated workout.');
+}
+
+void verifyWorkoutVersion({
+  required Map<String, dynamic> instance,
+  String? templateId,
+  int? version,
+}) {
+  if (templateId == null && version == null) return;
+  if (templateId == null || version == null) {
+    throw ArgumentError('A workout version requires its template ID');
+  }
+  if (instance['workoutTemplateId'] != templateId ||
+      instance['workoutTemplateVersion'] != version) {
+    throw WorkoutVersionChanged();
+  }
+}
+
 Map<String, ExerciseActual> _actualsToSlotMap(List<ExerciseActual> actuals) {
   final result = <String, ExerciseActual>{};
   for (final actual in actuals) {

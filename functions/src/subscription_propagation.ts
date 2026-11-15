@@ -1,6 +1,7 @@
 import type * as admin from "firebase-admin";
 import {FieldValue, Timestamp} from "firebase-admin/firestore";
 import {logger} from "firebase-functions";
+import {hasWorkoutProgress, latestPublishedWorkout} from "./workout_version_propagation";
 
 import {
   buildReconciliationPlan,
@@ -415,8 +416,11 @@ async function executeOperation(args: {
         verifyWorkoutScope(workout.data() ?? {}, instanceRef.id, ownerId, athleteId);
         return false;
       }
+      const latest = await latestPublishedWorkout(
+        db, operation.desired.workoutTemplateId, ownerId, transaction,
+      );
       transaction.create(workoutRef, newWorkoutData(
-        operation.desired,
+        {...operation.desired, workoutTemplateVersion: latest.version, workoutType: latest.workoutType},
         instanceRef.id,
         programId,
         ownerId,
@@ -447,13 +451,18 @@ async function executeOperation(args: {
       });
       return true;
     }
+    const draft = await transaction.get(workoutRef.collection("completionDrafts").doc("current"));
+    if (draft.exists || hasWorkoutProgress(data)) return false;
+    const latest = await latestPublishedWorkout(
+      db, operation.desired.workoutTemplateId, ownerId, transaction,
+    );
     transaction.update(workoutRef, {
       programVersion: versionNumber,
       programEntryId: operation.desired.entryId,
       programEntrySortOrder: operation.desired.sortOrder,
       workoutTemplateId: operation.desired.workoutTemplateId,
-      workoutTemplateVersion: operation.desired.workoutTemplateVersion,
-      workoutType: operation.desired.workoutType,
+      workoutTemplateVersion: latest.version,
+      workoutType: latest.workoutType,
       scheduledDate: operation.desired.scheduledDate,
       scheduledAt: Timestamp.fromDate(
         new Date(`${operation.desired.scheduledDate}T00:00:00.000Z`),
@@ -527,19 +536,9 @@ async function hydrateDesiredWorkouts(
   const templateIds = [...new Set(entries.map((entry) =>
     entry.workoutTemplateId
   ))];
-  const headers = new Map<string, DocumentData>();
+  const headers = new Map<string, {version: number; workoutType: string}>();
   await Promise.all(templateIds.map(async (templateId) => {
-    const header = await db.collection("workoutTemplates").doc(templateId).get();
-    if (!header.exists) {
-      throw new Error(`Workout template ${templateId} not found`);
-    }
-    const data = header.data() ?? {};
-    const templateOwner = optionalString(data, "ownerId") ??
-      requiredString(data, "createdBy");
-    if (templateOwner !== ownerId) {
-      throw new Error(`Workout template ${templateId} is not owned by ${ownerId}`);
-    }
-    headers.set(templateId, data);
+    headers.set(templateId, await latestPublishedWorkout(db, templateId, ownerId));
   }));
   await Promise.all(entries.map(async (entry) => {
     const version = await db.collection("workoutTemplates")
@@ -560,13 +559,10 @@ async function hydrateDesiredWorkouts(
     entryId: entry.entryId,
     dayOffset: entry.dayOffset,
     workoutTemplateId: entry.workoutTemplateId,
-    workoutTemplateVersion: entry.workoutTemplateVersion,
+    workoutTemplateVersion: headers.get(entry.workoutTemplateId)!.version,
     scheduledDate: addDays(anchor, entry.dayOffset),
     sortOrder: entry.sortOrder,
-    workoutType: optionalString(
-      headers.get(entry.workoutTemplateId),
-      "workoutType",
-    ) ?? "fullBody",
+    workoutType: headers.get(entry.workoutTemplateId)!.workoutType,
   }));
 }
 

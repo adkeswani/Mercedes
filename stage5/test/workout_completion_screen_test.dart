@@ -81,6 +81,62 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
+  testWidgets('stale device progress requires confirmation before discarding',
+      (tester) async {
+    final versions = firestore
+        .collection('workoutTemplates')
+        .doc('workout-1')
+        .collection('workoutTemplateVersions');
+    await versions.doc('2').set({
+      ...(await versions.doc('1').get()).data()!,
+      'versionNumber': 2,
+    });
+    localStore.value = _draftForTest(
+      revision: 1,
+      clientId: 'test-tab',
+      notes: 'Offline notes',
+    ).copyWith(workoutTemplateId: 'workout-1', workoutTemplateVersion: 1);
+    await firestore
+        .collection('workoutInstances')
+        .doc('instance-1')
+        .update({'workoutTemplateVersion': 2});
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('device draft is preserved'), findsOneWidget);
+    expect(localStore.value?.athleteNotes, 'Offline notes');
+    await tester.tap(find.text('Discard device draft'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(localStore.value?.athleteNotes, 'Offline notes');
+    await tester.tap(find.text('Discard device draft'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Discard'));
+    await tester.pumpAndSettle();
+    expect(localStore.value, isNull);
+    expect(find.byKey(WorkoutCompletionScreen.listKey), findsOneWidget);
+  });
+
+  testWidgets('an open editor cannot complete after its version is updated',
+      (tester) async {
+    await pumpScreen(tester);
+    await tester.pumpAndSettle();
+    await firestore
+        .collection('workoutInstances')
+        .doc('instance-1')
+        .update({'workoutTemplateVersion': 2});
+    final complete = find.text('Mark as Completed');
+    await tester.scrollUntilVisible(complete, 250,
+        scrollable: find.byType(Scrollable).last);
+    await tester.tap(complete);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('updated before your progress'), findsWidgets);
+    expect(
+        (await firestore.collection('workoutInstances').doc('instance-1').get())
+            .data()!['status'],
+        'scheduled');
+  });
+
   testWidgets('phone exercises scroll continuously without losing input',
       (tester) async {
     tester.view.physicalSize = const Size(390, 844);

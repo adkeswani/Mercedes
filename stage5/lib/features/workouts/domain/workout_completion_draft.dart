@@ -17,6 +17,8 @@ class WorkoutCompletionDraft {
     this.currentStep = 0,
     this.slotInputs = const {},
     this.serverUpdatedAt,
+    this.workoutTemplateId,
+    this.workoutTemplateVersion,
   });
 
   final String instanceId;
@@ -31,6 +33,8 @@ class WorkoutCompletionDraft {
   final DateTime updatedAt;
   final DateTime? serverUpdatedAt;
   final String sourceRoute;
+  final String? workoutTemplateId;
+  final int? workoutTemplateVersion;
 
   WorkoutCompletionDraft copyWith({
     int? rpe,
@@ -42,6 +46,8 @@ class WorkoutCompletionDraft {
     int? revision,
     DateTime? updatedAt,
     DateTime? serverUpdatedAt,
+    String? workoutTemplateId,
+    int? workoutTemplateVersion,
   }) {
     return WorkoutCompletionDraft(
       instanceId: instanceId,
@@ -57,6 +63,9 @@ class WorkoutCompletionDraft {
       updatedAt: updatedAt ?? this.updatedAt,
       serverUpdatedAt: serverUpdatedAt ?? this.serverUpdatedAt,
       sourceRoute: sourceRoute,
+      workoutTemplateId: workoutTemplateId ?? this.workoutTemplateId,
+      workoutTemplateVersion:
+          workoutTemplateVersion ?? this.workoutTemplateVersion,
     );
   }
 
@@ -84,6 +93,9 @@ class WorkoutCompletionDraft {
               ? null
               : Timestamp.fromDate(serverUpdatedAt!.toUtc()),
       'sourceRoute': sourceRoute,
+      if (workoutTemplateId != null) 'workoutTemplateId': workoutTemplateId,
+      if (workoutTemplateVersion != null)
+        'workoutTemplateVersion': workoutTemplateVersion,
     };
   }
 
@@ -125,12 +137,25 @@ class WorkoutCompletionDraft {
       updatedAt: _requiredDate(data, 'updatedAt'),
       serverUpdatedAt: _optionalDate(data['serverUpdatedAt']),
       sourceRoute: _requiredString(data, 'sourceRoute'),
+      workoutTemplateId: data['workoutTemplateId'] == null
+          ? null
+          : _requiredString(data, 'workoutTemplateId'),
+      workoutTemplateVersion: data['workoutTemplateVersion'] == null
+          ? null
+          : _requiredInt(data, 'workoutTemplateVersion'),
     );
     draft.validate();
     return draft;
   }
 
   void validate() {
+    if ((workoutTemplateId == null) != (workoutTemplateVersion == null) ||
+        (workoutTemplateId != null &&
+            (workoutTemplateId!.isEmpty ||
+                workoutTemplateId!.contains('/') ||
+                workoutTemplateVersion! < 1))) {
+      throw const FormatException('Workout draft version is invalid');
+    }
     if (instanceId.isEmpty || athleteId.isEmpty || clientId.isEmpty) {
       throw const FormatException('Workout draft identity is incomplete');
     }

@@ -11,7 +11,8 @@ const maxExercisePrescriptionsPerWorkoutVersion =
 /// Workout template header with versioning support.
 ///
 /// The template holds shared metadata. Each publish creates an immutable
-/// [WorkoutTemplateVersion] sub-document. Old versions are never mutated.
+/// [WorkoutTemplateVersion] sub-document. Published contents stay immutable;
+/// trusted propagation audit metadata may change on a version document.
 ///
 /// A newly created template has [currentVersion] = 0 (no published versions).
 class WorkoutTemplate with Auditable implements LibraryItem {

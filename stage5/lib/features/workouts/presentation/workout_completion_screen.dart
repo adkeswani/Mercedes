@@ -61,6 +61,7 @@ class _WorkoutCompletionScreenState
   bool _restoring = true;
   String? _recoveryMessage;
   String? _loadMessage;
+  bool _hasVersionConflict = false;
   int _loadGeneration = 0;
   WorkoutCompletionDraftRepository? _draftRepository;
   String? _draftClientId;
@@ -111,6 +112,7 @@ class _WorkoutCompletionScreenState
     _saveState = _DraftSaveState.saved;
     _recoveryMessage = null;
     _loadMessage = null;
+    _hasVersionConflict = false;
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
     unawaited(_loadInstance());
   }
@@ -191,7 +193,19 @@ class _WorkoutCompletionScreenState
           ref.read(authStateProvider).valueOrNull?.uid != uid) {
         return;
       }
+      final restoredDraft = restore?.draft;
+      if (restoredDraft != null) {
+        verifyWorkoutVersion(
+          instance: {
+            'workoutTemplateId': instance.workoutTemplateId,
+            'workoutTemplateVersion': instance.workoutTemplateVersion,
+          },
+          templateId: restoredDraft.workoutTemplateId,
+          version: restoredDraft.workoutTemplateVersion,
+        );
+      }
       setState(() {
+        _hasVersionConflict = false;
         _instance = instance;
         _workoutName = workout?.name ?? 'Workout';
         _blocks = workoutVersion?.blocks ?? [];
@@ -226,6 +240,7 @@ class _WorkoutCompletionScreenState
         setState(() {
           _loadState = _WorkoutLoadState.error;
           _loadMessage = error.toString();
+          _hasVersionConflict = error is WorkoutVersionChanged;
           _restoring = false;
         });
       }
@@ -268,6 +283,8 @@ class _WorkoutCompletionScreenState
     final repository = _draftRepository;
     final clientId = _draftClientId;
     if (instance == null ||
+        _restoring ||
+        _loadState != _WorkoutLoadState.ready ||
         athleteId == null ||
         athleteId != instance.athleteId ||
         repository == null ||
@@ -293,6 +310,8 @@ class _WorkoutCompletionScreenState
         clientId: clientId,
         updatedAt: DateTime.now().toUtc(),
         sourceRoute: route,
+        workoutTemplateId: instance.workoutTemplateId,
+        workoutTemplateVersion: instance.workoutTemplateVersion,
         slotInputs: {
           for (final entry in _slotInputs.entries)
             entry.key: climbingInputForStorage(entry.value),
@@ -345,13 +364,17 @@ class _WorkoutCompletionScreenState
             }
         }
       });
-    } catch (_) {
+    } catch (error) {
       if (mounted &&
           generation == _loadGeneration &&
           widget.instanceId == instance.id &&
           revision == _revision &&
           !_isLoading) {
-        setState(() => _saveState = _DraftSaveState.failed);
+        setState(() {
+          _saveState = _DraftSaveState.failed;
+          _hasVersionConflict = error is WorkoutVersionChanged;
+          _recoveryMessage = 'Progress could not be saved: $error';
+        });
       }
     }
   }
@@ -377,6 +400,8 @@ class _WorkoutCompletionScreenState
       await repo.completeWorkout(
         instanceId: instanceId,
         athleteId: athleteId,
+        expectedWorkoutTemplateId: _instance!.workoutTemplateId,
+        expectedWorkoutTemplateVersion: _instance!.workoutTemplateVersion,
         rpe: _rpe,
         durationMinutes: _durationMinutes,
         actuals: [
@@ -412,6 +437,12 @@ class _WorkoutCompletionScreenState
       }
     } catch (e) {
       if (mounted && generation == _loadGeneration) {
+        if (e is WorkoutVersionChanged) {
+          setState(() {
+            _hasVersionConflict = true;
+            _recoveryMessage = e.toString();
+          });
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed: $e')),
         );
@@ -494,6 +525,11 @@ class _WorkoutCompletionScreenState
                 MaterialBanner(
                   content: Text(_recoveryMessage!),
                   actions: [
+                    if (_hasVersionConflict)
+                      TextButton(
+                        onPressed: _discardChangedDraft,
+                        child: const Text('Discard device draft'),
+                      ),
                     TextButton(
                       onPressed: () => setState(() => _recoveryMessage = null),
                       child: const Text('Dismiss'),
@@ -810,12 +846,82 @@ class _WorkoutCompletionScreenState
                   },
                   child: const Text('Retry'),
                 ),
+                if (_hasVersionConflict)
+                  TextButton(
+                    onPressed: _discardChangedDraft,
+                    child: const Text('Discard device draft'),
+                  ),
               ],
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _discardChangedDraft() async {
+    final instanceId = widget.instanceId;
+    final athleteId = ref.read(authStateProvider).valueOrNull?.uid;
+    if (athleteId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Sign in to discard device progress.')),
+      );
+      return;
+    }
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Discard device progress?'),
+        content: const Text(
+          'This removes only the progress saved on this device for the old '
+          'workout version. You can then open the updated workout. '
+          'Any server-saved progress is kept.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    if (discard != true || !mounted || widget.instanceId != instanceId) return;
+    try {
+      if (ref.read(authStateProvider).valueOrNull?.uid != athleteId) {
+        throw StateError(
+            'The signed-in athlete changed; device progress was kept');
+      }
+      await ref.read(workoutCompletionDraftRepositoryProvider).clearLocal(
+            instanceId: instanceId,
+            athleteId: athleteId,
+          );
+      if (!mounted || widget.instanceId != instanceId) return;
+      ref.invalidate(workoutHasSavedDraftProvider(instanceId));
+      _saveDebounce?.cancel();
+      setState(() {
+        _restoring = true;
+        _notesController.clear();
+        _actuals.clear();
+        _slotInputs.clear();
+        _rpe = 5;
+        _durationMinutes = 45;
+        _revision = 0;
+        _recoveryMessage = null;
+        _hasVersionConflict = false;
+        _loadState = _WorkoutLoadState.loading;
+      });
+      await _loadInstance();
+    } catch (error) {
+      if (mounted && widget.instanceId == instanceId) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not discard device draft: $error')),
+        );
+      }
+    }
   }
 
   Color _rpeColor(int rpe) {

@@ -44,6 +44,33 @@ void main() {
     expect(restored.revision, 1);
   });
 
+  test('persists a source workout pin in server and device drafts', () {
+    final original = draft().copyWith(
+      workoutTemplateId: 'workout',
+      workoutTemplateVersion: 2,
+    );
+    for (final map in [original.toMap(), original.toLocalMap()]) {
+      final restored = WorkoutCompletionDraft.fromMap(map);
+      expect(restored.workoutTemplateId, 'workout');
+      expect(restored.copyWith(revision: 3).workoutTemplateVersion, 2);
+    }
+    expect(WorkoutCompletionDraft.fromMap(draft().toMap()).workoutTemplateId,
+        isNull);
+  });
+
+  test('rejects incomplete and invalid source workout pins', () {
+    for (final pin in [
+      {'workoutTemplateId': 'workout'},
+      {'workoutTemplateVersion': 2},
+      {'workoutTemplateId': 'workout', 'workoutTemplateVersion': 0},
+      {'workoutTemplateId': 'bad/id', 'workoutTemplateVersion': 2},
+      {'workoutTemplateId': 'workout', 'workoutTemplateVersion': '2'},
+    ]) {
+      expect(() => WorkoutCompletionDraft.fromMap({...draft().toMap(), ...pin}),
+          throwsFormatException);
+    }
+  });
+
   test('reads Firestore timestamps and rejects unsupported schemas', () {
     final map = draft().toMap()
       ..['serverUpdatedAt'] = Timestamp.fromDate(DateTime.utc(2026, 10, 4));

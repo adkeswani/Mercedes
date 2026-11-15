@@ -3768,6 +3768,28 @@ describe('workoutInstances', () => {
   }
 
   describe('completion drafts', () => {
+    it('validates and retains the optional source workout version pin', async () => {
+      await seedInstance();
+      const db = testEnv.authenticatedContext(ATHLETE).firestore();
+      const draft = db.collection('workoutInstances').doc(INSTANCE_ID)
+        .collection('completionDrafts').doc('current');
+      for (const pin of [
+        { workoutTemplateId: 'w1', workoutTemplateVersion: 2 },
+        { workoutTemplateId: 'other', workoutTemplateVersion: 1 },
+        { workoutTemplateId: 'w1' },
+        { workoutTemplateVersion: 1 },
+      ]) {
+        await assertFails(draft.set(validCompletionDraft(pin)));
+      }
+      await assertSucceeds(draft.set(validCompletionDraft({
+        workoutTemplateId: 'w1', workoutTemplateVersion: 1,
+      })));
+      await assertSucceeds(draft.update({
+        revision: 2, serverUpdatedAt: serverTimestamp(),
+      }));
+      await assertFails(draft.set(validCompletionDraft({ revision: 3 })));
+    });
+
     it('allows only the assigned athlete to create and read a valid draft',
         async () => {
       await seedInstance();

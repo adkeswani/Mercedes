@@ -5,6 +5,7 @@ import 'package:stage5/features/workouts/data/workout_draft_local_store.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
 import 'package:stage5/features/workouts/domain/climbing_completion_input.dart';
 import 'package:stage5/features/workouts/domain/workout_completion_draft.dart';
+import 'package:stage5/features/workouts/domain/workout_instance.dart';
 
 enum WorkoutDraftSaveStatus { saved, offline, conflict }
 
@@ -259,9 +260,11 @@ class WorkoutCompletionDraftRepository {
     _diagnose(operation, 'load-local-read', instanceId,
         draft: local, currentClientId: currentClientId);
 
+    Map<String, dynamic>? instanceData;
     try {
       final instance = await _instance(instanceId).get();
       _verifyInstance(instance, instanceId, athleteId);
+      instanceData = instance.data()!;
     } on FirebaseException {
       if (local != null) {
         return WorkoutDraftRestoreResult(
@@ -303,6 +306,13 @@ class WorkoutCompletionDraftRepository {
       currentClientId: currentClientId,
     );
     final selected = result.draft;
+    if (selected != null) {
+      verifyWorkoutVersion(
+        instance: instanceData!,
+        templateId: selected.workoutTemplateId,
+        version: selected.workoutTemplateVersion,
+      );
+    }
     _diagnose(operation, 'load-selected', instanceId,
         draft: selected, server: server, currentClientId: currentClientId);
     if (selected != null &&
@@ -378,6 +388,11 @@ class WorkoutCompletionDraftRepository {
           instanceSnapshot,
           draft.instanceId,
           draft.athleteId,
+        );
+        verifyWorkoutVersion(
+          instance: instanceSnapshot.data()!,
+          templateId: draft.workoutTemplateId,
+          version: draft.workoutTemplateVersion,
         );
         final draftRef = _draft(draft.instanceId);
         final serverSnapshot = await transaction.get(draftRef);

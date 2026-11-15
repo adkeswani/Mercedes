@@ -1193,11 +1193,16 @@ service cloud.firestore {
                  'durationMinutes', 'athleteNotes', 'currentStep',
                  'slotInputs', 'revision', 'clientId', 'updatedAt',
                  'serverUpdatedAt', 'sourceRoute', 'climbingSlotIds',
-                 'climbRowsStorageFormat'
+                 'climbRowsStorageFormat', 'workoutTemplateId',
+                 'workoutTemplateVersion'
                ])
              && data.schemaVersion == 1
              && data.instanceId == instanceId
              && data.athleteId == request.auth.uid
+             && ((!data.keys().hasAny(['workoutTemplateId', 'workoutTemplateVersion']))
+                 || (data.workoutTemplateId == instance.workoutTemplateId
+                     && data.workoutTemplateVersion is int
+                     && data.workoutTemplateVersion == instance.workoutTemplateVersion))
              && data.rpe is int
              && data.rpe >= 1
              && data.rpe <= 10
@@ -2587,6 +2592,9 @@ service cloud.firestore {
                          == resource.data.athleteId
                       && request.resource.data.revision
                          > resource.data.revision
+                      && (!resource.data.keys().hasAny(['workoutTemplateId', 'workoutTemplateVersion'])
+                          || (request.resource.data.workoutTemplateId == resource.data.workoutTemplateId
+                              && request.resource.data.workoutTemplateVersion == resource.data.workoutTemplateVersion))
                       && (resource.data.get('climbRowsStorageFormat', '') != 'climbDocumentsV1'
                           || request.resource.data.get('climbRowsStorageFormat', '') == 'climbDocumentsV1')
                       && workoutInstanceData(instanceId).status == 'scheduled';

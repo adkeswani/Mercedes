@@ -73,6 +73,12 @@ export async function prepareFreeClimbingCompletion(
     if (instance.status !== "scheduled") {
       throw new HttpsError("failed-precondition", "Workout is not scheduled.");
     }
+    if ((request.expectedWorkoutTemplateId != null ||
+         request.expectedWorkoutTemplateVersion != null) &&
+        (request.expectedWorkoutTemplateId !== instance.workoutTemplateId ||
+         request.expectedWorkoutTemplateVersion !== instance.workoutTemplateVersion)) {
+      throw new HttpsError("failed-precondition", "Workout was updated. Reload before completing.");
+    }
     const versionRef = db.collection("workoutTemplates")
       .doc(instance.workoutTemplateId).collection("workoutTemplateVersions")
       .doc(String(instance.workoutTemplateVersion));

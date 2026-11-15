@@ -77,6 +77,14 @@ test("rejects newer draft without publishing partial results", async () => {
     {code: "aborted"});
   assert.equal((await ref.collection("slotResults").get()).size, 0);
 });
+test("does not seal old editor results against an updated workout", async () => {
+  await seed();
+  await assert.rejects(prepareFreeClimbingCompletion(db, "athlete", {
+    ...request(), expectedWorkoutTemplateId: "template", expectedWorkoutTemplateVersion: 2,
+  }), {code: "failed-precondition"});
+  assert.equal((await ref.collection("slotResults").get()).size, 0);
+  assert.equal((await ref.get()).data().freeClimbingSeal, undefined);
+});
 test("rejects duplicate rows, invalid actuals and incorrect exercise", async () => {
   for (const mutate of [
     (r) => r.actuals.free.freeRows.push(row(0)),

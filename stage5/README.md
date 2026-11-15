@@ -200,9 +200,28 @@ Implemented in this slice:
 - Authoritative Cloud Function propagation for each newly published immutable
   program version. Active subscribed athlete program instances reconcile only
   current/future scheduled workouts by stable program-entry ID. Additions,
-  removals, substitutions, ordering, schedule changes, and pinned workout
-  versions are applied without touching historical/completed workouts or
+  removals, substitutions, ordering, and schedule changes are applied using
+  each referenced workout template's latest published version, without touching historical/completed workouts or
   athlete-authored completion and communication data.
+- Publishing a workout also updates unstarted current/future scheduled
+  instances of that exact template, without republishing their programs.
+  This covers standalone/recurring assignments and both subscribed and copied
+  programs. Copied programs freeze their schedules, not referenced workout
+  contents; a separately copied workout has its own template ID and remains
+  independent. A creation/rescheduling trigger refreshes late assignments
+  made from older program entries and workouts that become eligible after a
+  schedule change. Program reconciliation cannot downgrade workout contents.
+  Server propagation uses the existing UTC-day cutoff, checks program/template
+  ownership and active trainer-client relationships, and skips inactive
+  program instances, saved completion drafts, prepared climbing seals,
+  recorded actuals, and terminal/history records. Updates are transactional,
+  paginated, retry-safe, and audited on the published workout version.
+- New completion drafts record their source workout template/version.
+  Draft saves, climb sealing, and final completion reject stale editor versions
+  instead of applying old results to changed exercises. Device-only progress
+  is retained on a version conflict; discarding it and reopening the updated
+  workout requires explicit confirmation. Older drafts without a source pin
+  remain readable; server-saved drafts still prevent propagation.
 - Retry-safe propagation audit state on program versions and athlete program
   instances (`pending`, `running`, `complete`, or `failed`), including target
   and applied versions, attempt timestamps, errors, and mutation counts.

@@ -249,6 +249,29 @@ void main() {
     });
 
     group('completeWorkout', () {
+      test('rejects results from an editor using an older workout version',
+          () async {
+        await createProgram('prog1');
+        await enrollAthlete('prog1', 'athlete1');
+        final id = await assignWorkout();
+        final instance = fakeFirestore.collection('workoutInstances').doc(id);
+        await instance.update({'workoutTemplateVersion': 2});
+        await expectLater(
+          repo.completeWorkout(
+            instanceId: id,
+            athleteId: 'athlete1',
+            rpe: 7,
+            durationMinutes: 55,
+            actuals: [],
+            expectedWorkoutTemplateId: 'wt1',
+            expectedWorkoutTemplateVersion: 1,
+          ),
+          throwsA(isA<WorkoutVersionChanged>()),
+        );
+        expect((await instance.get()).data()!['status'], 'scheduled');
+        expect((await instance.collection('slotResults').get()).docs, isEmpty);
+      });
+
       test('sets completion fields', () async {
         await createProgram('prog1');
         await enrollAthlete('prog1', 'athlete1');

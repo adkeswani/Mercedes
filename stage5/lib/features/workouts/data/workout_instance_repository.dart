@@ -967,6 +967,8 @@ class WorkoutInstanceRepository {
     double? loadPoints,
     String? loadStrategyId,
     String? athleteNotes,
+    String? expectedWorkoutTemplateId,
+    int? expectedWorkoutTemplateVersion,
   }) async {
     final stored = await _collection.doc(instanceId).get();
     if (!stored.exists || stored.data() == null) {
@@ -975,6 +977,11 @@ class WorkoutInstanceRepository {
     if (stored.data()!['athleteId'] != athleteId) {
       throw StateError('User $athleteId does not own instance $instanceId');
     }
+    verifyWorkoutVersion(
+      instance: stored.data()!,
+      templateId: expectedWorkoutTemplateId,
+      version: expectedWorkoutTemplateVersion,
+    );
     if (stored.data()!['status'] == WorkoutInstanceStatus.completed.name) {
       await _refreshProgramInstanceCompletion(instanceId, athleteId);
       return;
@@ -1005,6 +1012,9 @@ class WorkoutInstanceRepository {
         'revision': draft?['revision'],
         'clientId': draft?['clientId'],
         'completionToken': completionToken,
+        'expectedWorkoutTemplateId': stored.data()!['workoutTemplateId'],
+        'expectedWorkoutTemplateVersion':
+            stored.data()!['workoutTemplateVersion'],
       });
     }
     await _writeCompletion(
@@ -1013,6 +1023,9 @@ class WorkoutInstanceRepository {
       requiredStatus: WorkoutInstanceStatus.scheduled,
       actualsBySlot: actualsBySlot,
       completionToken: completionToken,
+      expectedWorkoutTemplateId: stored.data()!['workoutTemplateId'] as String?,
+      expectedWorkoutTemplateVersion:
+          stored.data()!['workoutTemplateVersion'] as int?,
       parentFields: {
         'status': WorkoutInstanceStatus.completed.name,
         'completedAt': FieldValue.serverTimestamp(),
@@ -1873,6 +1886,8 @@ class WorkoutInstanceRepository {
     required Map<String, dynamic> actualsBySlot,
     required Map<String, dynamic> parentFields,
     String? completionToken,
+    String? expectedWorkoutTemplateId,
+    int? expectedWorkoutTemplateVersion,
   }) async {
     final instanceRef = _collection.doc(instanceId);
     final storedResults = await instanceRef.collection('slotResults').get();
@@ -1886,6 +1901,11 @@ class WorkoutInstanceRepository {
       if (data['athleteId'] != athleteId) {
         throw StateError('User $athleteId does not own instance $instanceId');
       }
+      verifyWorkoutVersion(
+        instance: data,
+        templateId: expectedWorkoutTemplateId,
+        version: expectedWorkoutTemplateVersion,
+      );
       if (data['status'] != requiredStatus.name) {
         throw StateError('Instance $instanceId must be ${requiredStatus.name}');
       }

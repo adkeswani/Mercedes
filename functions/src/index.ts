@@ -9,7 +9,8 @@ import type {UserRecord} from "firebase-admin/auth";
 import {propagateProgramVersion} from "./subscription_propagation";
 import {repairWorkoutLocalDay as repairLocalDay} from "./workout_local_day";
 import {prepareFreeClimbingCompletion as prepareFreeClimbs} from "./free_climbing_completion";
-import {onDocumentUpdated} from "firebase-functions/v2/firestore";
+import {onDocumentWritten, onDocumentUpdated} from "firebase-functions/v2/firestore";
+import {propagateWorkoutVersion, refreshWorkoutVersion} from "./workout_version_propagation";
 import {
   assertYoutubeCallableRateLimit,
   handleYoutubePublicRequest,
@@ -48,6 +49,37 @@ export const cleanupCompletedWorkoutDraft = onDocumentUpdated(
   async (event) => {
     if (event.data?.after.data().status !== "completed") return;
     await db.recursiveDelete(event.data.after.ref.collection("completionDrafts"));
+  },
+);
+
+export const onWorkoutVersionPublished = onDocumentUpdated(
+  {document: "workoutTemplates/{templateId}", region: "us-central1", retry: true, timeoutSeconds: 540},
+  async (event) => {
+    if (!event.data) return;
+    const version = event.data.after.data().currentVersion;
+    if (version === event.data.before.data().currentVersion) return;
+    await propagateWorkoutVersion(db, event.params.templateId, version);
+  },
+);
+
+export const onWorkoutInstanceScheduled = onDocumentWritten(
+  {document: "workoutInstances/{instanceId}", region: "us-central1", retry: true},
+  async (event) => {
+    const after = event.data?.after;
+    if (!after?.exists || after.data()?.status !== "scheduled") return;
+    const before = event.data?.before.data();
+    const current = after.data()!;
+    if (before?.status === current.status &&
+        before?.scheduledDate === current.scheduledDate &&
+        before?.workoutTemplateId === current.workoutTemplateId) return;
+    try {
+      await refreshWorkoutVersion(db, event.params.instanceId);
+    } catch (error) {
+      logger.error("Assigned workout version refresh failed", {
+        instanceId: event.params.instanceId, error,
+      });
+      throw error;
+    }
   },
 );
 
