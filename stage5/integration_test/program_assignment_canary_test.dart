@@ -332,7 +332,8 @@ void main() {
     await _waitFor(tester, waits, find.byKey(WorkoutCompletionScreen.titleKey),
         step: 'updated workout opens in the recording screen');
     expect(find.text('Publication exercise'), findsWidgets);
-    await binding.takeScreenshot('workout-publication-updated');
+    await binding.takeScreenshot(
+        '${browserSmokeConfig.identityRole!.name}-workout-publication-updated');
     await waits.runStep(
       'complete the updated assignment through authenticated Firestore rules',
       () => instances.completeWorkout(
