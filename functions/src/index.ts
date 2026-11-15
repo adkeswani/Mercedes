@@ -76,7 +76,8 @@ export const onWorkoutInstanceScheduled = onDocumentWritten(
       await refreshWorkoutVersion(db, event.params.instanceId);
     } catch (error) {
       logger.error("Assigned workout version refresh failed", {
-        instanceId: event.params.instanceId, error,
+        instanceId: event.params.instanceId,
+        errorMessage: error instanceof Error ? error.message : String(error),
       });
       throw error;
     }
