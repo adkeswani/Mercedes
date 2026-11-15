@@ -243,7 +243,19 @@ void main() {
         isNot(climbingCircuitExerciseId));
     expect(second.data()!['blocks'][0]['rows'][0]['workSeconds'], 3);
     expect(second.data()!['blocks'][1]['restSeconds'], 2);
-    expect((await versionRef.get(_server)).data(), data);
+    const auditFields = {
+      'propagationState',
+      'propagationAttempt',
+      'propagationStartedAt',
+      'propagationCompletedAt',
+      'propagationFailedAt',
+      'propagationError',
+      'propagationSummary',
+    };
+    Map<String, dynamic> contents(Map<String, dynamic> value) =>
+        Map<String, dynamic>.from(value)
+          ..removeWhere((key, _) => auditFields.contains(key));
+    expect(contents((await versionRef.get(_server)).data()!), contents(data));
     final userId = data['ownerId'] as String;
     final programRepo = ProgramRepository();
     final programId = await waits.runStep(

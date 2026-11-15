@@ -189,6 +189,19 @@ test("late events and duplicate retries converge to latest without rewriting ins
   assert.deepEqual((await ref.get()).data(), before);
 });
 
+test("late publication audit updates never change immutable workout contents", async () => {
+  const version = template.collection("workoutTemplateVersions").doc("1");
+  await version.update({blocks: [{blockId: "block", notes: "Keep prescription"}]});
+  const before = (await version.get()).data();
+  await publish(2);
+  await propagateWorkoutVersion(db, "template", 1, now);
+  const after = (await version.get()).data();
+  for (const [key, value] of Object.entries(before)) {
+    assert.deepEqual(after[key], value);
+  }
+  assert.equal(after.propagationState, "complete");
+});
+
 test("assignments created after a publish scan still converge from old program entries", async () => {
   await publish(2);
   await propagateWorkoutVersion(db, "template", 2, now);
