@@ -183,10 +183,7 @@ class _ClimbingProgressScreenState
                     onToggle: (session, include) =>
                         _selectWorkouts([session], include),
                     onSelectAll: (include) => _selectWorkouts(
-                      [
-                        ...report.current.sessions,
-                        ...report.previous.sessions,
-                      ],
+                      report.current.sessions,
                       include,
                     ),
                     onSelectGroup: (group, include) =>
@@ -260,7 +257,7 @@ class _WorkoutSelector extends StatelessWidget {
                   key: Key('progress-group-check-${group.key}'),
                   tristate: true,
                   value: group.selectionValue(excluded),
-                  semanticLabel: 'Include workouts from ${group.title}',
+                  semanticLabel: 'Include ${group.title} workouts',
                   onChanged: (_) => onSelectGroup(
                     group,
                     group.selectionValue(excluded) != true,
@@ -277,9 +274,8 @@ class _WorkoutSelector extends StatelessWidget {
                       value: !excluded.contains(session.selectionKey),
                       controlAffinity: ListTileControlAffinity.leading,
                       title: Text(session.sourceLabel),
-                      subtitle: Text(
-                          '${session.recordedClimbs?.toString() ?? 'Not recorded'} recorded climbs'
-                          ' · ${available.range.contains(session.date) ? 'Selected range' : 'Preceding period'}'),
+                      subtitle: Text('${session.programLabel}'
+                          ' · ${session.recordedClimbs?.toString() ?? 'Not recorded'} recorded climbs'),
                       secondary: IconButton(
                         tooltip: 'View workout ${calendarDate(session.date)}',
                         icon: const Icon(Icons.open_in_new),

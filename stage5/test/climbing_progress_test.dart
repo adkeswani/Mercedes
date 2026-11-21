@@ -239,9 +239,7 @@ void main() {
     }
   });
   group('climbing interpretation', () {
-    test(
-        'groups by program IDs, not names, with tri-state selection across both periods',
-        () {
+    test('groups only selected-range workouts by type across programs', () {
       final first =
           progressSession(id: 'first', programId: 'one', programName: 'Plan');
       final previous = progressSession(
@@ -256,9 +254,15 @@ void main() {
           first,
           previous,
           progressSession(
+            id: 'comparison-only-type',
+            workoutType: WorkoutType.climbingConditioning,
+            date: DateTime(2026, 10, 5),
+          ),
+          progressSession(
             id: 'different',
             programId: 'two',
             programName: 'Plan',
+            workoutType: WorkoutType.climbingPower,
           ),
           progressSession(id: 'independent'),
         ],
@@ -266,19 +270,26 @@ void main() {
       final groups = report.workoutGroups;
       expect(
         groups.map((group) => group.key).toList(),
-        ['program:one', 'program:two', 'independent'],
+        ['type:climbingPower', 'type:climbingLimit'],
       );
-      expect(groups.first.selectionValue({}), isTrue);
-      expect(groups.first.selectionValue({first.selectionKey}), isNull);
+      final limit = groups.last;
+      expect(limit.sessions.map((s) => s.instanceId).toSet(),
+          {'first', 'independent'});
+      expect(limit.title, 'Climbing - Limit');
+      expect(limit.selectionValue({}), isTrue);
+      expect(limit.selectionValue({first.selectionKey}), isNull);
       expect(
-        groups.first
-            .selectionValue({first.selectionKey, previous.selectionKey}),
+        limit.selectionValue({for (final s in limit.sessions) s.selectionKey}),
         isFalse,
       );
       expect(
-        groups.first.selectionValue({('other', first.instanceId)}),
+        limit.selectionValue({('other', first.instanceId)}),
         isTrue,
       );
+      expect(first.programLabel, 'Plan');
+      expect(progressSession().programLabel, 'Independent workout');
+      expect(progressSession(programId: 'unavailable').programLabel,
+          'Program details unavailable (unavailable)');
       expect(progressProgramId(progressInstance()), isNull);
       expect(
         progressProgramId(progressInstance(programInstanceId: 'assignment')),
@@ -287,7 +298,7 @@ void main() {
       expect(progressProgramId(progressInstance(programVersion: 1)), 'program');
     });
     test(
-        'workout selection recalculates both periods and never crosses athlete identity',
+        'selection filters the current period only and never crosses athlete identity',
         () {
       final current = progressSession();
       final previous =
@@ -304,7 +315,7 @@ void main() {
           report.excluding({current.selectionKey, previous.selectionKey});
       expect(selected.current.sessionCount, 1);
       expect(selected.current.sessions.single.athleteId, 'other');
-      expect(selected.previous.sessionCount, 0);
+      expect(selected.previous.sessionCount, 1);
       expect(selected.current.recordedClimbs, 9);
       expect(
         selected.buckets

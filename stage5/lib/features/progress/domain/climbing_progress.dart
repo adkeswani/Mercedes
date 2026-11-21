@@ -142,6 +142,9 @@ class ClimbingSession {
   final String workoutName;
   final String? programId;
   final String? programName;
+  String get programLabel => programId == null
+      ? 'Independent workout'
+      : programName ?? 'Program details unavailable ($programId)';
   final WorkoutType workoutType;
   (String, String) get selectionKey => (athleteId, instanceId);
   final String templateId;
@@ -444,39 +447,29 @@ class ClimbingProgressReport {
   final ClimbingSummary previous;
 
   List<ProgressWorkoutGroup> get workoutGroups {
-    final groups = <String, List<ClimbingSession>>{};
-    for (final session in [...current.sessions, ...previous.sessions]) {
-      final key = session.programId == null
-          ? 'independent'
-          : 'program:${session.programId}';
-      groups.putIfAbsent(key, () => []).add(session);
+    final groups = <WorkoutType, List<ClimbingSession>>{};
+    for (final session in current.sessions) {
+      groups.putIfAbsent(session.workoutType, () => []).add(session);
     }
-    final result = [
-      for (final entry in groups.entries)
-        ProgressWorkoutGroup(
-          key: entry.key,
-          title: entry.key == 'independent'
-              ? 'Independent workouts'
-              : entry.value.first.programName ??
-                  'Program details unavailable (${entry.value.first.programId})',
-          sessions: entry.value..sort((a, b) => b.date.compareTo(a.date)),
-        ),
+    return [
+      for (final type in WorkoutType.values)
+        if (groups[type] case final List<ClimbingSession> sessions)
+          ProgressWorkoutGroup(
+            key: 'type:${type.name}',
+            title: type.label,
+            sessions: sessions..sort((a, b) => b.date.compareTo(a.date)),
+          ),
     ];
-    result.sort((a, b) {
-      if (a.key == 'independent') return b.key == 'independent' ? 0 : 1;
-      if (b.key == 'independent') return -1;
-      final titleOrder = a.title.compareTo(b.title);
-      return titleOrder == 0 ? a.key.compareTo(b.key) : titleOrder;
-    });
-    return result;
   }
 
   ClimbingProgressReport excluding(Set<(String, String)> excluded) =>
       ClimbingProgressReport(
         range: range,
-        sessions: [...current.sessions, ...previous.sessions]
-            .where((session) => !excluded.contains(session.selectionKey))
-            .toList(),
+        sessions: [
+          ...current.sessions
+              .where((session) => !excluded.contains(session.selectionKey)),
+          ...previous.sessions,
+        ],
       );
 
   ClimbingProgressReport sentOnly() => ClimbingProgressReport(

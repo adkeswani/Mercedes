@@ -177,36 +177,42 @@ void main() {
       find.text('Choose workouts'),
       'open contributing workout selector',
     );
-    await tap(find.text('Browser Athlete Program'), 'expand program workouts');
+    await tap(find.text('Climbing - Endurance'), 'expand endurance workouts');
     await tap(
       find.byKey(const Key('progress-include-browser-progress-10')),
       'exclude a contributing workout',
     );
     expect(summary('sessions', '1'), findsOneWidget);
     expect(summary('climbs', '9'), findsOneWidget);
-    final programCheck = find.byKey(
-      const Key('progress-group-check-program:browser-athlete-program'),
+    final enduranceCheck = find.byKey(
+      const Key('progress-group-check-type:climbingEndurance'),
     );
-    expect(tester.widget<Checkbox>(programCheck).value, isNull);
+    expect(tester.widget<Checkbox>(enduranceCheck).value, isFalse);
+    expect(find.textContaining('Browser Athlete Program ·'), findsWidgets);
+    expect(find.byKey(const Key('progress-include-browser-progress-35')),
+        findsNothing);
+    expect(find.textContaining('Selected range'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('progress-workout-selector')),
+        matching: find.textContaining('Preceding period'),
+      ),
+      findsNothing,
+    );
     expect(
       find.byKey(const Key('progress-workout-browser-progress-10')),
       findsNothing,
     );
-    await tap(programCheck, 'include partially selected program');
-    expect(tester.widget<Checkbox>(programCheck).value, isTrue);
+    await tap(enduranceCheck, 'include selected-range endurance workout');
+    expect(tester.widget<Checkbox>(enduranceCheck).value, isTrue);
     expect(summary('sessions', '2'), findsOneWidget);
-    await tap(find.text('Independent workouts'), 'expand independent workouts');
-    await tap(
-      find.byKey(const Key('progress-include-browser-progress-35')),
-      'exclude a comparison workout',
-    );
-    expect(find.text('0 in preceding 30 days'), findsOneWidget);
     await tap(
       find.byKey(const Key('progress-exclude-all')),
       'exclude all contributions',
     );
     expect(summary('sessions', '0'), findsOneWidget);
     expect(find.text('No workouts selected for this range.'), findsOneWidget);
+    expect(find.text('1 in preceding 30 days'), findsOneWidget);
     await tap(
       find.byKey(const Key('progress-include-all')),
       'restore all contributions',
@@ -215,37 +221,51 @@ void main() {
     await tap(find.text('Choose workouts'), 'collapse workout selector');
     await preset('week', 1);
     expect(summary('climbs', '9'), findsOneWidget);
+    await tap(
+        find.text('Choose workouts'), 'inspect refreshed weekly workouts');
+    expect(find.byKey(const Key('progress-group-type:climbingEndurance')),
+        findsNothing);
+    expect(find.byKey(const Key('progress-include-browser-progress-10')),
+        findsNothing);
+    await tap(find.text('Choose workouts'), 'collapse weekly workouts');
     await preset('fortnight', 2);
+    await tap(
+        find.text('Choose workouts'), 'inspect refreshed fortnight workouts');
+    expect(find.byKey(const Key('progress-group-type:climbingEndurance')),
+        findsOneWidget);
+    expect(find.byKey(const Key('progress-include-browser-progress-35')),
+        findsNothing);
+    await tap(find.text('Choose workouts'), 'collapse fortnight workouts');
     await preset('year', 4);
     expect(summary('climbs', '36'), findsOneWidget);
-    await tap(find.text('Choose workouts'), 'open cross-program selector');
+    await tap(find.text('Choose workouts'), 'open workout-type selector');
+    await tap(find.text('Climbing - Endurance'),
+        'expand current yearly endurance workouts');
+    expect(find.byKey(const Key('progress-include-browser-progress-35')),
+        findsOneWidget);
+    expect(find.textContaining('Independent workout ·'), findsWidgets);
     await tap(
       find.byKey(
-        const Key('progress-group-check-program:browser-athlete-program'),
+        const Key('progress-group-check-type:climbingPower'),
       ),
-      'exclude whole first program',
+      'exclude all power workouts',
     );
-    expect(summary('sessions', '2'), findsOneWidget);
+    expect(summary('sessions', '3'), findsOneWidget);
     await tap(
       find.byKey(
         const Key(
-          'progress-group-check-program:browser-progress-second-program',
+          'progress-group-check-type:climbingEndurance',
         ),
       ),
-      'exclude second program independently',
-    );
-    expect(summary('sessions', '1'), findsOneWidget);
-    await tap(
-      find.byKey(const Key('progress-group-check-independent')),
-      'exclude independent group',
+      'exclude endurance across all programs and independent workouts',
     );
     expect(summary('sessions', '0'), findsOneWidget);
     await tap(
       find.byKey(const Key('progress-include-all')),
-      'restore all program groups',
+      'restore all workout types',
     );
     expect(summary('sessions', '4'), findsOneWidget);
-    await tap(find.text('Choose workouts'), 'collapse cross-program selector');
+    await tap(find.text('Choose workouts'), 'collapse workout-type selector');
 
     final today = DateTime.now();
     final from = DateTime(today.year, today.month, today.day - 10);
@@ -471,8 +491,8 @@ void main() {
       await binding.takeScreenshot('athlete-climbing-progress');
       await tap(find.text('Choose workouts'), 'screenshot workout selection');
       await tap(
-        find.text('Browser Athlete Program'),
-        'screenshot expanded program',
+        find.text('Climbing - Endurance'),
+        'screenshot expanded workout type',
       );
       await tap(
         find.byKey(const Key('progress-include-browser-progress-10')),
@@ -480,10 +500,10 @@ void main() {
       );
       expect(summary('sessions', '1'), findsOneWidget);
       await reveal(
-        find.text('Browser Athlete Program'),
+        find.text('Climbing - Endurance'),
         'group selector screenshot',
       );
-      await binding.takeScreenshot('athlete-climbing-progress-program-groups');
+      await binding.takeScreenshot('athlete-climbing-progress-type-groups');
       await tap(
         find.text('Choose workouts'),
         'collapse selected contributions',

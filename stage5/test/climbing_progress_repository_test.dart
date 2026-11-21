@@ -113,8 +113,7 @@ void main() {
     expect(templates.calls, [1]);
   });
 
-  test(
-      'groups program history by identity, caches names and keeps ad-hoc independent',
+  test('type groups retain cached program context and ad-hoc independence',
       () async {
     final db = FakeFirebaseFirestore();
     final programs = _Programs(db);
@@ -154,18 +153,22 @@ void main() {
       {'program', 'legacy-program', 'missing-program'},
     );
     expect(programs.calls.length, 3);
-    final group = report.workoutGroups
-        .firstWhere((group) => group.key == 'program:program');
-    expect(group.title, 'Climbing plan');
+    final group = report.workoutGroups.single;
+    expect(group.title, 'Climbing - Limit');
     expect(
       group.sessions.map((session) => session.instanceId).toSet(),
-      {'one', 'two'},
+      {'one', 'two', 'independent', 'legacy', 'missing'},
     );
-    expect(report.workoutGroups.last.title, 'Independent workouts');
-    expect(report.workoutGroups.last.sessions.single.instanceId, 'independent');
+    expect(group.sessions.firstWhere((s) => s.instanceId == 'one').programLabel,
+        'Climbing plan');
     expect(
-      report.workoutGroups
-          .where((group) => group.title.contains('unavailable'))
+        group.sessions
+            .firstWhere((s) => s.instanceId == 'independent')
+            .programLabel,
+        'Independent workout');
+    expect(
+      group.sessions
+          .where((session) => session.programLabel.contains('unavailable'))
           .length,
       2,
     );
@@ -189,7 +192,8 @@ void main() {
     final range = ProgressPreset.month.range(DateTime(2026, 11, 7));
     final report = await repository.load(athleteId: 'athlete', range: range);
     expect(report.current.recordedClimbs, 9);
-    expect(report.workoutGroups.single.title, contains('access restricted'));
+    expect(report.current.sessions.single.programLabel,
+        contains('access restricted'));
     programs.errorCode = 'unavailable';
     await expectLater(
       repository.load(athleteId: 'athlete', range: range),

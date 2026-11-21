@@ -745,19 +745,23 @@ responsive view; line charts fit the phone width without horizontal scrolling.
 charts, summaries, comparisons, and source lists to confirmed sends; completed
 circuit prescriptions still contribute their known volume. Each logged climb
 counts once, not once per attempt. Highest grades do not infer circuit sends.
-**Choose workouts** provides checkboxes for every eligible climbing completion in the
-selected and preceding periods. All are initially included, regardless of
-program or independent assignment; excluding a workout recalculates every
-chart, summary, and source list locally without mutating it or refetching.
+**Choose workouts** provides checkboxes only for eligible climbing completions in
+the selected date range. All are initially included, regardless of
+program or independent assignment; excluding a workout recalculates current-range
+charts, summaries, and source lists locally without mutating it or refetching.
 Include/exclude-all actions and an explicit no-selection state are provided.
-Workouts are organized into collapsible program groups and an Independent
-workouts group. Each tri-state group checkbox controls its selected-range and
-preceding-period contributions together; each dated workout identifies its
-period. Group identity uses the source program ID, not its display name, so
-different programs with identical names stay separate. Assignment-linked and
-legacy versioned workouts retain their program grouping; ad-hoc authorization
-containers do not imply membership. Missing or access-restricted historical
-program names are labeled explicitly without discarding the completed data.
+Workouts are organized into collapsible workout-type groups: Climbing - Power,
+Endurance, Conditioning, and Limit. Each tri-state group checkbox controls all
+workouts of that type across programs and independent assignments, in the
+selected date range. Individual checkboxes remain available.
+Each dated workout shows its program name or **Independent workout** and its
+recorded climb count, without a redundant period label. Changing the date range reloads the
+report and refreshes the available workout list. Comparison-period workouts
+are never listed, and workout selection does not alter those comparisons.
+Assignment-linked and legacy versioned workouts retain
+their program context; ad-hoc authorization containers do not imply membership.
+Missing or access-restricted historical program names are labeled explicitly
+without discarding the completed data.
 Selections stay in the current view when changing ranges or refreshing and
 are keyed by both athlete and instance identity. Workout labels use current
 library titles for recognition; all metric inputs use pinned versions/results.
@@ -818,7 +822,7 @@ It runs as athlete and trainer (whose own athlete workspace must not expose the
 client's data), producing `athlete-climbing-progress.png`,
 `athlete-climbing-progress-performance.png`,
 `athlete-climbing-progress-selected.png`,
-`athlete-climbing-progress-program-groups.png`,
+`athlete-climbing-progress-type-groups.png`,
 `athlete-climbing-progress-grade-volume.png`,
 `athlete-climbing-progress-circuits.png`,
 `athlete-climbing-progress-workout-types.png`, and
