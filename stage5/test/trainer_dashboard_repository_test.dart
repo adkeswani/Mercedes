@@ -403,6 +403,56 @@ void main() {
       );
     });
 
+    test('first reaction never reads a message before its thread exists',
+        () async {
+      final originalRules = firestore.securityRules;
+      firestore.securityRules = FakeFirebaseFirestore(
+        securityRules: '''
+        service cloud.firestore {
+          match /databases/{database}/documents {
+            match /{collection}/{document} {
+              allow read, write: if true;
+            }
+            match /workoutDiscussionThreads/{threadId}/threadMessages/{messageId} {
+              allow read: if false;
+              allow write: if true;
+              match /reactions/{reactionId} {
+                allow read, write: if true;
+              }
+            }
+          }
+        }
+      ''',
+      ).securityRules;
+      final workout =
+          firestore.collection('workoutInstances').doc('completed-1');
+      final before = (await workout.get()).data();
+      final thread =
+          firestore.collection('workoutDiscussionThreads').doc('completed-1');
+      final anchor =
+          thread.collection('threadMessages').doc('completion-activity');
+      await expectLater(
+        anchor.get(),
+        throwsA(isA<Exception>()),
+      );
+      expect(
+        await repository.toggleReaction(
+          trainerId: 'trainer-1',
+          workoutInstanceId: 'completed-1',
+          reactionId: 'strong',
+        ),
+        isTrue,
+      );
+      firestore.securityRules = originalRules;
+      expect((await anchor.get()).data()?['body'], 'Workout completion');
+      expect(
+        (await thread.collection('threadMessages').get()).docs,
+        hasLength(1),
+      );
+      expect((await _reaction(firestore))?['reactionId'], 'strong');
+      expect((await workout.get()).data(), before);
+    });
+
     test('writes append-only comment without mutating workout history',
         () async {
       final before = (await firestore

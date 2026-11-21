@@ -546,7 +546,9 @@ class TrainerDashboardRepository {
         workoutInstanceId: workoutInstanceId,
       );
       final existingThread = await transaction.get(thread);
-      final existingTargetMessage = await transaction.get(targetMessage);
+      // Message reads require a thread that already exists on the server.
+      final existingTargetMessage =
+          existingThread.exists ? await transaction.get(targetMessage) : null;
       if (!existingThread.exists) {
         transaction.set(thread, {
           'workoutInstanceId': workoutInstanceId,
@@ -569,7 +571,7 @@ class TrainerDashboardRepository {
           'lastActivityAt': FieldValue.serverTimestamp(),
         });
       }
-      if (!existingTargetMessage.exists) {
+      if (existingTargetMessage?.exists != true) {
         transaction.set(targetMessage, {
           'authorId': trainerId,
           'body': 'Workout completion',

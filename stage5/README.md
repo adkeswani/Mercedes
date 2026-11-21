@@ -82,7 +82,10 @@ Implemented in this slice:
   RPE and duration, latest discussion context, and current reaction counts.
   Trainers can add an inline quick comment and toggle one of the centralized
   coaching reactions. Interactions are additive records and never rewrite the
-  completed workout.
+  completed workout. The first reaction creates its discussion thread and
+  completion message atomically, without attempting message reads before
+  the thread exists. Browser coverage exercises first reactions, replacements,
+  removal, quick comments, and reactions to the latest comment.
 - Reusable, descriptive empty destinations remain for Progress and Messages
   while those focused experiences are deferred.
 - The existing compact/mobile home and navigation remain unchanged below the

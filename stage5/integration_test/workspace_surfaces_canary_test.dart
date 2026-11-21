@@ -2,6 +2,8 @@
 
 import 'dart:html' as html;
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +12,7 @@ import 'package:stage5/app.dart';
 import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/core/web_workspace/web_workspace_mode.dart';
 import 'package:stage5/features/auth/presentation/web_workspace_shell.dart';
+import 'package:stage5/features/trainer_dashboard/presentation/trainer_dashboard_providers.dart';
 import 'package:stage5/features/workouts/data/workout_local_day.dart';
 import 'package:stage5/main.dart' as app;
 
@@ -93,6 +96,7 @@ void main() {
     );
 
     final semantics = tester.ensureSemantics();
+    var coachingMutationsCompleted = false;
     try {
       if (role == BrowserSmokeIdentityRole.athlete) {
         await wait(
@@ -161,6 +165,17 @@ void main() {
           : athleteWorkspaceSurfaces;
 
       Future<void> openSurface(WorkspaceSurfaceScenario surface) async {
+        var expectedContent = surface.content;
+        if (surface.marker == 'trainer-dashboard') {
+          expectedContent =
+              '${surface.content} | Completion: Browser Completed Workout';
+          if (coachingMutationsCompleted) {
+            expectedContent = expectedContent.replaceFirst(
+              ' | Reaction:',
+              ' | Reaction: \u{1f389} 1 | Comment: Browser dashboard comment | Reaction:',
+            );
+          }
+        }
         mountedAppRouter(tester).go(surface.route);
         await wait('populated ${surface.route}', () {
           final attribute = 'data-browser-smoke-surface-${surface.marker}';
@@ -171,7 +186,7 @@ void main() {
           }
           final content = body?.getAttribute('$attribute-content');
           surfaceStatus =
-              '${surface.route} state=$state content="$content" expected="${surface.content}".';
+              '${surface.route} state=$state content="$content" expected="$expectedContent".';
           return mountedAppRouter(tester)
                       .routeInformationProvider
                       .value
@@ -179,7 +194,7 @@ void main() {
                       .path ==
                   surface.route &&
               state == 'ready' &&
-              (surface.content == null || content == surface.content);
+              (expectedContent == null || content == expectedContent);
         });
         for (final text in surface.visibleContent) {
           await wait(
@@ -188,12 +203,15 @@ void main() {
           );
         }
         if (surface.marker == 'trainer-dashboard') {
-          final scrollable = find
-              .descendant(
-                of: find.byKey(const Key('trainer-dashboard-feed')),
-                matching: find.byType(Scrollable),
-              )
-              .first;
+          final scrollables = find.descendant(
+            of: find.byKey(const Key('trainer-dashboard-feed')),
+            matching: find.byType(Scrollable),
+          );
+          await wait(
+            'mounted trainer dashboard feed',
+            () => scrollables.evaluate().isNotEmpty,
+          );
+          final scrollable = scrollables.first;
           for (final category in [
             'completion',
             'comment',
@@ -253,6 +271,80 @@ void main() {
         );
       }
 
+      if (role == BrowserSmokeIdentityRole.trainer) {
+        await openSurface(trainerWorkspaceSurfaces.first);
+        const instanceId = 'browser-unthreaded-workout';
+        final firestore = FirebaseFirestore.instance;
+        final trainerId = FirebaseAuth.instance.currentUser!.uid;
+        final container =
+            ProviderScope.containerOf(tester.element(find.byType(MercedesApp)));
+        final repository = container.read(trainerDashboardRepositoryProvider);
+        final workout =
+            firestore.collection('workoutInstances').doc(instanceId);
+        final before = (await workout.get()).data();
+        final thread =
+            firestore.collection('workoutDiscussionThreads').doc(instanceId);
+        expect((await thread.get()).exists, isFalse);
+        final anchor =
+            thread.collection('threadMessages').doc('completion-activity');
+
+        Future<void> react(String reactionId, bool selected) async {
+          expect(
+            await waits.runStep(
+              'reaction $reactionId selected=$selected',
+              () => repository.toggleReaction(
+                trainerId: trainerId,
+                workoutInstanceId: instanceId,
+                reactionId: reactionId,
+              ),
+            ),
+            selected,
+          );
+        }
+
+        await react('strong', true);
+        expect((await anchor.get()).data()?['body'], 'Workout completion');
+        final anchorReaction = anchor.collection('reactions').doc(trainerId);
+        expect((await anchorReaction.get()).data()?['reactionId'], 'strong');
+        await react('celebrate', true);
+        expect((await anchorReaction.get()).data()?['reactionId'], 'celebrate');
+        await react('celebrate', false);
+        expect((await anchorReaction.get()).exists, isFalse);
+
+        await waits.runStep(
+          'quick comment persisted',
+          () => repository.addQuickComment(
+            trainerId: trainerId,
+            workoutInstanceId: instanceId,
+            body: 'Browser dashboard comment',
+          ),
+        );
+        final messages =
+            await thread.collection('threadMessages').limit(100).get();
+        final postedComment = messages.docs.singleWhere(
+          (message) => message.id != 'completion-activity',
+        );
+        expect(postedComment.data()['body'], 'Browser dashboard comment');
+        expect(postedComment.data()['authorId'], trainerId);
+        await react('celebrate', true);
+        expect((await anchorReaction.get()).exists, isFalse);
+        expect(
+          (await postedComment.reference
+                  .collection('reactions')
+                  .doc(trainerId)
+                  .get())
+              .data()?['reactionId'],
+          'celebrate',
+        );
+        expect((await workout.get()).data(), before);
+        coachingMutationsCompleted = true;
+        container.invalidate(trainerDashboardProvider);
+        await waits.runStep(
+          'reload coaching activity',
+          () => container.read(trainerDashboardProvider.future),
+        );
+      }
+
       for (final surface in surfaces) {
         await openSurface(surface);
         for (final control in surface.controls.entries) {
@@ -294,9 +386,11 @@ void main() {
           }
           await binding.takeScreenshot(surface.screenshot);
           if (surface.marker == 'athlete-calendar') {
-            await tester.tap(find.byKey(
-              ValueKey('calendar-day-${calendarDate(DateTime.now())}'),
-            ));
+            await tester.tap(
+              find.byKey(
+                ValueKey('calendar-day-${calendarDate(DateTime.now())}'),
+              ),
+            );
             await wait(
               'day screenshot workout',
               () => find.text('Browser Calendar Workout').evaluate().isNotEmpty,

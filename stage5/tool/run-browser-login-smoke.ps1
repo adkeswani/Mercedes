@@ -1139,6 +1139,28 @@ Invoke-RestMethod `
     -ContentType 'application/json' `
     -Body $workspaceSeedBody | Out-Null
 
+if (
+    $Identity -eq 'trainer' -and
+    $TestTarget -match 'workspace_surfaces_canary_test\.dart$'
+) {
+    $workspaceSeed = $workspaceSeedBody | ConvertFrom-Json
+    $completion = @($workspaceSeed.writes | Where-Object {
+        $_.update.name.EndsWith('/workoutInstances/browser-history-workout')
+    })[0]
+    $firstReactionSeed = @{
+        writes = @(@{
+            update = @{
+                name = "projects/$projectId/databases/(default)/documents/" +
+                    'workoutInstances/browser-unthreaded-workout'
+                fields = $completion.update.fields
+            }
+        })
+    } | ConvertTo-Json -Depth 20
+    Invoke-RestMethod -Method Post -Uri $commitUri `
+        -Headers @{ Authorization = 'Bearer owner' } `
+        -ContentType 'application/json' -Body $firstReactionSeed | Out-Null
+}
+
 . (Join-Path $PSScriptRoot 'seed-climbing-browser-fixtures.ps1')
 $climbingSeedBody = @{
     writes = @(Get-ClimbingBrowserFixtureWrites `
