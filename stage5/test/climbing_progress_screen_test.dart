@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/progress/domain/climbing_progress.dart';
 import 'package:stage5/features/progress/presentation/climbing_progress_providers.dart';
 import 'package:stage5/features/progress/presentation/climbing_progress_screen.dart';
 import 'package:stage5/features/progress/presentation/progress_line_chart.dart';
+import 'package:stage5/features/progress/presentation/workout_type_pie_chart.dart';
 import 'support/climbing_progress_fixtures.dart';
 
 Future<void> _pump(
@@ -63,6 +65,51 @@ Future<void> _reveal(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
+  testWidgets('type pie replaces source list and reflects workout selection',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pump(tester, sessions: [
+      progressSession(id: 'limit'),
+      progressSession(id: 'power', workoutType: WorkoutType.climbingPower),
+      progressSession(id: 'power-2', workoutType: WorkoutType.climbingPower),
+      progressSession(id: 'previous', date: DateTime(2026, 10, 1)),
+    ]);
+    final pie = find.byKey(const Key('progress-workout-type-pie'));
+    await _reveal(tester, pie);
+    expect(find.text('Climbing - Limit: 33.3% (1)'), findsOneWidget);
+    expect(find.text('Climbing - Power: 66.7% (2)'), findsOneWidget);
+    expect(find.text('Source workouts'), findsNothing);
+    expect(find.byKey(const Key('progress-workout-limit')), findsNothing);
+    final painter =
+        tester.widget<CustomPaint>(pie).painter! as WorkoutTypePiePainter;
+    expect(painter.counts,
+        {WorkoutType.climbingLimit: 1, WorkoutType.climbingPower: 2});
+    expect(tester.takeException(), isNull);
+    await _reveal(tester, find.text('Choose workouts'));
+    await tester.tap(find.text('Choose workouts'));
+    await tester.pumpAndSettle();
+    await _reveal(tester, find.text('Independent workouts'));
+    await tester.tap(find.text('Independent workouts'));
+    await tester.pumpAndSettle();
+    await _reveal(tester, find.byKey(const Key('progress-include-limit')));
+    await tester.tap(find.byKey(const Key('progress-include-limit')));
+    await tester.pumpAndSettle();
+    await _reveal(tester, pie);
+    expect(find.text('Climbing - Power: 100.0% (2)'), findsOneWidget);
+    expect(find.textContaining('Limit:'), findsNothing);
+    await _reveal(tester, find.byKey(const Key('progress-exclude-all')));
+    await tester.tap(find.byKey(const Key('progress-exclude-all')));
+    await tester.pumpAndSettle();
+    await _reveal(tester, find.byKey(const Key('progress-workout-types')));
+    expect(
+        find.text('No completed climbing workouts selected.'), findsOneWidget);
+    expect(pie, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('intervals regroup all charts locally and preserve comparisons',
       (tester) async {
     var requests = 0;

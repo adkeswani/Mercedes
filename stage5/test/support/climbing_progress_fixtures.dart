@@ -67,6 +67,7 @@ WorkoutInstance progressInstance({
   String programId = 'program',
   int programVersion = 0,
   String? programInstanceId,
+  WorkoutType workoutType = WorkoutType.climbingLimit,
   List<ExerciseActual>? actuals,
 }) {
   final time = date ?? DateTime(2026, 11, 6, 12);
@@ -82,7 +83,7 @@ WorkoutInstance progressInstance({
     assignedBy: 'trainer',
     assignedAt: time,
     status: WorkoutInstanceStatus.completed,
-    workoutType: WorkoutType.limit,
+    workoutType: workoutType,
     completedAt: time,
     rpe: 7,
     durationMinutes: 45,
@@ -140,6 +141,7 @@ ClimbingSession progressSession({
   bool freeCounts = true,
   String? programId,
   String? programName,
+  WorkoutType workoutType = WorkoutType.climbingLimit,
 }) =>
     ClimbingSession.fromWorkout(
       progressInstance(
@@ -147,6 +149,7 @@ ClimbingSession progressSession({
           date: date,
           version: version,
           sent: sent,
+          workoutType: workoutType,
           programId: programId ?? 'program',
           programVersion: programId == null ? 0 : 1,
           freeCounts: freeCounts),

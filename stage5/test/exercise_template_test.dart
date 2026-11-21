@@ -116,6 +116,30 @@ void main() {
   });
 
   group('ExerciseTemplateRepository versioning', () {
+    test('unclassified exercises default to other and retain it on update',
+        () async {
+      final id = await repository.create(
+        name: 'Unclassified exercise',
+        description: 'Description',
+        instructions: 'Instructions',
+        userId: 'coach1',
+      );
+      expect((await repository.getById(id))!.exerciseType, ExerciseType.other);
+      await repository.update(
+        id: id,
+        name: 'Renamed',
+        description: 'Description',
+        instructions: 'Instructions',
+        userId: 'coach1',
+      );
+      final versions = firestore
+          .collection('exerciseTemplates')
+          .doc(id)
+          .collection('exerciseVersions');
+      expect((await versions.doc('1').get()).data()!['exerciseType'], 'other');
+      expect((await versions.doc('2').get()).data()!['exerciseType'], 'other');
+    });
+
     test('create atomically writes a stable header and immutable version 1',
         () async {
       final id = await repository.create(

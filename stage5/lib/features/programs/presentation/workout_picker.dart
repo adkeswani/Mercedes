@@ -94,7 +94,7 @@ class _WorkoutPickerSheet extends ConsumerWidget {
                       return ListTile(
                         title: Text(workout.name),
                         subtitle: Text(
-                          '${workout.workoutType.name} · v${workout.currentVersion}',
+                          '${workout.workoutType.label} · v${workout.currentVersion}',
                         ),
                         onTap: () => Navigator.of(context).pop(
                           WorkoutPickerResult(

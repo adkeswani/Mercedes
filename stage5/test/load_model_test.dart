@@ -119,6 +119,24 @@ void main() {
   });
 
   group('LoadModel.computeLoadPoints', () {
+    test('explicit climbing types retain corresponding load behavior', () {
+      for (final (type, points) in [
+        (WorkoutType.climbingLimit, 20.0),
+        (WorkoutType.climbingPower, 16.0),
+        (WorkoutType.climbingEndurance, 8.0),
+        (WorkoutType.climbingConditioning, 8.0),
+      ]) {
+        expect(
+          LoadModel.computeLoadPoints(
+            workoutType: type,
+            rpe: 7,
+            durationMinutes: 45,
+          ),
+          points,
+        );
+      }
+    });
+
     test('limit RPE 9, 60 min → 5 × 5 × 1.0 = 25.0', () {
       final result = LoadModel.computeLoadPoints(
         workoutType: WorkoutType.limit,
@@ -337,8 +355,7 @@ class _DoubleWeightStrategy implements LoadStrategy {
     required int durationMinutes,
     Map<WorkoutType, int>? typeWeightOverrides,
   }) {
-    final baseWeight =
-        DefaultLoadStrategy.defaultTypeWeights[workoutType] ?? 1;
+    final baseWeight = DefaultLoadStrategy.defaultTypeWeights[workoutType] ?? 1;
     final doubled = baseWeight * 2;
     final effort = DefaultLoadStrategy.effortFromRpe(rpe);
     final durMod = DefaultLoadStrategy.durationModifier(durationMinutes);

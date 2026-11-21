@@ -712,7 +712,13 @@ data and failure artifacts.
 
 ## Web workspace follow-ups
 
-Athlete Progress (`/athlete/progress`) now reports climbing sessions, recorded
+Athlete Progress (`/athlete/progress`) includes only completed workouts with
+the explicit types **Climbing - Power**, **Climbing - Endurance**,
+**Climbing - Conditioning**, or **Climbing - Limit**. Contents do not determine
+eligibility: general/legacy types are excluded even with climbing blocks,
+and explicit climbing types count as sessions even without recorded climbs.
+Older workouts are not migrated or deleted; they remain in workout history
+but no longer contribute to this page. The page reports sessions, recorded
 climb volume and canonical grade distribution, highest recorded
 individual-climb grades, recorded attempts, and circuit whole-row
 completion trends against pinned workout versions. The view supports Last 7,
@@ -739,7 +745,7 @@ responsive view; line charts fit the phone width without horizontal scrolling.
 charts, summaries, comparisons, and source lists to confirmed sends; completed
 circuit prescriptions still contribute their known volume. Each logged climb
 counts once, not once per attempt. Highest grades do not infer circuit sends.
-**Choose workouts** provides checkboxes for every climbing completion in the
+**Choose workouts** provides checkboxes for every eligible climbing completion in the
 selected and preceding periods. All are initially included, regardless of
 program or independent assignment; excluding a workout recalculates every
 chart, summary, and source list locally without mutating it or refetching.
@@ -755,6 +761,21 @@ program names are labeled explicitly without discarding the completed data.
 Selections stay in the current view when changing ranges or refreshing and
 are keyed by both athlete and instance identity. Workout labels use current
 library titles for recognition; all metric inputs use pinned versions/results.
+
+**Completed workouts by type** replaces the bottom Source workouts list with
+a pie chart and a percentage/count legend. Each selected completed workout
+with an explicit climbing type contributes once, using its recorded instance
+workout type. Only the current date range contributes; preceding-period
+workouts do not. Workout selection updates the distribution locally, while
+grading-system, chart-interval, and sent-only controls do not change it.
+Workout details remain accessible through the workout selector and chart
+drill-downs.
+
+Exercise classification remains reserved versioned metadata, not a UI choice.
+New exercises use `ExerciseType.other`; adding an existing exercise to a
+workout retains its version reference without changing its library metadata.
+Exercise block choices and recording prescriptions are independent of this
+classification and remain available.
 
 V-scale and YDS are never converted or averaged. Explicit single-route and
 per-climb Free Climbing `sent` results establish sent grades. Completed circuit
@@ -799,7 +820,8 @@ client's data), producing `athlete-climbing-progress.png`,
 `athlete-climbing-progress-selected.png`,
 `athlete-climbing-progress-program-groups.png`,
 `athlete-climbing-progress-grade-volume.png`,
-`athlete-climbing-progress-circuits.png`, and
+`athlete-climbing-progress-circuits.png`,
+`athlete-climbing-progress-workout-types.png`, and
 `trainer-own-progress-empty.png`. Fixtures are isolated to this test target.
 
 Standalone messaging remains a polished empty destination. General training

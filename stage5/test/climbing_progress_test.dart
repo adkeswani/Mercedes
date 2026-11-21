@@ -7,6 +7,31 @@ import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'support/climbing_progress_fixtures.dart';
 
 void main() {
+  test('workout type counts use completed sessions, range and selection', () {
+    final report = ClimbingProgressReport(
+      range: ProgressPreset.month.range(DateTime(2026, 11, 7)),
+      sessions: [
+        progressSession(id: 'limit'),
+        progressSession(id: 'power', workoutType: WorkoutType.climbingPower),
+        progressSession(
+            id: 'power-unrecorded',
+            workoutType: WorkoutType.climbingPower,
+            freeCounts: false,
+            sent: null),
+        progressSession(id: 'previous', date: DateTime(2026, 10, 1)),
+      ],
+    );
+    expect(report.current.workoutTypeCounts,
+        {WorkoutType.climbingLimit: 1, WorkoutType.climbingPower: 2});
+    expect(report.sentOnly().current.workoutTypeCounts,
+        report.current.workoutTypeCounts);
+    expect(
+      report.excluding({('athlete', 'power')}).current.workoutTypeCounts,
+      {WorkoutType.climbingLimit: 1, WorkoutType.climbingPower: 1},
+    );
+    expect(ClimbingSummary([]).workoutTypeCounts, isEmpty);
+  });
+
   group('progress dates', () {
     for (final interval in ProgressInterval.values) {
       for (final range in [
@@ -420,7 +445,7 @@ void main() {
         isNot(progressSession(version: 2).circuits.single.key),
       );
     });
-    test('standard workouts do not count as climbing sessions', () {
+    test('climbing-specific workout counts even without climbing blocks', () {
       final version = WorkoutTemplateVersion(
         versionNumber: 1,
         publishedAt: DateTime(2026),
@@ -436,7 +461,38 @@ void main() {
           ),
         ],
       );
-      expect(ClimbingSession.fromWorkout(progressInstance(), version), isNull);
+      final session = ClimbingSession.fromWorkout(progressInstance(), version)!;
+      expect(session.workoutType, WorkoutType.climbingLimit);
+      expect(session.climbs, isEmpty);
+      expect(ClimbingSummary([session]).sessionCount, 1);
+    });
+    test('old and general workout types are excluded despite climbing blocks',
+        () {
+      for (final type in WorkoutType.values.where((type) => !type.isClimbing)) {
+        expect(
+          ClimbingSession.fromWorkout(
+            progressInstance(workoutType: type),
+            progressVersion(),
+          ),
+          isNull,
+          reason: type.name,
+        );
+      }
+      for (final type in [
+        WorkoutType.climbingPower,
+        WorkoutType.climbingEndurance,
+        WorkoutType.climbingConditioning,
+        WorkoutType.climbingLimit,
+      ]) {
+        expect(
+          ClimbingSession.fromWorkout(
+            progressInstance(workoutType: type),
+            progressVersion(),
+          )!
+              .workoutType,
+          type,
+        );
+      }
     });
     test('mismatched row manifests fail instead of producing plausible totals',
         () {

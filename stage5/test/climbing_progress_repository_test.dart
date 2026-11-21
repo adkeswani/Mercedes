@@ -4,6 +4,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/progress/data/climbing_progress_repository.dart';
 import 'package:stage5/features/progress/domain/climbing_progress.dart';
@@ -24,6 +25,7 @@ Future<void> seedProgressCompletion(
   int version = 1,
   String status = 'completed',
   bool subcollection = false,
+  WorkoutType workoutType = WorkoutType.climbingLimit,
 }) async {
   final instance =
       progressInstance(id: id, athlete: athlete, date: date, version: version);
@@ -37,7 +39,7 @@ Future<void> seedProgressCompletion(
     'assignedBy': 'trainer',
     'assignedAt': Timestamp.fromDate(date),
     'status': status,
-    'workoutType': 'limit',
+    'workoutType': workoutType.name,
     'completedAt': Timestamp.fromDate(date),
     'rpe': 7,
     'durationMinutes': 45,
@@ -81,6 +83,36 @@ class _Templates extends WorkoutTemplateRepository {
 }
 
 void main() {
+  test('excludes legacy types before reading their pinned templates', () async {
+    final db = FakeFirebaseFirestore();
+    final templates = _Templates(db);
+    await seedProgressCompletion(db, 'climbing', DateTime(2026, 11, 6));
+    await seedProgressCompletion(
+      db,
+      'old-limit',
+      DateTime(2026, 11, 6),
+      workoutType: WorkoutType.limit,
+      version: 99,
+    );
+    await seedProgressCompletion(
+      db,
+      'full-body',
+      DateTime(2026, 11, 6),
+      workoutType: WorkoutType.fullBody,
+      version: 98,
+    );
+    final report = await ClimbingProgressRepository(
+      instances: WorkoutInstanceRepository(firestore: db),
+      templates: templates,
+      programs: _Programs(db),
+    ).load(
+      athleteId: 'athlete',
+      range: ProgressPreset.month.range(DateTime(2026, 11, 7)),
+    );
+    expect(report.current.sessions.map((s) => s.instanceId), ['climbing']);
+    expect(templates.calls, [1]);
+  });
+
   test(
       'groups program history by identity, caches names and keeps ad-hoc independent',
       () async {

@@ -490,7 +490,7 @@ class _WorkoutCompletionScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      instance.workoutType.name.toUpperCase(),
+                      instance.workoutType.label.toUpperCase(),
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
                             color: Theme.of(context).colorScheme.primary,
                           ),

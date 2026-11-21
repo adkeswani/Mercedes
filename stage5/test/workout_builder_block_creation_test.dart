@@ -18,6 +18,45 @@ import 'package:stage5/features/workouts/presentation/workout_builder_screen.dar
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 
 void main() {
+  testWidgets('builder offers explicit climbing workout types', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final db = FakeFirebaseFirestore();
+    final repository = _VersionedWorkoutRepository(firestore: db);
+    final id = await repository.create(
+      name: 'Builder Workout',
+      workoutType: WorkoutType.fullBody,
+      userId: 'trainer-1',
+    );
+    await tester.pumpWidget(_harness(
+      repository: repository,
+      workout: _workout(id: id, currentVersion: 0),
+    ));
+    await tester.pumpAndSettle();
+    final dropdown = find.byType(DropdownButton<WorkoutType>);
+    for (final type in [
+      WorkoutType.climbingPower,
+      WorkoutType.climbingEndurance,
+      WorkoutType.climbingConditioning,
+      WorkoutType.climbingLimit,
+    ]) {
+      await tester.ensureVisible(dropdown);
+      await tester.tap(dropdown);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text(type.label).last);
+      await tester.tap(find.text(type.label).last);
+      await tester.pumpAndSettle();
+      expect(tester.widget<DropdownButton<WorkoutType>>(dropdown).value, type);
+      expect(
+        (await db.collection('workoutTemplates').doc(id).get())
+            .data()!['workoutType'],
+        type.name,
+      );
+    }
+  });
+
   testWidgets('builder exercises have larger padding and separation',
       (tester) async {
     final repo = _VersionedWorkoutRepository();
@@ -493,7 +532,8 @@ ExerciseTemplate _exercise({required String id, required String name}) {
 }
 
 class _VersionedWorkoutRepository extends WorkoutTemplateRepository {
-  _VersionedWorkoutRepository() : super(firestore: FakeFirebaseFirestore());
+  _VersionedWorkoutRepository({FakeFirebaseFirestore? firestore})
+      : super(firestore: firestore ?? FakeFirebaseFirestore());
 
   final Map<String, WorkoutTemplateVersion> versions = {};
   int _idCounter = 0;

@@ -140,7 +140,7 @@ class _InstanceTile extends ConsumerWidget {
         builder: (context, snapshot) => Text(snapshot.data?.name ?? 'Workout'),
       ),
       subtitle: Text(
-        '${instance.scheduledDate} · ${instance.workoutType.name} · '
+        '${instance.scheduledDate} · ${instance.workoutType.label} · '
         '${instance.status.name}'
         '${instance.rpe != null ? ' · RPE ${instance.rpe}' : ''}'
         '${instance.durationMinutes != null ? ' · ${instance.durationMinutes}min' : ''}',

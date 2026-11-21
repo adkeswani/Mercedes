@@ -27,6 +27,29 @@ enum WorkoutType {
   legs,
   core,
   conditioning,
+  climbingPower,
+  climbingEndurance,
+  climbingConditioning,
+  climbingLimit,
+}
+
+extension WorkoutTypeClassification on WorkoutType {
+  bool get isClimbing => switch (this) {
+        WorkoutType.climbingPower ||
+        WorkoutType.climbingEndurance ||
+        WorkoutType.climbingConditioning ||
+        WorkoutType.climbingLimit =>
+          true,
+        _ => false,
+      };
+
+  String get label => switch (this) {
+        WorkoutType.climbingPower => 'Climbing - Power',
+        WorkoutType.climbingEndurance => 'Climbing - Endurance',
+        WorkoutType.climbingConditioning => 'Climbing - Conditioning',
+        WorkoutType.climbingLimit => 'Climbing - Limit',
+        _ => name,
+      };
 }
 
 /// Program lifecycle status.

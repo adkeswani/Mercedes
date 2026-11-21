@@ -146,6 +146,12 @@ void main() {
     }
 
     expect(summary('sessions', '2'), findsOneWidget);
+    await reveal(
+      find.byKey(const Key('progress-workout-types')),
+      'climbing-specific workout type percentages',
+    );
+    expect(find.text('Climbing - Power: 50.0% (1)'), findsOneWidget);
+    expect(find.text('Climbing - Endurance: 50.0% (1)'), findsOneWidget);
     final container = ProviderScope.containerOf(
       tester.element(find.byKey(const Key('progress-summary-sessions'))),
     );
@@ -531,6 +537,14 @@ void main() {
         'circuit screenshot',
       );
       await binding.takeScreenshot('athlete-climbing-progress-circuits');
+      await reveal(
+        find.byKey(const Key('progress-workout-types')),
+        'completed workout type distribution',
+      );
+      expect(
+          find.byKey(const Key('progress-workout-type-pie')), findsOneWidget);
+      expect(find.text('Source workouts'), findsNothing);
+      await binding.takeScreenshot('athlete-climbing-progress-workout-types');
     });
   });
 }

@@ -54,6 +54,10 @@ class DefaultLoadStrategy implements LoadStrategy {
   /// Strength: lower=4, legs=4, upper=3, full_body=3,
   ///           push=3, pull=3, core=2, conditioning=2
   static const Map<WorkoutType, int> defaultTypeWeights = {
+    WorkoutType.climbingLimit: 5,
+    WorkoutType.climbingPower: 4,
+    WorkoutType.climbingEndurance: 2,
+    WorkoutType.climbingConditioning: 2,
     // Climbing
     WorkoutType.limit: 5,
     WorkoutType.power: 4,

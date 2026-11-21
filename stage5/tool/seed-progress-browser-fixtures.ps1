@@ -55,7 +55,7 @@ function Get-ProgressBrowserFixtureWrites {
     $time = $Today.Date.AddDays(-1500)
     $header = @{
         name = 'Browser Progress Workout'; ownerId = $TrainerId; createdBy = $TrainerId
-        currentVersion = 2; workoutType = 'skill'; clientAthleteId = $AthleteId
+        currentVersion = 2; workoutType = 'climbingPower'; clientAthleteId = $AthleteId
         createdAt = $time; updatedAt = $time; updatedBy = $TrainerId
         deletedAt = $null; deletedBy = $null
     }
@@ -93,7 +93,7 @@ function Get-ProgressBrowserFixtureWrites {
         $documents += @{ path = "workoutTemplates/$workoutId/workoutTemplateVersions/2/workoutBlocks/$($newBlocks[$i].blockId)"; data = $newBlocks[$i] }
         $documents += @{ path = "workoutTemplates/$workoutId/workoutTemplateVersions/2/exerciseSlots/$($slots[$i].slotId)"; data = $slots[$i] }
     }
-    foreach ($age in @(1, 10, 35, 200)) {
+    foreach ($age in @(1, 2, 3, 10, 35, 200)) {
         $completed = $Today.Date.AddDays(-$age).AddHours(12)
         $instanceId = "browser-progress-$age"
         $instance = @{
@@ -102,7 +102,12 @@ function Get-ProgressBrowserFixtureWrites {
             workoutTemplateVersion = 1
             scheduledDate = $time.ToString('yyyy-MM-dd')
             assignedBy = $TrainerId; assignedAt = $time
-            status = 'completed'; workoutType = 'skill'; completedAt = $completed
+            status = 'completed'
+            workoutType = $(if ($age -eq 1) { 'climbingPower' }
+                elseif ($age -eq 2) { 'fullBody' }
+                elseif ($age -eq 3) { 'limit' }
+                else { 'climbingEndurance' })
+            completedAt = $completed
             rpe = 7; durationMinutes = 45; createdAt = $time; updatedAt = $completed
             actualsStorageFormat = 'slotResultsSubcollection'
             actualSlotIds = @($slots | ForEach-Object { $_.slotId }); actuals = @()

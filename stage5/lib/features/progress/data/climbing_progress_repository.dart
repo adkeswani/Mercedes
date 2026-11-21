@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/progress/domain/climbing_progress.dart';
 import 'package:stage5/features/programs/data/program_repository.dart';
 import 'package:stage5/features/workouts/data/workout_instance_repository.dart';
@@ -36,6 +37,7 @@ class ClimbingProgressRepository {
         );
       }
       if (!seen.add(instance.id)) continue;
+      if (!instance.workoutType.isClimbing) continue;
       final key = (instance.workoutTemplateId, instance.workoutTemplateVersion);
       var version = versions[key];
       if (version == null) {

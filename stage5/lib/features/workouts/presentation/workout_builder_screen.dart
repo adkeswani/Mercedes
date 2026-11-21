@@ -305,11 +305,12 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
           const SizedBox(height: 12),
           DropdownButtonFormField<WorkoutType>(
             value: _workoutType,
+            isExpanded: true,
             decoration: const InputDecoration(labelText: 'Workout Type'),
             items: WorkoutType.values.map((type) {
               return DropdownMenuItem(
                 value: type,
-                child: Text(type.name),
+                child: Text(type.label, overflow: TextOverflow.ellipsis),
               );
             }).toList(),
             onChanged: (value) {
@@ -386,11 +387,12 @@ class _WorkoutBuilderScreenState extends ConsumerState<WorkoutBuilderScreen> {
             const SizedBox(height: 16),
             DropdownButtonFormField<WorkoutType>(
               value: _workoutType,
+              isExpanded: true,
               decoration: const InputDecoration(labelText: 'Workout Type'),
               items: WorkoutType.values.map((type) {
                 return DropdownMenuItem(
                   value: type,
-                  child: Text(type.name),
+                  child: Text(type.label, overflow: TextOverflow.ellipsis),
                 );
               }).toList(),
               onChanged: (value) {

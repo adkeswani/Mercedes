@@ -595,7 +595,7 @@ class _TrainerCalendarScreenState extends ConsumerState<TrainerCalendarScreen> {
                       ),
                       subtitle: Text(
                         '${nameById[i.programId] ?? 'Program'} · '
-                        '${i.workoutType.name} · ${i.status.name}',
+                        '${i.workoutType.label} · ${i.status.name}',
                       ),
                       onTap: i.isScheduled || i.isCompleted
                           ? () {

@@ -1,3 +1,4 @@
+import 'package:stage5/core/enums.dart';
 import 'package:stage5/features/workouts/data/workout_local_day.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
 import 'package:stage5/features/workouts/domain/workout_instance.dart';
@@ -131,6 +132,7 @@ class ClimbingSession {
     required this.circuits,
     required this.unrecordedBlocks,
     required this.legacyRoutes,
+    required this.workoutType,
     this.workoutName = 'Workout',
     this.programId,
     this.programName,
@@ -140,6 +142,7 @@ class ClimbingSession {
   final String workoutName;
   final String? programId;
   final String? programName;
+  final WorkoutType workoutType;
   (String, String) get selectionKey => (athleteId, instanceId);
   final String templateId;
   final int version;
@@ -164,6 +167,7 @@ class ClimbingSession {
         workoutName: workoutName,
         programId: programId,
         programName: programName,
+        workoutType: workoutType,
         climbs: [
           for (final climb in climbs)
             RecordedClimbs(
@@ -185,7 +189,7 @@ class ClimbingSession {
     String workoutName = 'Workout',
     String? programName,
   }) {
-    if (!instance.isCompleted) return null;
+    if (!instance.isCompleted || !instance.workoutType.isClimbing) return null;
     if (instance.workoutTemplateVersion != version.versionNumber) {
       throw StateError(
         'Progress requires the workout instance\'s pinned version',
@@ -199,7 +203,6 @@ class ClimbingSession {
               block is FreeClimbingBlock,
         )
         .toList();
-    if (blocks.isEmpty) return null;
     if (instance.completedAt == null) {
       throw StateError(
         'Completed workout ${instance.id} has no completion time',
@@ -306,6 +309,7 @@ class ClimbingSession {
       workoutName: workoutName,
       programId: progressProgramId(instance),
       programName: programName,
+      workoutType: instance.workoutType,
       templateId: instance.workoutTemplateId,
       version: version.versionNumber,
       date: instance.completedAt!.toLocal(),
@@ -349,6 +353,12 @@ class ClimbingSummary {
       : sessions = List.unmodifiable(source);
   final List<ClimbingSession> sessions;
   int get sessionCount => sessions.length;
+  Map<WorkoutType, int> get workoutTypeCounts => {
+        for (final type in WorkoutType.values)
+          if (sessions.any((session) => session.workoutType == type))
+            type:
+                sessions.where((session) => session.workoutType == type).length,
+      };
   int get incompleteSessions => sessions
       .where((s) => s.unrecordedBlocks > 0 || s.legacyRoutes > 0)
       .length;

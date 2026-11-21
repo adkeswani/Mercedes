@@ -6,6 +6,7 @@ import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/progress/domain/climbing_progress.dart';
 import 'package:stage5/features/progress/presentation/climbing_progress_providers.dart';
 import 'package:stage5/features/progress/presentation/progress_line_chart.dart';
+import 'package:stage5/features/progress/presentation/workout_type_pie_chart.dart';
 import 'package:stage5/features/workouts/data/workout_local_day.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
 
@@ -541,10 +542,8 @@ class _ProgressContent extends StatelessWidget {
           const _Heading('Circuit completion trends'),
           _CircuitTrends(report: report),
           const SizedBox(height: 24),
-          const _Heading('Source workouts'),
-          for (final session in current.sessions.reversed)
-            _SessionTile(session: session),
         ],
+        WorkoutTypePieChart(summary: current),
       ],
     );
   }

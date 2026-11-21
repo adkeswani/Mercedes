@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stage5/core/browser_smoke_status.dart';
+import 'package:stage5/core/enums.dart';
 import 'package:stage5/core/release_canary_config.dart';
 import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/library/domain/library_metadata.dart';
@@ -204,7 +205,7 @@ class _WorkoutTile extends ConsumerWidget {
               spacing: 4,
               runSpacing: 4,
               children: [
-                LibraryMetadataLabel(label: workout.workoutType.name),
+                LibraryMetadataLabel(label: workout.workoutType.label),
                 LibraryMetadataLabel(label: versionLabel),
                 for (final tag in workout.tags) LibraryTagLabel(tag: tag),
               ],
