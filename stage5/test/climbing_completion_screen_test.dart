@@ -165,6 +165,124 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  test('large circuit server draft round trips its last rest result', () async {
+    final block = ClimbingCircuitBlock(
+      blockId: 'circuit',
+      sortOrder: 0,
+      slotId: 'circuit-slot',
+      rows: [
+        ...circuit.rows,
+        for (var i = 1; i < 30; i++)
+          ClimbingCircuitRow.rest(rowId: 'rest-$i', durationSeconds: 15),
+      ],
+    );
+    await container.read(workoutTemplateRepositoryProvider).publishVersion(
+      templateId: 'workout',
+      userId: 'trainer',
+      blocks: [block],
+    );
+    await firestore
+        .doc('workoutInstances/instance')
+        .update({'workoutTemplateVersion': 2});
+    final input = initialClimbingInput(block);
+    (input['circuitRows'] as List).last['completed'] = true;
+    (input['circuitRows'] as List).last['notes'] = 'Recovered rest';
+    final draft = WorkoutCompletionDraft(
+      instanceId: 'instance',
+      athleteId: 'athlete',
+      rpe: 6,
+      durationMinutes: 30,
+      athleteNotes: null,
+      currentStep: 0,
+      slotInputs: {'circuit-slot': input},
+      revision: 1,
+      clientId: 'client',
+      updatedAt: DateTime.utc(2026),
+      sourceRoute: '/athlete/workouts/instance',
+    );
+    final repository = container.read(workoutCompletionDraftRepositoryProvider);
+    expect((await repository.save(draft)).status, WorkoutDraftSaveStatus.saved);
+    final stored = (await firestore
+            .doc(
+                'workoutInstances/instance/completionDrafts/current/climbingInputs/circuit-slot')
+            .get())
+        .data()!;
+    expect((stored['circuitRows'] as List).last, 'B1Recovered rest');
+    final reader = WorkoutCompletionDraftRepository(
+        firestore: firestore, localStore: _MemoryStore());
+    final restored = await reader.load(
+        instanceId: 'instance',
+        athleteId: 'athlete',
+        currentClientId: 'client');
+    expect(restored.draft!.slotInputs['circuit-slot']!['circuitRows'],
+        input['circuitRows']);
+  });
+
+  testWidgets(
+      'standalone rest completion and free shared instructions survive drafts and history',
+      (tester) async {
+    tester.view.physicalSize = const Size(1000, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final mixed = ClimbingCircuitBlock(
+      blockId: 'circuit',
+      sortOrder: 0,
+      exercise: circuit.exercise,
+      rows: [
+        ...circuit.rows,
+        const ClimbingCircuitRow.rest(rowId: 'rest-only', durationSeconds: 15),
+      ],
+    );
+    final linkedFree = FreeClimbingBlock(
+      blockId: 'free',
+      sortOrder: 1,
+      slotId: 'free-slot',
+      exercise: circuit.exercise.copyWith(slotId: 'free-slot'),
+    );
+    await container.read(workoutTemplateRepositoryProvider).publishVersion(
+      templateId: 'workout',
+      userId: 'trainer',
+      blocks: [mixed, linkedFree],
+    );
+    await firestore
+        .doc('workoutInstances/instance')
+        .update({'workoutTemplateVersion': 2});
+    await pumpScreen(tester);
+    expect(find.text('Pinned climbing instruction'), findsNWidgets(2));
+    expect(
+        find.text('Newer instruction must not replace history'), findsNothing);
+    final rest = find.byKey(const ValueKey('rest-only'));
+    expect(find.descendant(of: rest, matching: find.text('Rest · 15s')),
+        findsOneWidget);
+    expect(
+        find.descendant(
+            of: rest, matching: find.byType(DropdownButtonFormField<int>)),
+        findsNothing);
+    expect(find.descendant(of: rest, matching: find.textContaining('×')),
+        findsNothing);
+    final completed = find.widgetWithText(CheckboxListTile, 'Completed rest');
+    await tester.ensureVisible(completed);
+    await tester.tap(completed);
+    await tester.pumpAndSettle();
+    await complete(tester);
+    final actual = (await firestore
+            .doc('workoutInstances/instance/slotResults/circuit-slot')
+            .get())
+        .data()!;
+    expect(actual['circuitRows'][1], {
+      'rowId': 'rest-only',
+      'completed': true,
+      'notes': '',
+      'rpe': null,
+    });
+    await tester.pumpWidget(const SizedBox());
+    await pumpScreen(tester);
+    expect(find.text('Rest · 15s'), findsOneWidget);
+    expect(find.text('Pinned climbing instruction'), findsNWidgets(2));
+    expect(find.text('Completed rest'), findsNothing);
+  });
+
   testWidgets(
       'phone climbing sections scroll past long rows and retain results',
       (tester) async {

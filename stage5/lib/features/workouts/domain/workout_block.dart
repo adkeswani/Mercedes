@@ -464,8 +464,9 @@ class ClimbingCircuitBlock extends WorkoutBlock {
       throw ArgumentError(
           'An unlinked circuit requires its built-in result slot');
     }
-    if (rows.isEmpty || rows.length > maxClimbingRows) {
-      throw ArgumentError('Climbing circuit requires 1–$maxClimbingRows rows');
+    if (rows.isEmpty || rows.length > maxClimbingCircuitRows) {
+      throw ArgumentError(
+          'Climbing circuit requires 1–$maxClimbingCircuitRows rows');
     }
     final ids = <String>{};
     for (final row in rows) {
@@ -483,20 +484,30 @@ class FreeClimbingBlock extends WorkoutBlock {
     required super.blockId,
     required super.sortOrder,
     required String slotId,
+    ExerciseSlot? exercise,
     this.videoUrl,
     this.workSeconds,
     this.restSeconds,
     super.title,
     super.notes,
   }) : super(slots: [
-          ExerciseSlot(
-            slotId: slotId,
-            exerciseId: freeClimbingExerciseId,
-            exerciseName: 'Free Climbing',
-            sortOrder: 0,
-            mode: ExerciseMode.reps,
-          ),
-        ]);
+          exercise ??
+              ExerciseSlot(
+                slotId: slotId,
+                exerciseId: freeClimbingExerciseId,
+                exerciseName: 'Free Climbing',
+                sortOrder: 0,
+                mode: ExerciseMode.reps,
+              ),
+        ]) {
+    if (exercise != null && exercise.slotId != slotId) {
+      throw ArgumentError(
+          'Free climbing exercise and result slot IDs must match');
+    }
+  }
+
+  ExerciseSlot get exercise => slots.single;
+  bool get hasExercise => exercise.exerciseId != freeClimbingExerciseId;
 
   @override
   WorkoutBlockType get type => WorkoutBlockType.freeClimbing;
@@ -510,6 +521,7 @@ class FreeClimbingBlock extends WorkoutBlock {
         blockId: blockId,
         sortOrder: sortOrder,
         slotId: slots.single.slotId,
+        exercise: hasExercise ? exercise : null,
         title: title,
         notes: notes,
         videoUrl: videoUrl,
@@ -520,6 +532,21 @@ class FreeClimbingBlock extends WorkoutBlock {
   @override
   void validate() {
     super.validate();
+    if (slots.length != 1 || exercise.mode != ExerciseMode.reps) {
+      throw ArgumentError('Free climbing requires one climbing exercise slot');
+    }
+    if (!hasExercise &&
+        (exercise.exerciseVersion != 1 ||
+            exercise.sortOrder != 0 ||
+            exercise.exerciseName != 'Free Climbing' ||
+            exercise.sets != null ||
+            exercise.reps != null ||
+            exercise.durationSeconds != null ||
+            exercise.weight != null ||
+            exercise.restSeconds != null ||
+            exercise.notes != null)) {
+      throw ArgumentError('Unlinked free climbing requires its built-in slot');
+    }
     validateClimbingNote(notes);
     validateClimbingVideoUrl(videoUrl);
     validateClimbingTimerSeconds(workSeconds);

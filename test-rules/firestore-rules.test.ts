@@ -181,6 +181,235 @@ describe('climbing circuit and free climbing', () => {
     });
   }
 
+  async function publishChunkedCircuits(count = 30, slotsCount = 1, lastRow = {}, linked = false, rests = true) {
+    const blocks = Array.from({ length: slotsCount }, (_, i) => ({
+      ...block(), blockId: `block-${i}`, sortOrder: i, slotStartOrder: i,
+      slotIds: [`slot-${i}`], rowValidation: 'chunksV1',
+      rows: Array.from({ length: count }, (_, j) => ({
+        ...(rests && j % 2 ? { rowId: `row-${j}`, type: 'rest', durationSeconds: 15, notes: 'Rest' }
+          : { ...rows[j % rows.length], rowId: `row-${j}`, workSeconds: 30, restSeconds: 15 }),
+        ...(j === count - 1 ? lastRow : {}),
+      })),
+      rowIds: Array.from({ length: count }, (_, j) => `row-${j}`),
+    }));
+    const slots = blocks.map((b, i) => ({
+      ...slot('climbingCircuit', linked), slotId: b.slotIds[0],
+      blockId: b.blockId, blockSortOrder: i, slotOrder: i,
+    }));
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('climbing-workout');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const batch = db.batch();
+    batch.set(version, {
+      ...versionMap(blocks[0], slots[0]), blocks, slots,
+      blockCount: slotsCount, slotCount: slotsCount,
+      blockIds: blocks.map(b => b.blockId), slotIds: slots.map(s => s.slotId),
+      climbingSlotIds: slots.map(s => s.slotId),
+    });
+    for (const b of blocks) batch.set(version.collection('workoutBlocks').doc(b.blockId), b);
+    await batch.commit();
+    for (const b of blocks) {
+      for (let chunk = 0; chunk * 5 < count; chunk++) {
+        await version.collection('workoutBlocks').doc(b.blockId).collection('rowChecks')
+          .doc(`${chunk}`).set({ chunk, blockSortOrder: b.sortOrder });
+      }
+      await version.collection('exerciseSlots').doc(b.slotIds[0]).set(slots[b.sortOrder]);
+    }
+    const seal = db.batch();
+    seal.update(version, { publishState: 'published' });
+    seal.update(header, { currentVersion: 1, updatedBy: OWNER });
+    await seal.commit();
+    return version;
+  }
+
+  it.each([true, false])('publishes and seals nine 30-row circuits with rest without weakening validation: linked=%s', async linked => {
+    await seedAuthoring();
+    const version = await publishChunkedCircuits(30, 9, { notes: 'x'.repeat(4000) }, linked);
+    expect((await version.get()).data().publishState).toBe('published');
+    await assertFails(version.collection('workoutBlocks').doc('block-8')
+      .collection('rowChecks').doc('5').update({ chunk: 4 }));
+  });
+
+  it('publishes thirty fully configured climbing rows, not just rest rows', async () => {
+    await seedAuthoring();
+    await assertSucceeds(publishChunkedCircuits(30, 9, { notes: 'x'.repeat(4000) }, true, false));
+  });
+
+  it.each([
+    { grade: 'V18' }, { gradingSystem: 'colors' }, { climbs: 0 },
+    { maxAttemptsPerClimb: 0 }, { workSeconds: 0 }, { restSeconds: '15' },
+    { rowId: 'bad/id' }, { surprise: true },
+  ])('rejects malformed thirtieth climbing prescriptions: %j', async invalid => {
+    await seedAuthoring();
+    await assertFails(publishChunkedCircuits(30, 1, invalid, true, false));
+  });
+
+  it.each([
+    { durationSeconds: 0 }, { durationSeconds: -1 }, { durationSeconds: 1.5 },
+    { durationSeconds: '15' }, { grade: 'V2' }, { climbs: 1 },
+    { rowId: 'different' }, { notes: 'x'.repeat(4001) }, { notes: 1 },
+    { type: 'unknown' }, { gradingSystem: 'vScale' },
+  ])('rejects malformed thirtieth rest rows through required receipts: %j', async invalid => {
+    await seedAuthoring();
+    await assertFails(publishChunkedCircuits(30, 1, invalid));
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('climbing-workout');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    await assertFails(version.collection('exerciseSlots').doc('slot-0')
+      .set({ ...slot('climbingCircuit', false), slotId: 'slot-0', blockId: 'block-0' }));
+    const seal = db.batch();
+    seal.update(version, { publishState: 'published' });
+    seal.update(header, { currentVersion: 1, updatedBy: OWNER });
+    await assertFails(seal.commit());
+    await assertFails(version.collection('workoutBlocks').doc('block-0').collection('rowChecks')
+      .doc('5').set({ chunk: 5, blockSortOrder: 0 }));
+  });
+
+  it('rejects 31 total circuit rows including rest', async () => {
+    await seedAuthoring();
+    await assertFails(publishChunkedCircuits(31));
+  });
+
+  it('requires every preceding receipt and permits only reverse cleanup', async () => {
+    await seedAuthoring();
+    await assertFails(publishChunkedCircuits(30, 1, { durationSeconds: 0 }));
+    const version = testEnv.authenticatedContext(OWNER).firestore()
+      .doc('workoutTemplates/climbing-workout/workoutTemplateVersions/1');
+    const checks = version.collection('workoutBlocks').doc('block-0').collection('rowChecks');
+    await assertFails(checks.doc('0').delete());
+    await assertFails(checks.doc('6').set({ chunk: 6, blockSortOrder: 0 }));
+    await assertFails(testEnv.authenticatedContext(STRANGER).firestore()
+      .doc('workoutTemplates/climbing-workout/workoutTemplateVersions/1/workoutBlocks/block-0/rowChecks/5')
+      .set({ chunk: 5, blockSortOrder: 0 }));
+    await version.update({ publishState: 'deleting' });
+    for (let chunk = 4; chunk >= 0; chunk--) await assertSucceeds(checks.doc(`${chunk}`).delete());
+    await assertSucceeds(version.collection('workoutBlocks').doc('block-0').delete());
+  });
+
+  it.each([false, true])('prevents receipt orphan reuse across deleted and recreated versions: immutable block=%s', async withBlock => {
+    await seedAuthoring();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    const header = db.collection('workoutTemplates').doc('climbing-workout');
+    const version = header.collection('workoutTemplateVersions').doc('1');
+    const child = version.collection('workoutBlocks').doc('climbing-block');
+    const checks = child.collection('rowChecks');
+    const s = slot('climbingCircuit', false);
+    const validRows = Array.from({ length: 30 }, (_, i) => ({
+      ...rows[i % rows.length], rowId: `row-${i}`, workSeconds: 30, restSeconds: 15,
+    }));
+    const createDraft = async (prescribed, includeBlock) => {
+      const b = {
+        ...block(), rowValidation: 'chunksV1', rows: prescribed,
+        rowIds: prescribed.map(r => r.rowId),
+      };
+      const batch = db.batch();
+      batch.set(version, versionMap(b, s));
+      if (includeBlock) batch.set(child, b);
+      await assertSucceeds(batch.commit());
+    };
+    await createDraft(validRows, withBlock);
+    // A bare manifest cannot mint receipts that escape block cleanup.
+    for (let chunk = 0; chunk < 6; chunk++) {
+      const write = checks.doc(`${chunk}`).set({ chunk, blockSortOrder: 0 });
+      if (withBlock) await assertSucceeds(write);
+      else await assertFails(write);
+    }
+    await assertSucceeds(version.update({ publishState: 'deleting' }));
+    if (withBlock) {
+      await assertFails(version.update({ blocksCleared: true }));
+      await assertFails(child.delete());
+      await assertFails(checks.doc('0').delete());
+      for (let chunk = 5; chunk >= 0; chunk--) {
+        await assertSucceeds(checks.doc(`${chunk}`).delete());
+      }
+      await assertSucceeds(child.delete());
+    }
+    await assertSucceeds(version.update({ blocksCleared: true }));
+    await assertSucceeds(version.update({ slotsCleared: true }));
+    await assertSucceeds(version.delete());
+
+    // Reuse the exact version number and block ID, now with an invalid last
+    // row. No old final receipt may authorize this different snapshot.
+    const malformed = validRows.map((row, i) => ({
+      ...row, ...(i === 29 ? { climbs: 0 } : {}),
+    }));
+    await createDraft(malformed, true);
+    expect((await checks.get()).docs).toHaveLength(0);
+    await assertFails(checks.doc('5').set({ chunk: 5, blockSortOrder: 0 }));
+    for (let chunk = 0; chunk < 5; chunk++) {
+      await assertSucceeds(checks.doc(`${chunk}`).set({ chunk, blockSortOrder: 0 }));
+    }
+    await assertFails(checks.doc('5').set({ chunk: 5, blockSortOrder: 0 }));
+    await assertFails(version.collection('exerciseSlots').doc(s.slotId).set(s));
+    const seal = db.batch();
+    seal.update(version, { publishState: 'published' });
+    seal.update(header, { currentVersion: 1, updatedBy: OWNER });
+    await assertFails(seal.commit());
+  });
+
+  it.each(['draft', 'completed'])('validates all thirty result rows under the real expression budget: %s', async state => {
+    await seedCompletion('climbingCircuit', 30, 9);
+    const ids = Array.from({ length: 30 }, (_, i) => `row-${i}`);
+    const input = { climbingType: 'climbingCircuit', notes: '', rpe: null, rowIds: ids,
+      circuitRows: ids.map(() => 'L1' + 'x'.repeat(4000)) };
+    if (state === 'draft') {
+      const inputs = Object.fromEntries(Array.from({ length: 9 }, (_, i) =>
+        [i === 0 ? 'climbing-slot' : `climbing-slot-${i}`, input]));
+      await assertSucceeds(saveClimbingDraft(draftForInputs(inputs)));
+    } else {
+      const db = testEnv.authenticatedContext(ATHLETE).firestore();
+      const instance = db.collection('workoutInstances').doc('climbing-instance');
+      const slotIds = Array.from({ length: 9 }, (_, i) => i === 0 ? 'climbing-slot' : `climbing-slot-${i}`);
+      const batch = db.batch();
+      batch.update(instance, {
+        status: 'completed', rpe: 7, durationMinutes: 60,
+        actualsStorageFormat: 'slotResultsSubcollection', actualSlotIds: slotIds,
+        actuals: deleteField(), updatedAt: serverTimestamp(),
+      });
+      for (const [order, id] of slotIds.entries()) {
+        batch.set(instance.collection('slotResults').doc(id), { ...result(), ...input, slotOrder: order });
+      }
+      await assertSucceeds(batch.commit());
+    }
+  });
+
+  it.each(['M1', '-11', 'L2', 'L0extra', 'L1' + 'x'.repeat(4001), 21, null,
+    { completed: 1 }, { rpe: 11 }, { rowId: 'forged' }, { climbs: 1 }])(
+    'rejects malformed thirtieth draft and completion results: %j', async invalid => {
+      await seedCompletion('climbingCircuit', 30);
+      const ids = Array.from({ length: 30 }, (_, i) => `row-${i}`);
+      const input = { climbingType: 'climbingCircuit', notes: '', rpe: null, rowIds: ids,
+        circuitRows: ids.map((rowId, i) => i === 29 ? invalid : 'B1') };
+      await assertFails(saveClimbingDraft(draftForInputs({ 'climbing-slot': input })));
+      await assertFails(complete({ ...result(), ...input }));
+    });
+
+  it('free climbing can attach only an owned pinned shared instruction exercise', async () => {
+    await seedAuthoring();
+    const linked = { ...slot('freeClimbing'), exerciseId: 'climb-exercise', exerciseName: 'Climbing' };
+    await assertSucceeds(publish(block('freeClimbing'), linked));
+  });
+
+  it('rules enforce instruction ownership for free climbing as well as circuits', async () => {
+    await seedAuthoring();
+    await testEnv.withSecurityRulesDisabled(async ctx => {
+      await ctx.firestore().doc('exerciseTemplates/foreign').set({
+        ownerId: STRANGER, createdBy: STRANGER, currentVersion: 1,
+      });
+      await ctx.firestore().doc('exerciseTemplates/foreign/exerciseVersions/1').set({ versionNumber: 1 });
+    });
+    await assertFails(publish(block('freeClimbing'), {
+      ...slot('freeClimbing'), exerciseId: 'foreign', exerciseName: 'Foreign instruction',
+    }));
+  });
+
+  it.each([{ exerciseId: 'missing' }, { exerciseVersion: 2 }, { prescription: { mode: 'duration' } }])(
+    'rejects invalid free climbing instruction linkage: %j', async invalid => {
+      await seedAuthoring();
+      await assertFails(publish(block('freeClimbing'),
+        { ...slot('freeClimbing'), exerciseId: 'climb-exercise', ...invalid }));
+    });
+
   function result(type = 'climbingCircuit', linked = true) {
     return {
       exerciseId: slot(type, linked).exerciseId, mode: 'reps', slotOrder: 0,
@@ -192,7 +421,7 @@ describe('climbing circuit and free climbing', () => {
   }
 
   async function complete(data, uid = ATHLETE) {
-    data = { ...data, rowIds: (data.circuitRows ?? data.freeRows ?? []).map(r => r.rowId) };
+    data = { ...data, rowIds: data.rowIds ?? (data.circuitRows ?? data.freeRows ?? []).map(r => r.rowId) };
     const db = testEnv.authenticatedContext(uid).firestore();
     const instance = db.collection('workoutInstances').doc('climbing-instance');
     const batch = db.batch();

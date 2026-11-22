@@ -415,7 +415,7 @@ class WorkoutCompletionDraftRepository {
         final climbing = {
           for (final entry in draft.slotInputs.entries)
             if (entry.value.containsKey('climbingType'))
-              entry.key: climbingInputForStorage(entry.value),
+              entry.key: encodeClimbingInput(entry.value),
         };
         final slotOrders = <String, int>{};
         if (climbing.isNotEmpty) {

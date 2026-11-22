@@ -1,6 +1,7 @@
 enum ClimbingGradingSystem { vScale, yds }
 
 const maxClimbingRows = 9;
+const maxClimbingCircuitRows = 30;
 const freeClimbingExerciseId = 'builtin-free-climbing';
 const climbingCircuitExerciseId = 'builtin-climbing-circuit';
 
@@ -131,7 +132,18 @@ class ClimbingCircuitRow {
     this.workSeconds,
     this.restSeconds,
     this.notes,
-  });
+  }) : isRest = false;
+  const ClimbingCircuitRow.rest({
+    required this.rowId,
+    required int durationSeconds,
+    this.notes,
+  })  : restSeconds = durationSeconds,
+        isRest = true,
+        gradingSystem = ClimbingGradingSystem.vScale,
+        grade = '',
+        climbs = 0,
+        maxAttemptsPerClimb = null,
+        workSeconds = null;
   final String rowId;
   final ClimbingGradingSystem gradingSystem;
   final String grade;
@@ -140,9 +152,20 @@ class ClimbingCircuitRow {
   final int? workSeconds;
   final int? restSeconds;
   final String? notes;
+  final bool isRest;
 
   void validate() {
     validateClimbingRowId(rowId);
+    if (isRest) {
+      if (restSeconds == null ||
+          restSeconds! < 1 ||
+          workSeconds != null ||
+          maxAttemptsPerClimb != null) {
+        throw ArgumentError('Rest rows require only a positive duration');
+      }
+      validateClimbingNote(notes);
+      return;
+    }
     validateClimbingGrade(gradingSystem, grade);
     if (climbs < 1) throw ArgumentError('Number of climbs must be positive');
     if (maxAttemptsPerClimb != null && maxAttemptsPerClimb! < 1) {
@@ -155,16 +178,39 @@ class ClimbingCircuitRow {
 
   Map<String, dynamic> toMap() => {
         'rowId': rowId,
-        'gradingSystem': gradingSystem.name,
-        'grade': grade,
-        'climbs': climbs,
-        'maxAttemptsPerClimb': maxAttemptsPerClimb,
-        if (workSeconds != null) 'workSeconds': workSeconds,
-        if (restSeconds != null) 'restSeconds': restSeconds,
-        'notes': notes,
+        if (isRest) ...{
+          'type': 'rest',
+          'durationSeconds': restSeconds,
+          'notes': notes,
+        } else ...{
+          'gradingSystem': gradingSystem.name,
+          'grade': grade,
+          'climbs': climbs,
+          'maxAttemptsPerClimb': maxAttemptsPerClimb,
+          if (workSeconds != null) 'workSeconds': workSeconds,
+          if (restSeconds != null) 'restSeconds': restSeconds,
+          'notes': notes,
+        },
       };
 
   factory ClimbingCircuitRow.fromMap(Map<String, dynamic> map) {
+    if (map['type'] == 'rest') {
+      if (!map.keys
+          .toSet()
+          .difference({'rowId', 'type', 'durationSeconds', 'notes'}).isEmpty) {
+        throw const FormatException('Unexpected rest prescription fields');
+      }
+      final row = ClimbingCircuitRow.rest(
+        rowId: map['rowId'] as String,
+        durationSeconds: map['durationSeconds'] as int,
+        notes: map['notes'] as String?,
+      );
+      row.validate();
+      return row;
+    }
+    if (map.containsKey('type')) {
+      throw const FormatException('Unknown circuit row type');
+    }
     final row = ClimbingCircuitRow(
       rowId: map['rowId'] as String,
       gradingSystem: parseGradingSystem(map['gradingSystem']),
@@ -220,6 +266,47 @@ class ClimbingCircuitResultRow {
     row.validate();
     return row;
   }
+}
+
+// Large circuits use a fixed status alphabet and a note-presence bit followed
+// by the note. One bounded regex validates each complete result in rules;
+// row identity still comes from the ordered, pinned rowIds manifest.
+const _circuitStatuses = '0123456789ABCDEFGHIJKL';
+List<String> encodeCircuitResults(List<ClimbingCircuitResultRow> rows) => [
+      for (final row in rows)
+        '${_circuitStatuses[(row.completed ? 11 : 0) + (row.rpe ?? 0)]}'
+            '${row.notes == null ? '0' : '1${row.notes}'}',
+    ];
+
+List<ClimbingCircuitResultRow> decodeCircuitResults(
+    List<dynamic> rows, Object? rawIds) {
+  if (rawIds is! List || rawIds.length != rows.length) {
+    throw const FormatException('Invalid circuit result manifest');
+  }
+  return [
+    for (var i = 0; i < rows.length; i++)
+      _decodeCircuitResult(rows[i], rawIds[i]),
+  ];
+}
+
+ClimbingCircuitResultRow _decodeCircuitResult(Object? raw, Object? id) {
+  if (id is! String) {
+    throw const FormatException('Invalid circuit result');
+  }
+  if (raw is Map)
+    return ClimbingCircuitResultRow.fromMap(Map<String, dynamic>.from(raw));
+  if (raw is! String ||
+      !RegExp(r'^[0-9A-L](?:0|1.{0,4000})$', dotAll: true).hasMatch(raw)) {
+    throw const FormatException('Invalid packed circuit result');
+  }
+  final status = _circuitStatuses.indexOf(raw[0]);
+  final rpe = status % 11;
+  return ClimbingCircuitResultRow(
+    rowId: id,
+    completed: status >= 11,
+    rpe: rpe == 0 ? null : rpe,
+    notes: raw[1] == '0' ? null : raw.substring(2),
+  )..validate();
 }
 
 class FreeClimbingResultRow {

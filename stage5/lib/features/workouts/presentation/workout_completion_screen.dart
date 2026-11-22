@@ -765,9 +765,11 @@ class _WorkoutCompletionScreenState
             recordingEnabled: _isAthlete && !instance.isCompleted,
             initialInput: _slotInputs[slot.slotId],
             actual: instance.actualsBySlot[slot.slotId],
-            exerciseContent: block is ClimbingCircuitBlock && block.hasExercise
-                ? _ClimbingExerciseContent(slot: block.exercise)
-                : null,
+            exerciseContent:
+                ((block is ClimbingCircuitBlock && block.hasExercise) ||
+                        (block is FreeClimbingBlock && block.hasExercise))
+                    ? _ClimbingExerciseContent(slot: block.slots.single)
+                    : null,
             onChanged: (input) {
               _slotInputs[slot.slotId] = input;
               _scheduleSave();
@@ -1061,7 +1063,8 @@ class _ExerciseEntryCard extends ConsumerStatefulWidget {
   ConsumerState<_ExerciseEntryCard> createState() => _ExerciseEntryCardState();
 }
 
-class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
+class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard>
+    with AutomaticKeepAliveClientMixin {
   bool _expanded = true;
   late final TextEditingController _setsController;
   late final TextEditingController _repsController;
@@ -1071,6 +1074,11 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
   late final TextEditingController _roundsController;
   bool _sent = false;
   int? _restElapsedSeconds;
+  int? _workTimerTargetSeconds;
+  int? _restTimerTargetSeconds;
+
+  @override
+  bool get wantKeepAlive => widget.recordingEnabled;
 
   bool get _isClimbing => widget.block is ClimbingRouteBlock;
   bool get _isAmrap =>
@@ -1190,6 +1198,7 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final theme = Theme.of(context);
     final slot = widget.slot;
     final exerciseVersion = ref.watch(
@@ -1265,6 +1274,9 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
                     key: ValueKey('rest-timer-${slot.slotId}'),
                     label: 'Rest',
                     targetSeconds: _restTargetSeconds,
+                    initialTargetSeconds: _restTimerTargetSeconds,
+                    onTargetChanged: (seconds) =>
+                        _restTimerTargetSeconds = seconds,
                     onElapsedChanged: (seconds) {
                       _restElapsedSeconds = seconds;
                       _emitActual();
@@ -1323,6 +1335,8 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
             key: ValueKey('amrap-timer-${widget.slot.slotId}'),
             label: 'Time cap',
             targetSeconds: _workTargetSeconds,
+            initialTargetSeconds: _workTimerTargetSeconds,
+            onTargetChanged: (seconds) => _workTimerTargetSeconds = seconds,
           ),
           const SizedBox(height: 8),
           TextField(
@@ -1346,6 +1360,8 @@ class _ExerciseEntryCardState extends ConsumerState<_ExerciseEntryCard> {
             key: ValueKey('work-timer-${widget.slot.slotId}'),
             label: 'Work',
             targetSeconds: _workTargetSeconds,
+            initialTargetSeconds: _workTimerTargetSeconds,
+            onTargetChanged: (seconds) => _workTimerTargetSeconds = seconds,
             onElapsedChanged: (seconds) {
               _durationController.text = seconds.toString();
               _emitActual();

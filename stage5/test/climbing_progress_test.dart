@@ -352,6 +352,82 @@ void main() {
         ['V2', 'V8', 'V9', 'V10', 'V14'],
       );
     });
+    test('rest-only circuits have no climbing performance denominator', () {
+      final block = ClimbingCircuitBlock(
+        blockId: 'rests',
+        sortOrder: 0,
+        slotId: 'rests',
+        rows: const [
+          ClimbingCircuitRow.rest(rowId: 'rest', durationSeconds: 20),
+        ],
+      );
+      final version = WorkoutTemplateVersion(
+          versionNumber: 1, publishedAt: DateTime(2026), blocks: [block]);
+      final session = ClimbingSession.fromWorkout(
+          progressInstance(actuals: [
+            ExerciseActual(
+                slotId: 'rests',
+                exerciseId: climbingCircuitExerciseId,
+                mode: ExerciseMode.reps,
+                climbingType: 'climbingCircuit',
+                circuitRows: const [
+                  ClimbingCircuitResultRow(rowId: 'rest', completed: true),
+                ]),
+          ]),
+          version)!;
+      expect(session.circuits, isEmpty);
+      expect(session.climbs, isEmpty);
+      expect(session.unrecordedBlocks, 0);
+    });
+    test(
+        'rest rows contribute neither climbs, circuit performance nor missing-climb statistics',
+        () {
+      final circuit = ClimbingCircuitBlock(
+        blockId: 'circuit',
+        sortOrder: 0,
+        slotId: 'circuit',
+        rows: const [
+          ClimbingCircuitRow.rest(rowId: 'rest-before', durationSeconds: 20),
+          ClimbingCircuitRow(
+              rowId: 'climb',
+              gradingSystem: ClimbingGradingSystem.vScale,
+              grade: 'V2',
+              climbs: 3),
+          ClimbingCircuitRow.rest(rowId: 'rest-after', durationSeconds: 20),
+        ],
+      );
+      final version = WorkoutTemplateVersion(
+          versionNumber: 1, publishedAt: DateTime(2026), blocks: [circuit]);
+      for (final restCompleted in [true, false]) {
+        final session = ClimbingSession.fromWorkout(
+            progressInstance(actuals: [
+              ExerciseActual(
+                  slotId: 'circuit',
+                  exerciseId: climbingCircuitExerciseId,
+                  mode: ExerciseMode.reps,
+                  climbingType: 'climbingCircuit',
+                  circuitRows: [
+                    ClimbingCircuitResultRow(
+                        rowId: 'rest-before', completed: restCompleted),
+                    const ClimbingCircuitResultRow(
+                        rowId: 'climb', completed: true),
+                    ClimbingCircuitResultRow(
+                        rowId: 'rest-after', completed: restCompleted),
+                  ]),
+            ]),
+            version)!;
+        expect(session.recordedClimbs, 3);
+        expect(session.unrecordedBlocks, 0);
+        expect(session.circuits.single.completedRows, 1);
+        expect(session.circuits.single.totalRows, 1);
+        expect(session.circuits.single.prescription.map((r) => r.rowId),
+            ['climb']);
+        expect(
+            ClimbingSummary([session])
+                .gradeCounts(ClimbingGradingSystem.vScale),
+            {'V2': 3});
+      }
+    });
     test('optional free results and missing sends remain unrecorded', () {
       final session = progressSession(sent: null, freeCounts: false);
       expect(session.unrecordedBlocks, 3);

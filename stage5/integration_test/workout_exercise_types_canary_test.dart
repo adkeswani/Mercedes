@@ -8,6 +8,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:stage5/app.dart';
 import 'package:stage5/core/browser_smoke_config.dart';
 import 'package:stage5/features/workouts/presentation/workout_completion_screen.dart';
+import 'package:stage5/features/workouts/presentation/workout_timer_widget.dart';
 import 'package:stage5/main.dart' as app;
 
 import 'support/browser_test_wait.dart';
@@ -116,6 +117,53 @@ void main() {
           scrollable: find.byType(Scrollable).first,
         ),
       );
+      await waits.runStep(
+        'override timed exercise countdown without changing prescription',
+        () async {
+          final timer = find.byKey(const ValueKey('work-timer-slot-timed'));
+          await tester.scrollUntilVisible(
+            timer,
+            200,
+            scrollable: find.byType(Scrollable).first,
+          );
+          await tester.pumpAndSettle();
+          final prescribed =
+              tester.widget<WorkoutTimerWidget>(timer).targetSeconds;
+          await tester.tap(find.descendant(
+            of: timer,
+            matching: find.byTooltip('Change work timer duration'),
+          ));
+          await _waitFor(
+            tester,
+            waits,
+            find.byType(AlertDialog),
+            step: 'timer duration editor',
+          );
+          await tester.enterText(
+            find.widgetWithText(TextFormField, 'Duration (seconds)'),
+            '45',
+          );
+          await tester.tap(find.text('Apply'));
+          await _waitForAbsent(
+            tester,
+            waits,
+            find.byType(AlertDialog),
+            step: 'timer duration editor dismissed',
+          );
+          expect(
+            find.descendant(of: timer, matching: find.text('0:45')),
+            findsOneWidget,
+          );
+          expect(
+            tester.widget<WorkoutTimerWidget>(timer).targetSeconds,
+            prescribed,
+          );
+        },
+      );
+      await waits.captureAfterAssertions('capture adjustable workout timer',
+          () async {
+        await binding.takeScreenshot('athlete-configurable-workout-timer');
+      });
       await waits.runStep(
         'enter timed exercise actual',
         () => tester.enterText(

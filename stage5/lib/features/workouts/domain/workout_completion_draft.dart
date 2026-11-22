@@ -81,7 +81,7 @@ class WorkoutCompletionDraft {
       'slotInputs': {
         for (final entry in slotInputs.entries)
           entry.key: entry.value.containsKey('climbingType')
-              ? climbingInputForStorage(entry.value)
+              ? encodeClimbingInput(entry.value)
               : entry.value,
       },
       'revision': revision,
@@ -120,9 +120,10 @@ class WorkoutCompletionDraft {
       if (entry.key is! String || entry.value is! Map) {
         throw const FormatException('Workout draft slot input is invalid');
       }
-      slotInputs[entry.key as String] = Map<String, dynamic>.from(
+      slotInputs[entry.key as String] =
+          decodeClimbingInput(Map<String, dynamic>.from(
         entry.value as Map,
-      );
+      ));
     }
     final draft = WorkoutCompletionDraft(
       instanceId: _requiredString(data, 'instanceId'),

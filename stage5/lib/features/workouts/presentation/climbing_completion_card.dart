@@ -116,7 +116,8 @@ class _ClimbingCompletionCardState extends ConsumerState<ClimbingCompletionCard>
               _isCircuit ? 'Climbing Circuit' : 'Free Climbing',
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            if (block is ClimbingCircuitBlock && block.hasExercise)
+            if ((block is ClimbingCircuitBlock && block.hasExercise) ||
+                (block is FreeClimbingBlock && block.hasExercise))
               Text(
                 block.slots.single.exerciseName ??
                     block.slots.single.exerciseId,
@@ -192,8 +193,10 @@ class _ClimbingCompletionCardState extends ConsumerState<ClimbingCompletionCard>
         children: [
           if (_isCircuit) const Divider(),
           if (prescription != null) ...[
-            Text('${prescription.climbs} × ${prescription.grade}'
-                '${prescription.maxAttemptsPerClimb == null ? '' : ' · Max ${prescription.maxAttemptsPerClimb} attempts per climb'}'),
+            Text(prescription.isRest
+                ? 'Rest · ${prescription.restSeconds}s'
+                : '${prescription.climbs} × ${prescription.grade}'
+                    '${prescription.maxAttemptsPerClimb == null ? '' : ' · Max ${prescription.maxAttemptsPerClimb} attempts per climb'}'),
             if (prescription.notes != null) Text(prescription.notes!),
             ..._timers(
               '${widget.block.blockId}-${prescription.rowId}',
@@ -202,17 +205,20 @@ class _ClimbingCompletionCardState extends ConsumerState<ClimbingCompletionCard>
             ),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Completed prescribed row'),
+              title: Text(prescription.isRest
+                  ? 'Completed rest'
+                  : 'Completed prescribed row'),
               value: row['completed'] as bool,
               onChanged: (value) {
                 setState(() => row['completed'] = value!);
                 _emit();
               },
             ),
-            _rpe(row['rpe'] as int?, (value) {
-              row['rpe'] = value;
-              _emit();
-            }),
+            if (!prescription.isRest)
+              _rpe(row['rpe'] as int?, (value) {
+                row['rpe'] = value;
+                _emit();
+              }),
           ] else ...[
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -339,8 +345,10 @@ class _ClimbingCompletionCardState extends ConsumerState<ClimbingCompletionCard>
       if (_isCircuit) ...[
         for (final prescription
             in (widget.block as ClimbingCircuitBlock).rows) ...[
-          Text('${prescription.climbs} × ${prescription.grade}'
-              '${prescription.maxAttemptsPerClimb == null ? '' : ' · Max ${prescription.maxAttemptsPerClimb} attempts per climb'}'),
+          Text(prescription.isRest
+              ? 'Rest · ${prescription.restSeconds}s'
+              : '${prescription.climbs} × ${prescription.grade}'
+                  '${prescription.maxAttemptsPerClimb == null ? '' : ' · Max ${prescription.maxAttemptsPerClimb} attempts per climb'}'),
           if (prescription.notes != null)
             Text('Prescribed note: ${prescription.notes}'),
           ..._timers(

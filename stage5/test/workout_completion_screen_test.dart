@@ -898,6 +898,59 @@ void main() {
     expect(results.data()?['sent'], true);
   });
 
+  testWidgets('timer override survives collapsed and offscreen exercise cards',
+      (tester) async {
+    await _seedWorkoutWithExercises(firestore);
+    await pumpScreen(tester, id: 'instance-2');
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Plank Hold'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final timer = find.byKey(const ValueKey('work-timer-slot-plank'));
+    await tester.ensureVisible(timer);
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(
+      of: timer,
+      matching: find.byTooltip('Change work timer duration'),
+    ));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Duration (seconds)'),
+      '45',
+    );
+    await tester.tap(find.text('Apply'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Plank Hold'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Plank Hold'));
+    await tester.pumpAndSettle();
+    expect(timer, findsNothing);
+    await tester.tap(find.text('Plank Hold'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: timer, matching: find.text('0:45')),
+      findsOneWidget,
+    );
+    final state = tester.state<WorkoutTimerWidgetState>(timer);
+    await tester.scrollUntilVisible(
+      find.text('Mark as Completed'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.scrollUntilVisible(
+      find.text('Plank Hold'),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(tester.state<WorkoutTimerWidgetState>(timer), same(state));
+    expect(
+      find.descendant(of: timer, matching: find.text('0:45')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets(
       'timed exercise work timer counts down and fills in duration; rest '
       'timer records restSeconds', (tester) async {

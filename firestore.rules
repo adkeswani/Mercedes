@@ -468,6 +468,21 @@ service cloud.firestore {
     }
 
     function validClimbingCircuitRow(row, rowId, keys, patterns) {
+      return row.get('type', '') == 'rest'
+             ? validClimbingRestRow(row, rowId)
+             : validClimbingWorkRow(row, rowId, keys, patterns);
+    }
+
+    function validClimbingRestRow(row, rowId) {
+      let seconds = row.durationSeconds;
+      let notes = row.get('notes', null);
+      return row.keys().hasOnly(['rowId', 'type', 'durationSeconds', 'notes'])
+             && row.rowId == rowId && rowId.matches('^[^/]+$')
+             && seconds is int && seconds >= 1
+             && (notes == null || notes.matches('(?s)^(?:.{0,1000}){0,4}$'));
+    }
+
+    function validClimbingWorkRow(row, rowId, keys, patterns) {
       let notes = row.get('notes', null);
       let attempts = row.get('maxAttemptsPerClimb', null);
       let climbs = row.climbs;
@@ -553,22 +568,24 @@ service cloud.firestore {
              && (rows.size() < 9 || validFreeClimbingDraftRow(rows[8], rowIds[8], keys, patterns));
     }
 
-    // Both immutable children are mandatory before sealing. Split the circuit
-    // row checks 4/5 across the block and its one slot to stay within the
-    // per-write budget without reducing the nine-row authoring limit.
+    // Legacy circuits retain their original 4/5 validation split. New circuits
+    // use chained immutable five-row receipts, required by their result slot.
     function validClimbingCircuitHead(data) {
       let rows = data.rows;
       let ids = data.rowIds;
       let count = rows.size();
       let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'maxAttemptsPerClimb', 'notes', 'workSeconds', 'restSeconds'];
       let patterns = climbingGradePatterns();
-      return rows is list && count >= 1 && count <= 9
+      return rows is list && count >= 1
              && ids is list && ids.size() == count
              && ids.toSet().size() == count
-             && validClimbingCircuitRow(rows[0], ids[0], keys, patterns)
-             && (count < 2 || validClimbingCircuitRow(rows[1], ids[1], keys, patterns))
-             && (count < 3 || validClimbingCircuitRow(rows[2], ids[2], keys, patterns))
-             && (count < 4 || validClimbingCircuitRow(rows[3], ids[3], keys, patterns));
+             && (data.get('rowValidation', '') == 'chunksV1'
+                 ? count <= 30
+                 : count <= 9
+             && validClimbingWorkRow(rows[0], ids[0], keys, patterns)
+             && (count < 2 || validClimbingWorkRow(rows[1], ids[1], keys, patterns))
+             && (count < 3 || validClimbingWorkRow(rows[2], ids[2], keys, patterns))
+             && (count < 4 || validClimbingWorkRow(rows[3], ids[3], keys, patterns)));
     }
 
     function validClimbingCircuitTail(data) {
@@ -577,11 +594,48 @@ service cloud.firestore {
       let count = rows.size();
       let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'maxAttemptsPerClimb', 'notes', 'workSeconds', 'restSeconds'];
       let patterns = climbingGradePatterns();
-      return (count < 5 || validClimbingCircuitRow(rows[4], ids[4], keys, patterns))
-             && (count < 6 || validClimbingCircuitRow(rows[5], ids[5], keys, patterns))
-             && (count < 7 || validClimbingCircuitRow(rows[6], ids[6], keys, patterns))
-             && (count < 8 || validClimbingCircuitRow(rows[7], ids[7], keys, patterns))
-             && (count < 9 || validClimbingCircuitRow(rows[8], ids[8], keys, patterns));
+      return (count < 5 || validClimbingWorkRow(rows[4], ids[4], keys, patterns))
+             && (count < 6 || validClimbingWorkRow(rows[5], ids[5], keys, patterns))
+             && (count < 7 || validClimbingWorkRow(rows[6], ids[6], keys, patterns))
+             && (count < 8 || validClimbingWorkRow(rows[7], ids[7], keys, patterns))
+             && (count < 9 || validClimbingWorkRow(rows[8], ids[8], keys, patterns));
+    }
+
+    function validCircuitRowAt(block, index, keys, patterns) {
+      return block.rows.size() <= index
+             || validClimbingCircuitRow(block.rows[index], block.rowIds[index], keys, patterns);
+    }
+
+    function canCreateCircuitRowCheck(templateId, versionNumber, blockId, chunkId, data) {
+      let version = get(/databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)).data;
+      let block = version.blocks[data.blockSortOrder];
+      let immutableBlock = /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)/workoutBlocks/$(blockId);
+      let start = data.chunk * 5;
+      let keys = ['rowId', 'gradingSystem', 'grade', 'climbs', 'maxAttemptsPerClimb', 'notes', 'workSeconds', 'restSeconds'];
+      let patterns = climbingGradePatterns();
+      return version.ownerId == request.auth.uid && version.publishState == 'draft'
+             && version.storageFormat == 'typedWorkoutBlocksV1'
+             && data.keys().hasOnly(['chunk', 'blockSortOrder'])
+             && data.chunk is int && data.chunk >= 0 && data.chunk < 6
+             && chunkId == string(data.chunk)
+             && block.blockId == blockId && block.type == 'climbingCircuit'
+             // Bind receipts to a real immutable child whose deletion requires
+             // reverse receipt cleanup, not a replaceable bare draft manifest.
+             && exists(immutableBlock) && get(immutableBlock).data == block
+             && block.rowValidation == 'chunksV1' && start < block.rows.size()
+             && (data.chunk == 0 || exists(
+                  /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)/workoutBlocks/$(blockId)/rowChecks/$(string(data.chunk - 1))))
+             && validCircuitRowAt(block, start, keys, patterns)
+             && validCircuitRowAt(block, start + 1, keys, patterns)
+             && validCircuitRowAt(block, start + 2, keys, patterns)
+             && validCircuitRowAt(block, start + 3, keys, patterns)
+             && validCircuitRowAt(block, start + 4, keys, patterns);
+    }
+
+    function hasCircuitRowChecks(templateId, versionNumber, block) {
+      return block.get('rowValidation', '') != 'chunksV1'
+             ? validClimbingCircuitTail(block)
+             : exists(/databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)/workoutBlocks/$(block.blockId)/rowChecks/$(string(int((block.rows.size() - 1) / 5))));
     }
 
     function validCircuitResultRow(rawRow, prescribedId, keys) {
@@ -595,6 +649,13 @@ service cloud.firestore {
     }
 
     function validCircuitResultRows(rawRows, rawIds) {
+      return rawRows is list && rawRows.size() > 0
+             && (rawRows[0] is string
+                 ? validPackedCircuitResults(rawRows, rawIds)
+                 : validLegacyCircuitResultRows(rawRows, rawIds));
+    }
+
+    function validLegacyCircuitResultRows(rawRows, rawIds) {
       let rows = rawRows;
       let ids = rawIds;
       let keys = ['rowId', 'completed', 'notes', 'rpe'];
@@ -609,6 +670,42 @@ service cloud.firestore {
              && (rows.size() < 7 || validCircuitResultRow(rows[6], ids[6], keys))
              && (rows.size() < 8 || validCircuitResultRow(rows[7], ids[7], keys))
              && (rows.size() < 9 || validCircuitResultRow(rows[8], ids[8], keys));
+    }
+
+    function validPackedCircuitResults(rows, ids) {
+      let pattern = '(?s)^[0-9A-L](?:0|1.*)$';
+      let count = rows.size();
+      return count == ids.size() && count <= 30
+             && rows[0].size() <= 4002 && rows[0].matches(pattern)
+             && (count < 2 || (rows[1].size() <= 4002 && rows[1].matches(pattern)))
+             && (count < 3 || (rows[2].size() <= 4002 && rows[2].matches(pattern)))
+             && (count < 4 || (rows[3].size() <= 4002 && rows[3].matches(pattern)))
+             && (count < 5 || (rows[4].size() <= 4002 && rows[4].matches(pattern)))
+             && (count < 6 || (rows[5].size() <= 4002 && rows[5].matches(pattern)))
+             && (count < 7 || (rows[6].size() <= 4002 && rows[6].matches(pattern)))
+             && (count < 8 || (rows[7].size() <= 4002 && rows[7].matches(pattern)))
+             && (count < 9 || (rows[8].size() <= 4002 && rows[8].matches(pattern)))
+             && (count < 10 || (rows[9].size() <= 4002 && rows[9].matches(pattern)))
+             && (count < 11 || (rows[10].size() <= 4002 && rows[10].matches(pattern)))
+             && (count < 12 || (rows[11].size() <= 4002 && rows[11].matches(pattern)))
+             && (count < 13 || (rows[12].size() <= 4002 && rows[12].matches(pattern)))
+             && (count < 14 || (rows[13].size() <= 4002 && rows[13].matches(pattern)))
+             && (count < 15 || (rows[14].size() <= 4002 && rows[14].matches(pattern)))
+             && (count < 16 || (rows[15].size() <= 4002 && rows[15].matches(pattern)))
+             && (count < 17 || (rows[16].size() <= 4002 && rows[16].matches(pattern)))
+             && (count < 18 || (rows[17].size() <= 4002 && rows[17].matches(pattern)))
+             && (count < 19 || (rows[18].size() <= 4002 && rows[18].matches(pattern)))
+             && (count < 20 || (rows[19].size() <= 4002 && rows[19].matches(pattern)))
+             && (count < 21 || (rows[20].size() <= 4002 && rows[20].matches(pattern)))
+             && (count < 22 || (rows[21].size() <= 4002 && rows[21].matches(pattern)))
+             && (count < 23 || (rows[22].size() <= 4002 && rows[22].matches(pattern)))
+             && (count < 24 || (rows[23].size() <= 4002 && rows[23].matches(pattern)))
+             && (count < 25 || (rows[24].size() <= 4002 && rows[24].matches(pattern)))
+             && (count < 26 || (rows[25].size() <= 4002 && rows[25].matches(pattern)))
+             && (count < 27 || (rows[26].size() <= 4002 && rows[26].matches(pattern)))
+             && (count < 28 || (rows[27].size() <= 4002 && rows[27].matches(pattern)))
+             && (count < 29 || (rows[28].size() <= 4002 && rows[28].matches(pattern)))
+             && (count < 30 || (rows[29].size() <= 4002 && rows[29].matches(pattern)));
     }
 
     function validClimbingVideoUrl(url) {
@@ -629,7 +726,7 @@ service cloud.firestore {
       let circuit = data.type == 'climbingCircuit';
       let keys = circuit
                  ? ['blockId', 'type', 'sortOrder', 'title', 'notes',
-                    'slotIds', 'slotStartOrder', 'slotCount', 'rows', 'rowIds', 'videoUrl']
+                    'slotIds', 'slotStartOrder', 'slotCount', 'rows', 'rowIds', 'videoUrl', 'rowValidation']
                  : ['blockId', 'type', 'sortOrder', 'title', 'notes',
                     'slotIds', 'slotStartOrder', 'slotCount', 'videoUrl', 'workSeconds', 'restSeconds'];
       return data.keys().hasOnly(keys)
@@ -640,6 +737,7 @@ service cloud.firestore {
              && data.slotCount == 1
              && validClimbingNote(data)
              && validClimbingVideoUrl(data.get('videoUrl', null))
+             && (!('rowValidation' in data) || (circuit && data.rowValidation == 'chunksV1'))
              && (circuit ? validClimbingCircuitHead(data) : validClimbingTimers(data));
     }
 
@@ -721,7 +819,8 @@ service cloud.firestore {
       let climbing = block.type in ['climbingCircuit', 'freeClimbing'];
       return version.get('climbingSlotIds', []).hasAny([data.slotId]) == climbing
              && (block.type != 'climbingCircuit'
-                 || (data.prescription.mode == 'reps' && validClimbingCircuitTail(block)))
+                 || data.prescription.mode == 'reps')
+             && (block.type != 'freeClimbing' || data.prescription.mode == 'reps')
              && ((((block.type == 'freeClimbing' && data.exerciseId == 'builtin-free-climbing')
                    || (block.type == 'climbingCircuit' && data.exerciseId == 'builtin-climbing-circuit'))
                   && data.exerciseVersion == 1 && data.sortOrder == 0
@@ -731,8 +830,7 @@ service cloud.firestore {
                     'durationSeconds': null, 'weight': null,
                     'restSeconds': null, 'notes': null
                   })
-                 || (block.type != 'freeClimbing'
-                     && !(data.exerciseId in ['builtin-free-climbing', 'builtin-climbing-circuit'])
+                 || (!(data.exerciseId in ['builtin-free-climbing', 'builtin-climbing-circuit'])
                      && isOwnedExerciseVersion(data.exerciseId, data.exerciseVersion)));
     }
 
@@ -756,10 +854,7 @@ service cloud.firestore {
         /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
       ).data;
       let block = version.blocks[data.blockSortOrder];
-      return !exists(
-               /databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)
-             )
-             && version.storageFormat == 'typedWorkoutBlocksV1'
+      return version.storageFormat == 'typedWorkoutBlocksV1'
              && version.publishState == 'draft'
              && version.ownerId == request.auth.uid
              && data == version.slots[data.slotOrder]
@@ -770,7 +865,9 @@ service cloud.firestore {
              && block.slotIds[data.sortOrder] == data.slotId
              && data.slotOrder == block.slotStartOrder + data.sortOrder
              && hasValidWorkoutSlot(data)
-             && hasOwnedWorkoutSlot(version, data);
+             && hasOwnedWorkoutSlot(version, data)
+             && (block.type != 'climbingCircuit'
+                 || hasCircuitRowChecks(templateId, versionNumber, block));
     }
 
     function hasValidTypedWorkoutVersion(data) {
@@ -2081,7 +2178,19 @@ service cloud.firestore {
           allow delete: if canDeleteDraftWorkoutVersionChild(
                              templateId,
                              versionNumber
-                           );
+                           )
+                           && !exists(/databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)/workoutBlocks/$(blockId)/rowChecks/0);
+
+          match /rowChecks/{chunkId} {
+            allow read: if canReadWorkoutVersionChild(templateId, versionNumber);
+            allow create: if isSignedIn()
+                          && canCreateCircuitRowCheck(templateId, versionNumber, blockId, chunkId, request.resource.data);
+            allow update: if false;
+            // Reverse deletion prevents orphan receipts being reused if a
+            // pending version number is subsequently republished.
+            allow delete: if canDeleteDraftWorkoutVersionChild(templateId, versionNumber)
+                          && !exists(/databases/$(database)/documents/workoutTemplates/$(templateId)/workoutTemplateVersions/$(versionNumber)/workoutBlocks/$(blockId)/rowChecks/$(string(resource.data.chunk + 1)));
+          }
         }
 
         match /exerciseSlots/{slotId} {

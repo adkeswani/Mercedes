@@ -35,7 +35,7 @@ void validateClimbingInput(Map<String, dynamic> input) {
   }
   final rows = input[key];
   if (rows is! List ||
-      (type == 'climbingCircuit' && rows.length > maxClimbingRows) ||
+      (type == 'climbingCircuit' && rows.length > maxClimbingCircuitRows) ||
       (type == 'climbingCircuit' && rows.isEmpty)) {
     throw const FormatException('Invalid climbing draft rows');
   }
@@ -92,6 +92,34 @@ Map<String, dynamic> climbingInputForStorage(Map<String, dynamic> input) {
     circuit ? 'circuitRows' : 'freeRows': rows,
     'rowIds': [for (final row in rows) row['rowId']],
   };
+}
+
+Map<String, dynamic> encodeClimbingInput(Map<String, dynamic> input) {
+  final stored = climbingInputForStorage(input);
+  final rows = stored['circuitRows'] as List?;
+  if (rows != null && rows.length > maxClimbingRows) {
+    stored['circuitRows'] = encodeCircuitResults(
+      rows
+          .map((r) => ClimbingCircuitResultRow.fromMap(
+              Map<String, dynamic>.from(r as Map)))
+          .toList(),
+    );
+  }
+  return stored;
+}
+
+Map<String, dynamic> decodeClimbingInput(Map<String, dynamic> input) {
+  final rows = input['circuitRows'];
+  if (rows is List && rows.isNotEmpty && rows.first is String) {
+    return {
+      ...input,
+      'circuitRows': [
+        for (final row in decodeCircuitResults(rows, input['rowIds']))
+          row.toMap(),
+      ]
+    };
+  }
+  return input;
 }
 
 void validateClimbingInputForBlock(

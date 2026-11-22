@@ -2,14 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:stage5/core/enums.dart';
-import 'package:stage5/features/exercises/domain/youtube_channel.dart';
 import 'package:stage5/features/exercises/presentation/exercise_media_widgets.dart';
-import 'package:stage5/features/exercises/presentation/youtube_library_panel.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
 import 'package:stage5/features/workouts/presentation/exercise_picker.dart';
 import 'package:stage5/features/workouts/presentation/workout_providers.dart';
 import 'package:stage5/features/workouts/domain/climbing.dart';
-import 'package:stage5/features/workouts/domain/climbing_video.dart';
 import 'package:stage5/features/workouts/presentation/climbing_grade_field.dart';
 
 /// Total exercise slots currently used across every block in [blocks].
@@ -65,12 +62,6 @@ Future<WorkoutBlockType?> showBlockTypeMenu(BuildContext context) {
                 icon: Icons.loop,
                 title: 'Circuit',
                 subtitle: 'Repeated rounds of multiple exercises',
-              ),
-              option(
-                type: WorkoutBlockType.climbingRoute,
-                icon: Icons.terrain,
-                title: 'Climbing Route',
-                subtitle: 'Canonical grade and target attempts',
               ),
               option(
                 type: WorkoutBlockType.climbingCircuit,
@@ -782,11 +773,9 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _targetAttemptsController;
   late final TextEditingController _notesController;
-  late final TextEditingController _videoUrlController;
   late final TextEditingController _workSecondsController;
   late final TextEditingController _restSecondsController;
   late final String _slotId;
-  YoutubeVideoMetadata? _videoMetadata;
   final List<_ClimbingRowInput> _rows = [];
   ClimbingGradingSystem _system = ClimbingGradingSystem.vScale;
   String _grade = 'V0';
@@ -806,7 +795,6 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
           : '',
     );
     _notesController = TextEditingController(text: existing?.notes ?? '');
-    _videoUrlController = TextEditingController(text: existing?.videoUrl ?? '');
     _workSecondsController = TextEditingController(
       text: existing is FreeClimbingBlock
           ? existing.workSeconds?.toString() ?? ''
@@ -819,7 +807,7 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
     );
     _slotId = existing?.slots.single.slotId ??
         ref.read(workoutTemplateRepositoryProvider).generateExerciseSlotId();
-    _route = existing is FreeClimbingBlock ||
+    _route = (existing is FreeClimbingBlock && !existing.hasExercise) ||
             (existing is ClimbingCircuitBlock && !existing.hasExercise)
         ? null
         : existing?.slots.single;
@@ -841,7 +829,6 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
   void dispose() {
     _targetAttemptsController.dispose();
     _notesController.dispose();
-    _videoUrlController.dispose();
     _workSecondsController.dispose();
     _restSecondsController.dispose();
     for (final row in _rows) {
@@ -880,12 +867,13 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
       final notes = _notesController.text.trim().isEmpty
           ? null
           : _notesController.text.trim();
-      final videoUrl = normalizeClimbingVideoUrl(_videoUrlController.text);
+      final videoUrl = widget.existing?.videoUrl;
       final WorkoutBlock block = _isFree
           ? FreeClimbingBlock(
               blockId: widget.blockId,
               sortOrder: widget.existing?.sortOrder ?? 0,
               slotId: _slotId,
+              exercise: _route,
               workSeconds: _optionalTimerSeconds(_workSecondsController.text),
               restSeconds: _optionalTimerSeconds(_restSecondsController.text),
               notes: notes,
@@ -922,60 +910,12 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
     }
   }
 
-  void _addRow() {
+  void _addRow({bool rest = false}) {
     _rows.add(_ClimbingRowInput(
       ref.read(workoutTemplateRepositoryProvider).generateExerciseSlotId(),
+      isRest: rest,
     ));
   }
-
-  String? _videoError(String? value) {
-    try {
-      normalizeClimbingVideoUrl(value);
-      return null;
-    } on ArgumentError catch (error) {
-      return '${error.message}';
-    }
-  }
-
-  String? get _previewVideoUrl {
-    try {
-      return normalizeClimbingVideoUrl(_videoUrlController.text);
-    } on ArgumentError {
-      return null;
-    }
-  }
-
-  void _removeVideo() => setState(() {
-        _videoUrlController.clear();
-        _videoMetadata = null;
-      });
-
-  Future<void> _chooseVideo() => showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        builder: (pickerContext) => SafeArea(
-          child: SizedBox(
-            height: MediaQuery.sizeOf(pickerContext).height * .8,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: YoutubeLibraryPanel(
-                attachedVideo: _videoMetadata,
-                onAttach: (video) {
-                  setState(() {
-                    _videoUrlController.text = video.canonicalUrl;
-                    _videoMetadata = video.metadata;
-                  });
-                  Navigator.of(pickerContext).pop();
-                },
-                onRemove: () {
-                  _removeVideo();
-                  Navigator.of(pickerContext).pop();
-                },
-              ),
-            ),
-          ),
-        ),
-      );
 
   @override
   Widget build(BuildContext context) {
@@ -994,20 +934,19 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
             if (_error != null)
               Text(_error!,
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            if (!_isFree)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(route?.exerciseName ?? 'No instructions attached'),
-                trailing: TextButton(
-                  onPressed: _pickRoute,
-                  child: Text(route == null
-                      ? (_isCircuit
-                          ? 'Attach instructions (optional)'
-                          : 'Attach instructions')
-                      : 'Change instructions'),
-                ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(route?.exerciseName ?? 'No instructions attached'),
+              trailing: TextButton(
+                onPressed: _pickRoute,
+                child: Text(route == null
+                    ? (_isCircuit || _isFree
+                        ? 'Attach instructions (optional)'
+                        : 'Attach instructions')
+                    : 'Change instructions'),
               ),
-            if (_isCircuit && route != null)
+            ),
+            if ((_isCircuit || _isFree) && route != null)
               TextButton(
                 onPressed: () => setState(() => _route = null),
                 child: const Text('Remove instructions'),
@@ -1044,54 +983,79 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        ClimbingGradeField(
-                          system: row.system,
-                          grade: row.grade,
-                          onChanged: (system, grade) => setState(() {
-                            row.system = system;
-                            row.grade = grade;
-                          }),
-                        ),
-                        TextFormField(
-                          controller: row.climbs,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                              labelText: 'Number of climbs'),
-                          validator: (value) => _positiveInteger(value),
-                        ),
-                        TextFormField(
-                          controller: row.attempts,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                              labelText: 'Max attempts per climb (optional)'),
-                          validator: (value) =>
-                              _positiveInteger(value, optional: true),
-                        ),
+                        if (row.isRest)
+                          const Text('Rest')
+                        else ...[
+                          ClimbingGradeField(
+                            system: row.system,
+                            grade: row.grade,
+                            onChanged: (system, grade) => setState(() {
+                              row.system = system;
+                              row.grade = grade;
+                            }),
+                          ),
+                          TextFormField(
+                            controller: row.climbs,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                                labelText: 'Number of climbs'),
+                            validator: (value) => _positiveInteger(value),
+                          ),
+                          TextFormField(
+                            controller: row.attempts,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                                labelText: 'Max attempts per climb (optional)'),
+                            validator: (value) =>
+                                _positiveInteger(value, optional: true),
+                          ),
+                        ],
                         TextFormField(
                           controller: row.notes,
                           decoration: const InputDecoration(
                               labelText: 'Row note (optional)'),
                           maxLength: 4000,
                         ),
-                        ..._timerFields(row.workSeconds, row.restSeconds),
+                        if (row.isRest)
+                          TextFormField(
+                            controller: row.restSeconds,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Rest duration (seconds)',
+                            ),
+                            validator: (value) => _positiveInteger(value),
+                          )
+                        else
+                          ..._timerFields(row.workSeconds, row.restSeconds),
                         TextButton(
                           onPressed: () => setState(() {
                             _rows.remove(row);
                             row.dispose();
                           }),
-                          child: const Text('Remove climbing row'),
+                          child: Text(row.isRest
+                              ? 'Remove rest row'
+                              : 'Remove climbing row'),
                         ),
                       ],
                     ),
                   ),
                 ),
               TextButton.icon(
-                onPressed: _rows.length < maxClimbingRows
-                    ? () => setState(_addRow)
+                onPressed: _rows.length < maxClimbingCircuitRows
+                    ? () => setState(() => _addRow())
                     : null,
                 icon: const Icon(Icons.add),
                 label: const Text('Add climbing row'),
               ),
+              TextButton.icon(
+                onPressed: _rows.length < maxClimbingCircuitRows
+                    ? () => setState(() => _addRow(rest: true))
+                    : null,
+                icon: const Icon(Icons.pause),
+                label: const Text('Add rest row'),
+              ),
+              Text(
+                  '${_rows.length}/$maxClimbingCircuitRows total rows (climbing and rest)'),
               const Text(
                   'Max attempts applies to each climb, not the whole row. Instructions and row timers are optional.'),
             ],
@@ -1103,37 +1067,10 @@ class _ClimbingEditorSheetState extends ConsumerState<_ClimbingEditorSheet> {
                   const InputDecoration(labelText: 'Trainer note (optional)'),
               maxLength: 4000,
             ),
-            if (_isFree || _isCircuit) ...[
+            if (widget.existing?.videoUrl case final url?) ...[
               const SizedBox(height: 8),
-              TextFormField(
-                controller: _videoUrlController,
-                decoration: const InputDecoration(
-                  labelText: 'Video URL (optional)',
-                  hintText: 'YouTube or HTTPS drill video',
-                ),
-                keyboardType: TextInputType.url,
-                maxLength: maxClimbingVideoUrlLength,
-                autovalidateMode: AutovalidateMode.onUserInteraction,
-                validator: _videoError,
-                onChanged: (value) => setState(() {
-                  if (value.trim() != _videoMetadata?.canonicalUrl) {
-                    _videoMetadata = null;
-                  }
-                }),
-              ),
-              TextButton.icon(
-                onPressed: _chooseVideo,
-                icon: const Icon(Icons.video_library_outlined),
-                label: const Text('Choose from YouTube library'),
-              ),
-              if (_previewVideoUrl case final url?) ...[
-                const Text('Drill video preview'),
-                ExerciseVideoPreview(url: url),
-                TextButton(
-                  onPressed: _removeVideo,
-                  child: const Text('Remove drill video'),
-                ),
-              ],
+              const Text('Historical drill video (read-only)'),
+              ExerciseVideoPreview(url: url),
             ],
           ],
         ));
@@ -1174,9 +1111,9 @@ String? _positiveInteger(String? value, {bool optional = false}) {
 }
 
 class _ClimbingRowInput {
-  _ClimbingRowInput(this.rowId);
+  _ClimbingRowInput(this.rowId, {this.isRest = false});
   factory _ClimbingRowInput.fromRow(ClimbingCircuitRow row) {
-    return _ClimbingRowInput(row.rowId)
+    return _ClimbingRowInput(row.rowId, isRest: row.isRest)
       ..system = row.gradingSystem
       ..grade = row.grade
       ..climbs.text = row.climbs.toString()
@@ -1186,6 +1123,7 @@ class _ClimbingRowInput {
       ..notes.text = row.notes ?? '';
   }
   final String rowId;
+  final bool isRest;
   ClimbingGradingSystem system = ClimbingGradingSystem.vScale;
   String grade = 'V0';
   final climbs = TextEditingController();
@@ -1193,18 +1131,24 @@ class _ClimbingRowInput {
   final workSeconds = TextEditingController();
   final restSeconds = TextEditingController();
   final notes = TextEditingController();
-  ClimbingCircuitRow toRow() => ClimbingCircuitRow(
-        rowId: rowId,
-        gradingSystem: system,
-        grade: grade,
-        climbs: int.parse(climbs.text.trim()),
-        maxAttemptsPerClimb: attempts.text.trim().isEmpty
-            ? null
-            : int.parse(attempts.text.trim()),
-        notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
-        workSeconds: _optionalTimerSeconds(workSeconds.text),
-        restSeconds: _optionalTimerSeconds(restSeconds.text),
-      );
+  ClimbingCircuitRow toRow() => isRest
+      ? ClimbingCircuitRow.rest(
+          rowId: rowId,
+          durationSeconds: int.parse(restSeconds.text.trim()),
+          notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
+        )
+      : ClimbingCircuitRow(
+          rowId: rowId,
+          gradingSystem: system,
+          grade: grade,
+          climbs: int.parse(climbs.text.trim()),
+          maxAttemptsPerClimb: attempts.text.trim().isEmpty
+              ? null
+              : int.parse(attempts.text.trim()),
+          notes: notes.text.trim().isEmpty ? null : notes.text.trim(),
+          workSeconds: _optionalTimerSeconds(workSeconds.text),
+          restSeconds: _optionalTimerSeconds(restSeconds.text),
+        );
   void dispose() {
     climbs.dispose();
     attempts.dispose();

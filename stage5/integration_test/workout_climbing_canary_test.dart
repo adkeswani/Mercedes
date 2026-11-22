@@ -94,12 +94,9 @@ void main() {
         find.widgetWithText(TextFormField, 'Trainer note (optional)'),
         'Circuit trainer note',
         'circuit trainer note');
-    await _enter(
-        tester,
-        waits,
-        find.widgetWithText(TextFormField, 'Video URL (optional)'),
-        _circuitDrill,
-        'attach optional circuit drill video');
+    expect(find.widgetWithText(TextFormField, 'Video URL (optional)'),
+        findsNothing);
+    expect(find.text('Choose from YouTube library'), findsNothing);
     await _enter(
         tester,
         waits,
@@ -116,13 +113,33 @@ void main() {
             .first,
         '2',
         'circuit row rest countdown');
+    for (var i = 0; i < 28; i++) {
+      await _tap(
+          tester, waits, find.text('Add rest row'), 'add standalone rest $i');
+      await _enter(
+          tester,
+          waits,
+          find.widgetWithText(TextFormField, 'Rest duration (seconds)').last,
+          '2',
+          'prescribe standalone rest $i');
+    }
+    for (final text in ['Add climbing row', 'Add rest row']) {
+      final button = find.widgetWithText(TextButton, text);
+      expect(tester.widget<TextButton>(button).onPressed, isNull);
+    }
     await _tap(tester, waits, find.widgetWithText(FilledButton, 'Save'),
         'save circuit');
     await _wait(tester, waits, find.text('Climbing Circuit'), 'circuit card');
 
     await _addBlock(tester, waits, 'Free Climbing');
     expect(find.text('Attach instructions'), findsNothing);
-    expect(find.text('Attach instructions (optional)'), findsNothing);
+    expect(find.text('Attach instructions (optional)'), findsOneWidget);
+    await _tap(tester, waits, find.text('Attach instructions (optional)'),
+        'attach shared free climbing instruction');
+    await _wait(
+        tester, waits, find.text('Boulder Problem'), 'shared exercise picker');
+    await _tap(tester, waits, find.text('Boulder Problem').last,
+        'link free instruction');
     expect(find.text('Number of climbs'), findsNothing);
     expect(find.byType(DropdownButtonFormField<ClimbingGradingSystem>),
         findsNothing);
@@ -132,12 +149,9 @@ void main() {
         find.widgetWithText(TextFormField, 'Trainer note (optional)'),
         'Free trainer note',
         'free climbing trainer note only');
-    await _enter(
-        tester,
-        waits,
-        find.widgetWithText(TextFormField, 'Video URL (optional)'),
-        _freeDrill,
-        'attach optional free climbing drill video');
+    expect(find.widgetWithText(TextFormField, 'Video URL (optional)'),
+        findsNothing);
+    expect(find.text('Choose from YouTube library'), findsNothing);
     await _enter(
         tester,
         waits,
@@ -178,13 +192,29 @@ void main() {
     expect(circuit['rows'][0]['maxAttemptsPerClimb'], 2);
     expect(circuit['rows'][1]['gradingSystem'], 'yds');
     expect(circuit['rows'][1]['grade'], '5.13a');
-    expect(circuit['videoUrl'], _circuitDrill);
+    expect(circuit.containsKey('videoUrl'), isFalse);
+    expect((circuit['rows'] as List).length, 30);
+    expect(circuit['rows'][29], {
+      'rowId': circuit['rowIds'][29],
+      'type': 'rest',
+      'durationSeconds': 2,
+      'notes': null,
+    });
+    expect(circuit['rowValidation'], 'chunksV1');
+    final checks = await versionRef
+        .collection('workoutBlocks')
+        .doc(circuit['blockId'] as String)
+        .collection('rowChecks')
+        .get(_server);
+    expect(checks.docs.length, 6);
     expect(circuit['rows'][0]['workSeconds'], 3);
     expect(circuit['rows'][0]['restSeconds'], 2);
     expect(data['slots'][0]['exerciseId'], climbingCircuitExerciseId);
     expect(free['type'], 'freeClimbing');
     expect(free['notes'], 'Free trainer note');
-    expect(free['videoUrl'], _freeDrill);
+    expect(free.containsKey('videoUrl'), isFalse);
+    expect(data['slots'][1]['exerciseName'], 'Boulder Problem');
+    expect(data['slots'][1]['exerciseId'], isNot(freeClimbingExerciseId));
     expect(free['workSeconds'], 3);
     expect(free['restSeconds'], 2);
     expect(free.containsKey('rows'), isFalse);
@@ -205,25 +235,14 @@ void main() {
     await _wait(tester, waits, find.text('Boulder Problem'), 'exercise picker');
     await _tap(
         tester, waits, find.text('Boulder Problem').last, 'link exercise');
-    expect(
-        tester
-            .widget<TextFormField>(
-                find.widgetWithText(TextFormField, 'Video URL (optional)'))
-            .controller!
-            .text,
-        _circuitDrill);
+    expect(find.widgetWithText(TextFormField, 'Video URL (optional)'),
+        findsNothing);
     await _enter(
         tester,
         waits,
         find.widgetWithText(TextFormField, 'Number of climbs').first,
         '4',
         'change draft climb count');
-    await _enter(
-        tester,
-        waits,
-        find.widgetWithText(TextFormField, 'Video URL (optional)'),
-        _replacementDrill,
-        'replace drill in new immutable version');
     await _tap(tester, waits, find.widgetWithText(FilledButton, 'Save'),
         'save edited circuit');
     await _tap(tester, waits, find.text('Publish'), 'publish edited version');
@@ -234,8 +253,8 @@ void main() {
         () =>
             header.collection('workoutTemplateVersions').doc('2').get(_server));
     expect(second.data()!['blocks'][0]['rows'][0]['climbs'], 4);
-    expect(second.data()!['blocks'][0]['videoUrl'], _replacementDrill);
-    expect(second.data()!['blocks'][1]['videoUrl'], _freeDrill);
+    expect(second.data()!['blocks'][0].containsKey('videoUrl'), isFalse);
+    expect(second.data()!['blocks'][1].containsKey('videoUrl'), isFalse);
     expect(second.data()!['blocks'][0]['rowIds'], circuit['rowIds']);
     expect(second.data()!['slotIds'], data['slotIds']);
     expect(second.data()!['slots'][0]['exerciseName'], 'Boulder Problem');
@@ -880,6 +899,7 @@ Future<void> _addBlock(
   await _tap(tester, waits, find.widgetWithText(TextButton, 'Add'),
       'open block type menu');
   await _wait(tester, waits, find.text(type), '$type menu option');
+  expect(find.text('Climbing Route'), findsNothing);
   await _tap(tester, waits, find.text(type), 'choose $type');
 }
 

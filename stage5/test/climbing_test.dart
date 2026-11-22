@@ -63,6 +63,70 @@ FreeClimbingBlock _free({String? videoUrl}) => FreeClimbingBlock(
     );
 
 void main() {
+  test('standalone rest rows serialize without grades or fabricated climbs',
+      () {
+    const rest = ClimbingCircuitRow.rest(
+        rowId: 'rest', durationSeconds: 20, notes: 'Recover');
+    expect(rest.validate, returnsNormally);
+    expect(rest.toMap(), {
+      'rowId': 'rest',
+      'type': 'rest',
+      'durationSeconds': 20,
+      'notes': 'Recover'
+    });
+    expect(ClimbingCircuitRow.fromMap(rest.toMap()).isRest, isTrue);
+    for (final fields in [
+      {'durationSeconds': 0},
+      {'durationSeconds': -1},
+      {'grade': 'V2'},
+      {'climbs': 2},
+      {'workSeconds': 5},
+    ]) {
+      expect(() => ClimbingCircuitRow.fromMap({...rest.toMap(), ...fields}),
+          throwsA(anything));
+    }
+    final circuit = _circuit(rows: [
+      _row(),
+      for (var i = 1; i < 30; i++)
+        ClimbingCircuitRow.rest(rowId: 'rest-$i', durationSeconds: 20),
+    ]);
+    expect(circuit.validate, returnsNormally);
+    expect(
+        _circuit(rows: [
+          ...circuit.rows,
+          const ClimbingCircuitRow.rest(rowId: 'extra', durationSeconds: 1)
+        ]).validate,
+        throwsArgumentError);
+  });
+
+  test(
+      'large circuit results preserve every completion, RPE and exact note in bounded encoding',
+      () {
+    final rows = [
+      for (final completed in [false, true])
+        for (var rpe = 0; rpe <= 10; rpe++)
+          ClimbingCircuitResultRow(
+              rowId: 'row-$completed-$rpe',
+              completed: completed,
+              rpe: rpe == 0 ? null : rpe,
+              notes: rpe == 0
+                  ? null
+                  : rpe == 1
+                      ? ''
+                      : 'line\n${'x' * 3995}'),
+    ];
+    final encoded = encodeCircuitResults(rows);
+    final decoded =
+        decodeCircuitResults(encoded, rows.map((r) => r.rowId).toList());
+    expect(decoded.map((r) => r.toMap()), rows.map((r) => r.toMap()));
+    for (final invalid in ['M1', 'L2', 'L0extra', 'L1${'x' * 4001}', 1, null]) {
+      expect(() => decodeCircuitResults([invalid], ['row']),
+          throwsFormatException);
+    }
+    expect(
+        () => decodeCircuitResults(encoded, ['wrong']), throwsFormatException);
+  });
+
   test('unlinked circuits keep canonical result slots and reject spoofed slots',
       () {
     final block = ClimbingCircuitBlock(
@@ -229,7 +293,7 @@ void main() {
     expect(_circuit(rows: []).validate, throwsArgumentError);
     expect(_circuit(rows: [_row(), _row()]).validate, throwsArgumentError);
     expect(
-        _circuit(rows: [for (var i = 0; i < 10; i++) _row(id: '$i')]).validate,
+        _circuit(rows: [for (var i = 0; i < 31; i++) _row(id: '$i')]).validate,
         throwsArgumentError);
     expect(ClimbingCircuitRow.fromMap(_row().toMap()).toMap(), _row().toMap());
   });
@@ -537,6 +601,104 @@ void main() {
         'actualsStorageFormat': 'slotResultsSubcollection',
         'actualSlotIds': <String>[],
       });
+    });
+
+    test(
+        '30 mixed rows publish, recover, complete and retain shared free instructions',
+        () async {
+      final circuit = _circuit(rows: [
+        _row(),
+        for (var i = 1; i < 30; i++)
+          ClimbingCircuitRow.rest(rowId: 'rest-$i', durationSeconds: 15),
+      ]);
+      final free = FreeClimbingBlock(
+        blockId: 'free',
+        sortOrder: 1,
+        slotId: 'free-slot',
+        exercise: _slot('free-slot'),
+        videoUrl: _free().videoUrl,
+      );
+      await templates.publishVersion(
+          templateId: 'workout', userId: 'trainer', blocks: [circuit, free]);
+      final version = (await templates.getVersion('workout', 2))!;
+      final loaded = version.blocks.first as ClimbingCircuitBlock;
+      expect(loaded.rows.map((r) => r.toMap()),
+          circuit.rows.map((r) => r.toMap()));
+      expect((version.blocks.last as FreeClimbingBlock).hasExercise, isTrue);
+      final blockRef = firestore.doc(
+          'workoutTemplates/workout/workoutTemplateVersions/2/workoutBlocks/circuit');
+      expect((await blockRef.collection('rowChecks').get()).docs.length, 6);
+      final input = initialClimbingInput(loaded);
+      final inputRows = input['circuitRows'] as List;
+      for (var i = 0; i < inputRows.length; i++) {
+        inputRows[i]['completed'] = i.isEven;
+        inputRows[i]['notes'] = 'Note $i';
+      }
+      inputRows[0]['rpe'] = 8;
+      final draft = WorkoutCompletionDraft(
+        instanceId: 'instance',
+        athleteId: 'athlete',
+        rpe: 6,
+        durationMinutes: 30,
+        athleteNotes: null,
+        currentStep: 0,
+        slotInputs: {'circuit-slot': input},
+        revision: 1,
+        clientId: 'client',
+        updatedAt: DateTime.utc(2026),
+        sourceRoute: '/athlete/workouts/instance',
+      );
+      final recovered = WorkoutCompletionDraft.fromMap(draft.toLocalMap());
+      expect(recovered.slotInputs['circuit-slot']!['circuitRows'], inputRows);
+      expect(
+          (draft.toMap()['slotInputs']['circuit-slot']['circuitRows'] as List)
+              .last,
+          '01Note 29');
+      await firestore
+          .doc('workoutInstances/instance')
+          .update({'workoutTemplateVersion': 2});
+      await instances.completeWorkout(
+          instanceId: 'instance',
+          athleteId: 'athlete',
+          rpe: 6,
+          durationMinutes: 30,
+          actuals: [
+            climbingActualFromInput(
+                loaded, recovered.slotInputs['circuit-slot']!),
+            climbingActualFromInput(free, initialClimbingInput(free)),
+          ]);
+      final detail = (await instances.getById('instance'))!;
+      expect(
+          detail.actualsBySlot['circuit-slot']!.circuitRows!
+              .map((r) => r.toMap()),
+          climbingActualFromInput(loaded, input)
+              .circuitRows!
+              .map((r) => r.toMap()));
+      final stored = (await firestore
+              .doc('workoutInstances/instance/slotResults/circuit-slot')
+              .get())
+          .data()!;
+      expect((stored['circuitRows'] as List).last, '01Note 29');
+    });
+
+    test('linked free instruction ownership is checked before publishing',
+        () async {
+      await firestore
+          .doc('exerciseTemplates/other')
+          .set({'ownerId': 'someone-else', 'createdBy': 'someone-else'});
+      final foreign = FreeClimbingBlock(
+          blockId: 'free',
+          sortOrder: 0,
+          slotId: 'free-slot',
+          exercise: _slot('free-slot').copyWith(exerciseId: 'other'));
+      await expectLater(
+          templates.publishVersion(
+              templateId: 'workout', userId: 'trainer', blocks: [foreign]),
+          throwsStateError);
+      expect(
+          (await firestore.doc('workoutTemplates/workout').get())
+              .data()!['currentVersion'],
+          1);
     });
 
     test(

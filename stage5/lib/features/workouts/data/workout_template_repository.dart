@@ -177,7 +177,7 @@ class WorkoutTemplateRepository {
     final checked = <String>{};
     for (final slot in blocks
         .where((b) =>
-            b is! FreeClimbingBlock &&
+            !(b is FreeClimbingBlock && !b.hasExercise) &&
             !(b is ClimbingCircuitBlock && !b.hasExercise))
         .expand((b) => b.slots)) {
       slot.validate();
@@ -340,6 +340,7 @@ class WorkoutTemplateRepository {
           blockMaps[blockIndex],
         );
         for (final slot in block.slots) {
+          if (block is ClimbingCircuitBlock) continue;
           draftBatch.set(
             versionRef.collection('exerciseSlots').doc(slot.slotId),
             slotMaps.firstWhere(
@@ -349,6 +350,27 @@ class WorkoutTemplateRepository {
         }
       }
       await draftBatch.commit();
+    }
+
+    // Each immutable receipt validates five rows and requires its predecessor.
+    // The result slot requires the final receipt; sealing still requires every
+    // block and slot, so partial drafts can never become published snapshots.
+    for (final block in typedBlocks.whereType<ClimbingCircuitBlock>()) {
+      final blockRef =
+          versionRef.collection('workoutBlocks').doc(block.blockId);
+      for (var chunk = 0; chunk * 5 < block.rows.length; chunk++) {
+        final receipt = blockRef.collection('rowChecks').doc('$chunk');
+        if (!(await receipt.get()).exists) {
+          await receipt
+              .set({'chunk': chunk, 'blockSortOrder': block.sortOrder});
+        }
+      }
+      final slotRef =
+          versionRef.collection('exerciseSlots').doc(block.exercise.slotId);
+      if (!(await slotRef.get()).exists) {
+        await slotRef.set(
+            slotMaps.firstWhere((s) => s['slotId'] == block.exercise.slotId));
+      }
     }
 
     await _firestore.runTransaction((transaction) async {
@@ -405,6 +427,14 @@ class WorkoutTemplateRepository {
       versionRef.collection('workoutBlocks').get(),
       versionRef.collection('exerciseSlots').get(),
     ]);
+    for (final block in children[0].docs) {
+      final checks = await block.reference.collection('rowChecks').get();
+      final ordered = checks.docs.toList()
+        ..sort((a, b) => int.parse(b.id).compareTo(int.parse(a.id)));
+      for (final check in ordered) {
+        await check.reference.delete();
+      }
+    }
     final cleanup = _firestore.batch();
     for (final snapshot in children) {
       for (final child in snapshot.docs) {
@@ -764,6 +794,7 @@ class WorkoutTemplateRepository {
             'gradingSystem': block.gradingSystem!.name,
         });
       case ClimbingCircuitBlock():
+        map['rowValidation'] = 'chunksV1';
         map['rows'] = block.rows.map((row) => row.toMap()).toList();
         map['rowIds'] = block.rows.map((row) => row.rowId).toList();
         if (block.videoUrl != null) map['videoUrl'] = block.videoUrl;
@@ -921,23 +952,14 @@ class WorkoutTemplateRepository {
             data['rowIds'], block.rows.map((r) => r.rowId).toList());
         return block;
       case 'freeClimbing':
-        if (slots.length != 1 ||
-            slots.single.exerciseId != freeClimbingExerciseId ||
-            slots.single.exerciseVersion != 1 ||
-            slots.single.mode != ExerciseMode.reps ||
-            slots.single.sets != null ||
-            slots.single.reps != null ||
-            slots.single.durationSeconds != null ||
-            slots.single.weight != null ||
-            slots.single.restSeconds != null ||
-            slots.single.notes != null) {
-          throw StateError(
-              'Free climbing must contain only its built-in result slot');
+        if (slots.length != 1) {
+          throw StateError('Free climbing requires one result slot');
         }
         return FreeClimbingBlock(
           blockId: blockId,
           sortOrder: sortOrder,
           slotId: slots.single.slotId,
+          exercise: slots.single,
           title: title,
           notes: notes,
           videoUrl: data['videoUrl'] as String?,

@@ -236,6 +236,11 @@ class ClimbingSession {
         legacy++;
         continue;
       }
+      if (block is ClimbingCircuitBlock &&
+          block.rows.every((row) => row.isRest)) {
+        actual?.validateForBlock(block);
+        continue;
+      }
       if (actual == null) {
         unrecorded++;
         continue;
@@ -268,6 +273,7 @@ class ClimbingSession {
         var completed = 0;
         for (var i = 0; i < block.rows.length; i++) {
           final row = block.rows[i];
+          if (row.isRest) continue;
           if (actual.circuitRows![i].completed) {
             completed++;
             climbs
@@ -282,9 +288,9 @@ class ClimbingSession {
             key:
                 '${instance.workoutTemplateId}/${version.versionNumber}/${block.blockId}',
             name: block.title ?? 'Climbing Circuit',
-            prescription: block.rows,
+            prescription: block.rows.where((row) => !row.isRest).toList(),
             completedRows: completed,
-            totalRows: block.rows.length,
+            totalRows: block.rows.where((row) => !row.isRest).length,
           ),
         );
       } else if (block is FreeClimbingBlock) {

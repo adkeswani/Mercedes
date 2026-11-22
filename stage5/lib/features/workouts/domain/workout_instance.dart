@@ -364,7 +364,9 @@ class ExerciseActual {
           for (final row in freeRows ?? <FreeClimbingResultRow>[]) row.rowId,
         ],
         if (circuitRows != null)
-          'circuitRows': circuitRows!.map((r) => r.toMap()).toList(),
+          'circuitRows': circuitRows!.length > maxClimbingRows
+              ? encodeCircuitResults(circuitRows!)
+              : circuitRows!.map((r) => r.toMap()).toList(),
         if (freeRows != null)
           'freeRows': freeRows!.map((r) => r.toMap()).toList(),
       },
@@ -388,10 +390,9 @@ class ExerciseActual {
       notes: data['notes'] as String?,
       climbingType: data['climbingType'] as String?,
       rpe: data['rpe'] as int?,
-      circuitRows: (data['circuitRows'] as List?)
-          ?.map((r) => ClimbingCircuitResultRow.fromMap(
-              Map<String, dynamic>.from(r as Map)))
-          .toList(),
+      circuitRows: data['circuitRows'] == null
+          ? null
+          : decodeCircuitResults(data['circuitRows'] as List, data['rowIds']),
       freeRows: (data['freeRows'] as List?)
           ?.map((r) => FreeClimbingResultRow.fromMap(
               Map<String, dynamic>.from(r as Map)))
@@ -501,9 +502,9 @@ class ExerciseActual {
       throw ArgumentError('Climbing results must identify their type');
     }
     final ids = <String>{};
-    if ((circuitRows?.length ?? 0) > maxClimbingRows) {
+    if ((circuitRows?.length ?? 0) > maxClimbingCircuitRows) {
       throw ArgumentError(
-          'At most $maxClimbingRows climbing rows are supported');
+          'At most $maxClimbingCircuitRows circuit rows are supported');
     }
     for (final row in circuitRows ?? <ClimbingCircuitResultRow>[]) {
       row.validate();

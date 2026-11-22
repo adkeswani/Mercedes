@@ -10,7 +10,7 @@ import 'package:stage5/features/auth/presentation/auth_providers.dart';
 import 'package:stage5/features/exercises/domain/exercise_template.dart';
 import 'package:stage5/features/exercises/presentation/exercise_providers.dart';
 import 'package:stage5/features/exercises/presentation/exercise_media_widgets.dart';
-import 'package:stage5/features/exercises/presentation/youtube_library_panel.dart';
+import 'package:stage5/features/workouts/domain/climbing.dart';
 import 'package:stage5/features/workouts/data/workout_template_repository.dart';
 import 'package:stage5/features/workouts/domain/workout_block.dart';
 import 'package:stage5/features/workouts/domain/workout_template.dart';
@@ -91,7 +91,7 @@ void main() {
         const EdgeInsets.only(bottom: 24));
   });
 
-  testWidgets('Add menu lists all block types', (tester) async {
+  testWidgets('Add menu omits legacy climbing route', (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
 
@@ -101,7 +101,7 @@ void main() {
     expect(find.text('Standard Exercise'), findsOneWidget);
     expect(find.text('Timed Interval'), findsOneWidget);
     expect(find.text('Circuit'), findsOneWidget);
-    expect(find.text('Climbing Route'), findsOneWidget);
+    expect(find.text('Climbing Route'), findsNothing);
     expect(find.text('AMRAP'), findsOneWidget);
     expect(find.text('Climbing Circuit'), findsOneWidget);
     expect(find.text('Free Climbing'), findsOneWidget);
@@ -179,18 +179,31 @@ void main() {
     expect(find.textContaining('AMRAP · 600s time cap'), findsOneWidget);
   });
 
-  testWidgets('creates a climbing route block', (tester) async {
-    await tester.pumpWidget(_harness());
+  testWidgets('legacy climbing route remains editable', (tester) async {
+    final repo = _VersionedWorkoutRepository();
+    repo.versions['legacy'] = WorkoutTemplateVersion(
+      versionNumber: 1,
+      publishedAt: DateTime.utc(2026),
+      blocks: [
+        ClimbingRouteBlock(
+          blockId: 'route',
+          sortOrder: 0,
+          route: ExerciseSlot(
+              slotId: 'route-slot',
+              exerciseId: 'ex-route',
+              exerciseName: 'Overhang Route',
+              sortOrder: 0,
+              mode: ExerciseMode.reps),
+          grade: 'V2',
+          gradingSystem: ClimbingGradingSystem.vScale,
+        ),
+      ],
+    );
+    await tester.pumpWidget(_harness(
+        repository: repo, workout: _workout(id: 'legacy', currentVersion: 1)));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithText(TextButton, 'Add'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Climbing Route'));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Attach instructions'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Overhang Route'));
+    await tester.tap(find.byTooltip('Edit prescription'));
     await tester.pumpAndSettle();
 
     await tester
@@ -233,16 +246,9 @@ void main() {
     await tester.enterText(
         find.widgetWithText(TextFormField, 'Max attempts per climb (optional)'),
         '2');
-    final video = find.widgetWithText(TextFormField, 'Video URL (optional)');
-    await tester.ensureVisible(video);
-    await tester.enterText(
-        video, 'https://example.test/circuit-drill.mp4#start');
-    await tester.pumpAndSettle();
-    expect(
-        tester
-            .widget<ExerciseVideoPreview>(find.byType(ExerciseVideoPreview))
-            .url,
-        'https://example.test/circuit-drill.mp4');
+    expect(find.widgetWithText(TextFormField, 'Video URL (optional)'),
+        findsNothing);
+    expect(find.text('Choose from YouTube library'), findsNothing);
     await tester.ensureVisible(save);
     await tester.tap(save);
     await tester.pumpAndSettle();
@@ -251,11 +257,11 @@ void main() {
         tester.element(find.byType(WorkoutBuilderScreen)));
     final original =
         container.read(workoutDraftProvider).single as ClimbingCircuitBlock;
-    expect(original.videoUrl, 'https://example.test/circuit-drill.mp4');
+    expect(original.videoUrl, isNull);
     await tester.tap(find.byTooltip('Edit prescription'));
     await tester.pumpAndSettle();
-    expect(tester.widget<TextFormField>(video).controller!.text,
-        original.videoUrl);
+    expect(find.widgetWithText(TextFormField, 'Video URL (optional)'),
+        findsNothing);
     await tester.ensureVisible(count);
     await tester.enterText(count, '4');
     await tester.ensureVisible(save);
@@ -334,7 +340,8 @@ void main() {
     }
   });
 
-  testWidgets('free climbing has optional notes, timers and a removable video',
+  testWidgets(
+      'free climbing attaches shared instructions without video authoring',
       (tester) async {
     await tester.pumpWidget(_harness());
     await tester.pumpAndSettle();
@@ -344,25 +351,19 @@ void main() {
     await tester.tap(find.text('Free Climbing'));
     await tester.pumpAndSettle();
     expect(find.text('Attach instructions'), findsNothing);
-    expect(find.text('Attach instructions (optional)'), findsNothing);
+    expect(find.text('Attach instructions (optional)'), findsOneWidget);
     expect(find.text('Grade'), findsNothing);
     expect(find.text('Number of climbs'), findsNothing);
-    expect(find.text('Choose from YouTube library'), findsOneWidget);
-    await tester.ensureVisible(find.text('Choose from YouTube library'));
-    await tester.tap(find.text('Choose from YouTube library'));
+    expect(find.text('Choose from YouTube library'), findsNothing);
+    await tester.tap(find.text('Attach instructions (optional)'));
     await tester.pumpAndSettle();
-    expect(find.byType(YoutubeLibraryPanel), findsOneWidget);
-    Navigator.of(tester.element(find.byType(YoutubeLibraryPanel))).pop();
+    await tester.tap(find.text('Overhang Route'));
     await tester.pumpAndSettle();
     await tester.enterText(
         find.widgetWithText(TextFormField, 'Trainer note (optional)'),
         'Explore routes');
-    final video = find.widgetWithText(TextFormField, 'Video URL (optional)');
-    await tester.ensureVisible(video);
-    await tester.enterText(video, 'javascript:bad');
-    await tester.pumpAndSettle();
-    expect(find.text('Enter a valid HTTPS video URL'), findsOneWidget);
-    await tester.enterText(video, 'https://example.test/free-drill.mp4');
+    expect(find.widgetWithText(TextFormField, 'Video URL (optional)'),
+        findsNothing);
     final work =
         find.widgetWithText(TextFormField, 'Work duration (seconds, optional)');
     final rest =
@@ -372,24 +373,18 @@ void main() {
     await tester.ensureVisible(rest);
     await tester.enterText(rest, '15');
     await tester.pumpAndSettle();
-    expect(
-        tester
-            .widget<ExerciseVideoPreview>(find.byType(ExerciseVideoPreview))
-            .url,
-        'https://example.test/free-drill.mp4');
     await tester.ensureVisible(find.widgetWithText(FilledButton, 'Save'));
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pumpAndSettle();
-    expect(find.text('Free Climbing'), findsOneWidget);
+    expect(find.text('Overhang Route'), findsOneWidget);
     expect(find.textContaining('Explore routes'), findsOneWidget);
     final container = ProviderScope.containerOf(
         tester.element(find.byType(WorkoutBuilderScreen)));
-    expect(container.read(workoutDraftProvider).single.videoUrl,
-        'https://example.test/free-drill.mp4');
+    expect(container.read(workoutDraftProvider).single.videoUrl, isNull);
     await tester.tap(find.byTooltip('Edit prescription'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Remove drill video'));
-    await tester.tap(find.text('Remove drill video'));
+    await tester.ensureVisible(find.text('Remove instructions'));
+    await tester.tap(find.text('Remove instructions'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pumpAndSettle();
@@ -445,6 +440,79 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('5 rounds'), findsOneWidget);
+  });
+
+  testWidgets(
+      '30-row circuit shares a climbing/rest cap and preserves historical video',
+      (tester) async {
+    final repo = _VersionedWorkoutRepository();
+    repo.versions['rest-circuit'] = WorkoutTemplateVersion(
+      versionNumber: 1,
+      publishedAt: DateTime.utc(2026),
+      blocks: [
+        ClimbingCircuitBlock(
+          blockId: 'circuit',
+          sortOrder: 0,
+          slotId: 'slot',
+          videoUrl: 'https://example.test/historical.mp4',
+          rows: [
+            const ClimbingCircuitRow(
+                rowId: 'climb',
+                gradingSystem: ClimbingGradingSystem.vScale,
+                grade: 'V2',
+                climbs: 2),
+            for (var i = 1; i < 30; i++)
+              ClimbingCircuitRow.rest(rowId: 'rest-$i', durationSeconds: 15),
+          ],
+        ),
+      ],
+    );
+    await tester.pumpWidget(_harness(
+        repository: repo,
+        workout: _workout(id: 'rest-circuit', currentVersion: 1)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Edit prescription'));
+    await tester.pumpAndSettle();
+    for (final text in ['Add climbing row', 'Add rest row']) {
+      final button = find.widgetWithText(TextButton, text);
+      expect(tester.widget<TextButton>(button).onPressed, isNull);
+    }
+    expect(find.widgetWithText(TextFormField, 'Video URL (optional)'),
+        findsNothing);
+    expect(
+        tester
+            .widget<ExerciseVideoPreview>(find.byType(ExerciseVideoPreview))
+            .url,
+        'https://example.test/historical.mp4');
+    final remove = find.text('Remove rest row').first;
+    await tester.ensureVisible(remove);
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    final add = find.text('Add rest row');
+    await tester.ensureVisible(add);
+    await tester.tap(add);
+    await tester.pumpAndSettle();
+    final save = find.widgetWithText(FilledButton, 'Save');
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a positive whole number'), findsOneWidget);
+    final duration =
+        find.widgetWithText(TextFormField, 'Rest duration (seconds)').last;
+    await tester.ensureVisible(duration);
+    await tester.enterText(duration, '20');
+    await tester.ensureVisible(save);
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+        tester.element(find.byType(WorkoutBuilderScreen)));
+    final result =
+        container.read(workoutDraftProvider).single as ClimbingCircuitBlock;
+    expect(result.rows.length, 30);
+    expect(result.rows.last.isRest, isTrue);
+    expect(result.rows.last.restSeconds, 20);
+    expect(result.rows.first.rowId, 'climb');
+    expect(result.videoUrl, 'https://example.test/historical.mp4');
   });
 }
 

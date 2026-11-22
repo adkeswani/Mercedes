@@ -22,8 +22,17 @@ Implemented in this slice:
   recreated cards restore recorded values rather than prescription defaults.
 - Workout and climbing timers calculate elapsed time from timestamps, retaining
   partial seconds across pause/resume and catching up after browser suspension.
-  Countdown actuals stop at the prescribed duration. Completion callbacks run
+  Countdown actuals stop at the selected duration. Completion callbacks run
   when the browser next executes; locked-screen alerts are not guaranteed.
+- Athletes can change each workout timer's duration using its edit control.
+  The trainer's duration remains the default and can be restored explicitly;
+  changing duration resets and pauses that timer. Stopwatch timers can also
+  become countdowns. Overrides are execution aids for the current screen:
+  they survive ordinary rebuilds but are not saved in completion drafts or
+  history. Existing elapsed work/rest actual recording remains unchanged.
+  Persisting selected targets would require separate draft/result fields and
+  validation across generic timers, AMRAP, climbing blocks, and circuit rows;
+  it is deferred rather than treating a selected target as elapsed time.
 - Dashboard workouts show **Begin** before a draft is saved and **Continue**
   with **In progress** once a device or server draft exists. This reuses existing
   draft data without introducing a separate started status. **Open** is shown
@@ -108,34 +117,36 @@ Implemented in this slice:
   unavailable until a future OAuth feature, and Firebase identity is never
   treated as YouTube channel ownership.
 - Immutable typed workout blocks and typed authoring editors for standard
-  exercises, timed intervals, circuits, climbing routes, AMRAP, climbing
-  circuits, and free climbing.
+  exercises, timed intervals, circuits, AMRAP, climbing circuits, and free
+  climbing. Climbing Route is no longer offered when adding a block; existing
+  routes remain editable and retain their pinned completion/history behavior.
 - The **Instruction Library** holds reusable guidance and videos. Workout
   exercises/activities carry prescriptions and can attach those instructions;
-  climbing circuits expose **Attach instructions (optional)**. This is a
-  user-facing terminology change only: existing exercise models, routes,
-  stored IDs, version pinning, required links, and screenshot names are unchanged.
-- Climbing circuits prescribe up to nine stable-ID grade/count rows, with an
+  climbing circuits and free climbing expose **Attach instructions (optional)**.
+  Attached instruction versions supply their existing guidance and videos;
+  climbing editors do not author separate videos. Existing block-level videos
+  are preserved when editing/copying and still displayed in pinned history.
+- Climbing circuits prescribe up to 30 stable-ID climbing or rest rows, with an
   optional Instruction Library link, max attempts **per climb**, and notes. Create
   a grades-only circuit without choosing an exercise, or add/remove its link
   later without changing row/result identities. Athletes
   record a completion checkbox, optional note, and optional RPE (1–10) per row;
-  partial climb counts and actual attempts are not inferred.
-- Free climbing accepts a trainer note and optional drill video.
+  partial climb counts and actual attempts are not inferred. **Add rest row**
+  inserts a timed recovery step without a grade or climb count. Rest rows count
+  toward the 30-row limit but never contribute climbing volume or grades.
+  Chained immutable five-row validation receipts keep all prescribed rows
+  validated before publication without exceeding Firestore expression limits.
+- Free climbing accepts a trainer note and optional Instruction Library link.
   Athlete grade/count result rows are optional; a note and RPE (both optional)
   suffice. It uses one
-  reserved built-in result slot, not a trainer-created exercise template.
+  reserved built-in result slot when no instructions are attached, rather
+  than requiring a trainer-created exercise template.
 - Optional trainer-prescribed work/rest countdowns apply per circuit row and
   overall for Free Climbing. Enter positive whole seconds or leave blank.
   Start/pause/reset controls are independent and survive scrolling offscreen;
   clocks are not recovered after leaving/reloading the screen. Reaching
   `Time!` never completes a climb or writes timing actuals. Completed history
   displays the pinned durations without interactive controls.
-- Both new climbing blocks support optional HTTPS drill video URLs and the
-  existing YouTube library picker/preview. YouTube links normalize to canonical
-  watch URLs. Editing, copying, publishing, recovered completion, and completed
-  details retain the video from the pinned immutable workout version; athlete
-  drafts and actuals do not duplicate or overwrite prescribed media.
 - New climbing grades are canonical dropdown selections in explicit
   difficulty order: V-scale (`VB`, `V0`–`V17`) or YDS (`5.0`–`5.9`,
   `5.10a`–`5.15d`). New single-route authoring no longer requires color.
@@ -145,7 +156,7 @@ Implemented in this slice:
   server drafts store one `climbingInputs/{slotId}` child per climbing slot
   beneath `completionDrafts/current`. Free-climbing rows live in that child's
   `climbs/{rowId}` collection, without the former nine-climb cap; circuit
-  prescriptions retain their nine-row limit. Autosave writes only changed
+  prescriptions allow up to 30 climbing/rest rows. Autosave writes only changed
   climb documents alongside the revision/client-ID headers. Recovery verifies
   row count, ordering, identities, and revisions.
   Successful saves retain a detached acknowledged snapshot; subsequent

@@ -15,6 +15,8 @@ class WorkoutTimerWidget extends StatefulWidget {
   const WorkoutTimerWidget({
     required this.label,
     this.targetSeconds,
+    this.initialTargetSeconds,
+    this.onTargetChanged,
     this.onElapsedChanged,
     this.onCompleted,
     super.key,
@@ -22,6 +24,8 @@ class WorkoutTimerWidget extends StatefulWidget {
 
   final String label;
   final int? targetSeconds;
+  final int? initialTargetSeconds;
+  final ValueChanged<int?>? onTargetChanged;
   final ValueChanged<int>? onElapsedChanged;
   final VoidCallback? onCompleted;
 
@@ -38,24 +42,53 @@ class WorkoutTimerWidgetState extends State<WorkoutTimerWidget>
   int _elapsedSeconds = 0;
   bool _running = false;
   bool _completedNotified = false;
+  int? _overrideSeconds;
 
   @visibleForTesting
   DateTime Function() now = DateTime.now;
 
-  bool get _isCountdown => widget.targetSeconds != null;
+  int? get _targetSeconds => _overrideSeconds ?? widget.targetSeconds;
+
+  bool get _isCountdown => _targetSeconds != null;
 
   int get _displaySeconds {
     if (!_isCountdown) {
       return _elapsedSeconds;
     }
-    final remaining = widget.targetSeconds! - _elapsedSeconds;
+    final remaining = _targetSeconds! - _elapsedSeconds;
     return remaining < 0 ? 0 : remaining;
   }
 
   @override
   void initState() {
     super.initState();
+    _overrideSeconds = widget.initialTargetSeconds;
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didUpdateWidget(WorkoutTimerWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.targetSeconds != widget.targetSeconds) {
+      _overrideSeconds = null;
+      reset();
+    }
+  }
+
+  Future<void> _configure() async {
+    final selection = await showDialog<({int? seconds})>(
+      context: context,
+      builder: (context) => _TimerDurationDialog(
+        label: widget.label,
+        currentSeconds: _targetSeconds,
+        prescribedSeconds: widget.targetSeconds,
+      ),
+    );
+    if (!mounted || selection == null) return;
+    _overrideSeconds =
+        selection.seconds == widget.targetSeconds ? null : selection.seconds;
+    reset();
+    widget.onTargetChanged?.call(_targetSeconds);
   }
 
   @override
@@ -94,10 +127,9 @@ class WorkoutTimerWidgetState extends State<WorkoutTimerWidget>
     if (elapsed < _elapsed) {
       elapsed = _elapsed;
     }
-    final completed =
-        _isCountdown && elapsed.inSeconds >= widget.targetSeconds!;
+    final completed = _isCountdown && elapsed.inSeconds >= _targetSeconds!;
     if (completed) {
-      elapsed = Duration(seconds: widget.targetSeconds!);
+      elapsed = Duration(seconds: _targetSeconds!);
     }
     final secondsChanged = elapsed.inSeconds != _elapsedSeconds;
     setState(() {
@@ -152,25 +184,36 @@ class WorkoutTimerWidgetState extends State<WorkoutTimerWidget>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDone = _isCountdown &&
-        _elapsedSeconds >= widget.targetSeconds! &&
+        _elapsedSeconds >= _targetSeconds! &&
         _elapsedSeconds > 0;
     return Row(
       children: [
-        Icon(
-          Icons.timer_outlined,
-          size: 18,
-          color: theme.colorScheme.primary,
-        ),
-        const SizedBox(width: 6),
-        Text('${widget.label}:', style: theme.textTheme.bodySmall),
-        const SizedBox(width: 6),
-        Text(
-          isDone ? 'Time!' : _format(_displaySeconds),
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: isDone ? Colors.green : null,
+        Expanded(
+          child: Wrap(
+            spacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Icon(
+                Icons.timer_outlined,
+                size: 18,
+                color: theme.colorScheme.primary,
+              ),
+              Text('${widget.label}:', style: theme.textTheme.bodySmall),
+              Text(
+                isDone ? 'Time!' : _format(_displaySeconds),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: isDone ? Colors.green : null,
+                ),
+              ),
+            ],
           ),
         ),
-        const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.edit_outlined),
+          tooltip: 'Change ${widget.label.toLowerCase()} timer duration',
+          onPressed: _configure,
+          visualDensity: VisualDensity.compact,
+        ),
         IconButton(
           icon: Icon(_running ? Icons.pause : Icons.play_arrow),
           tooltip: _running
@@ -188,4 +231,87 @@ class WorkoutTimerWidgetState extends State<WorkoutTimerWidget>
       ],
     );
   }
+}
+
+class _TimerDurationDialog extends StatefulWidget {
+  const _TimerDurationDialog({
+    required this.label,
+    required this.currentSeconds,
+    required this.prescribedSeconds,
+  });
+
+  final String label;
+  final int? currentSeconds;
+  final int? prescribedSeconds;
+
+  @override
+  State<_TimerDurationDialog> createState() => _TimerDurationDialogState();
+}
+
+class _TimerDurationDialogState extends State<_TimerDurationDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final _controller = TextEditingController(
+    text: widget.currentSeconds?.toString() ?? '',
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text('${widget.label} timer'),
+        content: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.prescribedSeconds == null
+                  ? 'Default: stopwatch'
+                  : 'Trainer default: ${widget.prescribedSeconds} seconds'),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _controller,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                decoration:
+                    const InputDecoration(labelText: 'Duration (seconds)'),
+                validator: (value) {
+                  final seconds = int.tryParse(value?.trim() ?? '');
+                  return seconds == null || seconds < 1 || seconds > 2147483647
+                      ? 'Enter a positive whole number of seconds (at most 2147483647)'
+                      : null;
+                },
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Changing the duration resets this timer. The trainer prescription is unchanged. This adjustment is not saved when you leave the workout.',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.of(context).pop((seconds: widget.prescribedSeconds)),
+            child: const Text('Use default'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (_formKey.currentState!.validate()) {
+                Navigator.of(context)
+                    .pop((seconds: int.parse(_controller.text.trim())));
+              }
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      );
 }
